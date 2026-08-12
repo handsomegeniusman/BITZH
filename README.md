@@ -146,41 +146,122 @@ BITZH/
 
 ## 六、从零部署（新手必看）
 
-### 1. 环境准备
+> 跟着本教程走一遍，大约需要 **30–60 分钟**。每一步都写清楚了，照做即可。
+> 如果中途卡住，先看文末 [FAQ](#九常见问题-faq)。
 
-- 安装 [微信开发者工具](https://developers.weixin.qq.com/miniprogram/dev/devtools/download.html)。
-- 安装 Node.js（运行测试脚本用）。
-- 一个微信小程序 AppID（可在微信公众平台注册，或用测试号）。
+### 1. 准备环境（约 10 分钟）
 
-### 2. 导入项目
+1. 安装 [微信开发者工具](https://developers.weixin.qq.com/miniprogram/dev/devtools/download.html)（选「稳定版」）。
+2. 注册一个微信小程序账号：
+   - 电脑浏览器打开 [微信公众平台](https://mp.weixin.qq.com/) → 注册「小程序」类型账号；
+   - 注册后在「开发 → 开发管理 → 开发设置」里能看到 **AppID**（形如 `wx` 开头的一串字符）。
+   - 只想本地试试、不发布的话，开发者工具里也可以直接用「测试号」，跳过注册。
 
-1. 打开微信开发者工具 → **导入项目**。
-2. 选择 `miniprogram/` 目录，填入你的 AppID。
-3. 等待工具编译完成。
+### 2. 导入项目（约 5 分钟）
 
-### 3. 配置后端（阿里云 MPServerless）
+1. 打开微信开发者工具，**扫码登录**。
+2. 点「+」→ **导入项目**：
+   - 目录选择本仓库下的 **`miniprogram/`** 文件夹；
+   - AppID 填上一步拿到的（或选「测试号」）；
+   - 点「确定」。
+3. 若弹出「是否构建 npm」提示，点**确定**（用于生成 `miniprogram_npm`，本项目依赖阿里云 SDK）。
+4. 等编译完成，模拟器里能看到首页即成功。
 
-1. 打开 [MPServerless 控制台](https://mpserverless.console.aliyun.com) 创建空间，记下 **AppID / 空间 ID / 客户端密钥 / 网关地址**。
-2. 进入 `miniprogram/`，把 `config.example.js` **复制一份改名为 `config.js`**。
-3. 在 `config.js` 里填入 MPServerless 配置。
-4. 创建数据库集合：`BITZH`、`Page`、`Feeder`、`Notice`、`Comment`、`Administrator`。
+### 3. 创建后端空间（阿里云 MPServerless，约 10 分钟）
 
-### 4. 配置图片存储（腾讯云 COS）
+本项目后端用的是阿里云 MPServerless（云开发），用来存数据、做登录鉴权。
 
-1. 在 [COS 控制台](https://console.cloud.tencent.com/cos) 创建存储桶，开启「公有读」或配置访问权限。
-2. 把存储桶域名 + 图片目录前缀填到 `config.js` 的 `imageUrl`（例如 `https://xxx.cos.ap-guangzhou.myqcloud.com/main/images/`）。
-3. 填入 `SecretId / SecretKey / Bucket / Region`。
-4. （推荐）启用临时密钥 STS：把 `cos.useSts` 改为 `true`，并在 MPServerless 控制台上传部署 `cloudfunctions/getCosSts` 云函数、配置好环境变量。未部署时会自动回退固定密钥，不影响使用。
+1. 打开 [MPServerless 控制台](https://mpserverless.console.aliyun.com)（需阿里云账号，没有就注册一个）。
+2. 创建一个**云开发空间**（地区建议选「华东 1」等离你近的节点）。
+3. 在「空间详情」里记下：
+   - **AppID**（不是微信 AppID，是 MPServerless 空间对应的 AppID）
+   - **空间 ID**（spaceId）
+   - **客户端密钥**（clientSecret，可重新生成）
+   - **网关地址**（endpoint，一般是 `https://api.next.bspapp.com`）
+4. 进入空间 → **云数据库**，创建以下集合（名称一字不差）：
+   - `BITZH`（猫咪档案）
+   - `Page`（小猫书 / 推文）
+   - `Feeder`（用户资料）
+   - `Notice`（公告）
+   - `Comment`（评论）
+   - `Administrator`（管理配置）
+5. （强烈建议）在每个集合的「权限设置」里开启**权限校验**，并配置规则，避免任意用户增删改数据。具体规则可参考阿里云官方文档，或先用「仅创建者可读写」起步。
 
-### 5. 配置管理员与公告
+### 4. 创建图片存储（腾讯云 COS，约 10 分钟）
 
-1. 在 `Administrator` 集合插入一条记录，作为「审核开关」配置（例如包含 `isOpenRegister` / `isOpenPublish` 等字段）。
-2. 把这条记录的 `_id` 填到 `config.js` 的 `administratorRecordId`。
-3. 公告内容存放在 `Notice` 集合。
+图片（猫照片、推文图、头像）存在腾讯云 COS 里。
 
-### 6. 上传体验版 / 发布
+1. 打开 [COS 控制台](https://console.cloud.tencent.com/cos)，创建一个**存储桶**（Bucket）。
+2. 进入存储桶 →「权限管理」→ 在「访问权限」里设置为 **公有读私有写**（图片要能被游客看到）。
+3. 进入「密钥管理」或 [访问管理 CAM](https://console.cloud.tencent.com/cam/capi)，拿到 **SecretId** 和 **SecretKey**（请注意保密）。
+4. 记下存储桶的**地域**（Region，如 `ap-guangzhou`）和**名称**（如 `bitzh-1318479541`）。
 
-在微信开发者工具右上角点击 **上传**，填写版本号与备注，到微信公众平台提交审核即可。
+### 5. 创建 config.js 并填写（约 10 分钟）
+
+1. 进入 `miniprogram/` 目录，把 `config.example.js` **复制一份，改名为 `config.js`**。
+2. 用任意编辑器（记事本也行）打开 `config.js`，逐项替换成上面拿到的值：
+
+```js
+module.exports = {
+  serverless: {
+    appId: '你的MPServerless空间AppID',   // ← 第 3 步拿到的
+    spaceId: '你的MPServerless空间ID',     // ← 第 3 步拿到的
+    clientSecret: '你的客户端密钥',        // ← 第 3 步拿到的
+    endpoint: 'https://api.next.bspapp.com', // ← 一般不用改
+  },
+  cos: {
+    SecretId: '你的COS密钥ID',            // ← 第 4 步拿到的
+    SecretKey: '你的COS密钥Key',          // ← 第 4 步拿到的
+    Bucket: '你的存储桶名称',              // ← 第 4 步拿到的
+    Region: '你的存储桶地域',              // ← 第 4 步拿到的，如 ap-guangzhou
+    useSts: false,                        // 想更安全再开，见下方「可选」
+  },
+  imageUrl: 'https://你的存储桶.cos.你的地域.myqcloud.com/main/images/',
+  administratorRecordId: '',              // ← 第 6 步填
+  adUnitIds: { video: '', mydetailModal: '' }, // 没有广告位就留空
+};
+```
+
+   - `imageUrl` 格式：`https://<Bucket>.<Region>.myqcloud.com/<前缀>/`，前缀建议统一用 `main/images/`，这样上传的图片会存到这个目录下。
+
+3. **保存后不要把这个文件提交到仓库**（已被 `.gitignore` 忽略，里面是密钥）。
+
+### 6. 配置管理员（约 5 分钟）
+
+1. 到 MPServerless 控制台的 `Administrator` 集合，**新增一条记录**，例如：
+
+```json
+{
+  "isOpenRegister": true,
+  "isOpenPublish": true
+}
+```
+
+   （这两个字段用来控制是否开放注册和发布，具体字段名以代码为准，见 `utils/db.js`。）
+
+2. 复制这条记录的 **`_id`**，填到 `config.js` 的 `administratorRecordId`。
+3. 想让某个人成为管理员：到 `Feeder` 集合里，把对应用户记录的 `isAdministrator` 字段改为 `true`（判断逻辑见 `utils/db.js`）。
+
+### 7. 首次运行（约 5 分钟）
+
+1. 回到微信开发者工具，点击「编译」。
+2. 如果模拟器里报错，按 Ctrl+Shift+I（或点「调试器」）看 Console 报错，常见问题见 FAQ。
+3. 第一次使用建议在管理端（「我的」页）**添加一只猫**，再回首页看小猫书列表，确认全链路通畅。
+
+### 8. （可选）开启 COS 临时密钥 STS（更安全）
+
+固定密钥写在前端有被反编译的风险。想更安全：
+
+1. 在 MPServerless 控制台新建云函数 `getCosSts`，把仓库 `cloudfunctions/getCosSts/` 里的代码上传。
+2. 配置环境变量（`SecretId` / `SecretKey` / `Bucket` / `Region` 等，见 `cloudfunctions/getCosSts/index.js` 顶部注释）。
+3. 把 `config.js` 里 `cos.useSts` 改为 `true`。
+4. 即使没部署成功也不会崩——代码会自动回退固定密钥。
+
+### 9. 上传体验版 / 发布
+
+1. 微信开发者工具右上角点 **上传**，填版本号（如 `1.0.0`）和备注。
+2. 到 [微信公众平台](https://mp.weixin.qq.com/) →「管理 → 版本管理」→ 把刚上传的版本设为**体验版**，可先发给几个人内测。
+3. 确认没问题后点**提交审核**，审核通过即正式发布。
 
 ---
 

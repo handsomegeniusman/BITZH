@@ -1,0 +1,17 @@
+# Windows
+[Dd]esktop.ini
+Thumbs.db
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+
+# Node.js
+node_modules/
+
+# 密钥配置：真实密钥只保存在本地 config.js，请勿提交到 GitHub
+config.js

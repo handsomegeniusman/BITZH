@@ -1,0 +1,57 @@
+<!--pages/someBooklet/someBooklet.wxml-->
+<view>
+  <view wx:if="{{isName === 'true'}}" class="top">
+    <image class="tittle-toux" lazy-load="true" src="{{url}}{{sanitizedName}}.png" bindtap="showAuthorImg" data-authorimg="{{url}}{{sanitizedName}}.png"></image>
+     <text class="tittle">{{name}}</text>
+  </view>
+  <view wx:else="" class="top">
+    <text class="tittle">#{{name}}</text>
+  </view>
+</view>
+
+<view>
+  <picker mode="multiSelector" bindchange="bindMultiPickerChange" value="{{multiIndex}}" range="{{multiArray}}">
+    <view class="picker">
+      {{multiArray[0][multiIndex[0]]}}-{{multiArray[1][multiIndex[1]]}}
+    </view>
+  </picker>
+</view>
+<view class="content" >
+  <!-- 空态：话题下暂无推文（首屏查询完成后才显示，避免加载中误闪） -->
+  <view wx:if="{{loaded && !listData.length}}" class="empty-tip">该{{isName === 'true' ? '作者' : '话题'}}下暂时没有推文</view>
+  <view class="float-image">
+    <image class="add-image" src="/pages/images/add.png" mode="" bindtap="addBooklet" lazy-load='true'/>
+  </view>
+  <view class="left">
+    <block wx:for="{{listData}}" wx:key="_id" wx:for-item="item">
+      <template is="page" data="{{item, index, urlPage}}" wx:if="{{index%2==0}}"></template>
+    </block>
+  </view>
+  <view class="right">
+    <block wx:for="{{listData}}" wx:key="_id" wx:for-item="item">
+      <template is="page" data="{{item, index, urlPage}}" wx:if="{{index%2==1}}"></template>
+    </block>
+  </view>
+</view>
+
+<template name="page">
+  <view class="li" >
+    <view bindtap="toBookletDetail" bindlongpress="editBooklet" data-_id="{{item._id}}" data-authorid="{{item.authorId}}">
+      <image lazy-load="true" class="pic" src="{{urlPage}}{{item.tittle}}0.jpg" mode="widthFix" ></image>
+      <view class="title-wrap"  >
+        <navigator class="title">{{item.tittle}}</navigator>
+      </view>
+      <text class="page-time" wx:if="{{item._timeText}}">{{item._timeText}}</text>
+    </view>
+    <view class="bottom">
+      <view class="toux-name">
+        <image class="toux" lazy-load="true" src="{{item.authorImg}}" bindtap="showAuthorImg" data-authorimg="{{item.authorImg}}"></image>
+        <text class="name">{{item.author}}</text>
+      </view>
+      <view class="love" wx:if="{{item.good !== undefined}}">
+        <image class="toux" lazy-load="true" src="/pages/images/爱心.png" bindtap="giveGood" data-_id="{{item._id}}" data-good="{{item.good}}" data-index="{{index}}"></image>
+        <text class="love-num" bindtap="giveGood" data-_id="{{item._id}}" data-good="{{item.good}}" data-index="{{index}}">{{item.good}}</text>
+      </view>
+    </view>
+  </view>
+</template>

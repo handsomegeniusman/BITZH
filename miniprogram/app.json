@@ -1,0 +1,54 @@
+{
+  "pages": [
+    "pages/index/index",
+    "pages/catSearch/catSearch",
+    "pages/about/about",
+    "pages/addCat/addCat",
+
+    "pages/addBooklet/addBooklet",
+    "pages/Administrator/Administrator",
+    "pages/bookletDetail/bookletDetail",
+    "pages/catDetail/catDetail",
+    "pages/catTrash/catTrash",
+    "pages/editCat/editCat",
+    "pages/editBooklet/editBooklet",
+    "pages/editAnnouncement/editAnnouncement",
+
+    "pages/pageTrash/pageTrash",
+    "pages/mydetail/mydetail",
+    "pages/regist/regist",
+    "pages/someBooklet/someBooklet",
+    "pages/所有/所有"
+  ],
+  "window": {
+    "backgroundTextStyle": "light",
+    "navigationBarBackgroundColor": "#fff",
+    "navigationBarTitleText": "北理珠流浪猫关爱部",
+    "navigationBarTextStyle": "black"
+  },
+  "sitemapLocation": "sitemap.json",
+  "tabBar": {
+    "custom": true,
+    "selectedColor": "#FF405E",
+    "color": "#888888",
+    "list": [
+      {
+        "text": "查猫",
+        "pagePath": "pages/catSearch/catSearch"
+      },
+      {
+        "text": "小猫书",
+        "pagePath": "pages/index/index"
+      },
+      {
+        "text": "关于",
+        "pagePath": "pages/about/about"
+      },
+      {
+        "text": "我的",
+        "pagePath": "pages/mydetail/mydetail"
+      }
+    ]
+  },
+  "lazyCodeLoading": "requiredComponents"
+}

@@ -1,0 +1,216 @@
+/* 页面顶部是固定搜索栏（.wrapper）、结果列表绝对定位（.result），布局不依赖 page 选择器；
+   不用 page 标签选择器（自定义 tabBar 页会被按组件 lint 误报）。底部占位放在滚动内容 .list-container 内。 */
+
+
+  
+
+
+.page-container {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.navbar{
+  flex: none;
+  display: flex;
+  background: #fff;
+  position: fixed;
+  top: 140rpx;
+  width: 100%;
+  max-width: 720px; /* 宽屏限宽居中 */
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  z-index: 998;
+}
+
+.navbar .item{
+  position: relative;
+  flex: auto;
+  text-align: center;
+  line-height: 80rpx;
+  color: #888888;
+  font-size: 32rpx;
+}
+.navbar .item.active{
+  color: #FF405E;
+}
+.navbar .item.active:after{
+  content: "";
+  display: block;
+  position: absolute;
+  bottom: 0;
+  left: 40rpx;
+  right: 40rpx;
+  height: 4rpx;
+  background: #FF405E;
+  
+}
+
+.white{
+  position: fixed;
+  z-index: 998;
+  background-color: #fff;
+  height: 20rpx;
+  top: 220rpx;
+  width: 100%;
+}
+
+.topItem{
+  position: absolute;
+  top: 260rpx;
+}
+
+.c1{
+  height: 100%;
+  margin-top: 260rpx;
+  max-width: 720px; /* 宽屏内容列居中 */
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.placeholder {
+  color: #888888;
+  caret-color: #7CA698;
+}
+
+.wrapper {
+  height: 140rpx;
+  display: flex;
+  position: fixed;
+  width: 100%;
+  max-width: 720px; /* 宽屏限宽居中 */
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  z-index: 999;
+  top: 0;
+  background-color: #fff;
+  align-items: center;
+}
+
+.circle{
+  width: 15%;
+  height: 90rpx;
+  position: relative;
+}
+
+.container {
+  flex: 1;
+  padding: 20rpx;
+  height: 100%;
+  border-radius: 10rpx;
+  box-sizing: border-box;
+  margin-left: 40rpx;
+  align-items: center;
+}
+
+.search {
+  height: 100%;
+  width: 100%;
+  display: flex; /* 使用 Flexbox 布局 */
+  align-items: center; /* 垂直居中 */
+}
+
+.search input {
+  display: flex;
+  border-radius: 5rpx;
+  font-size: 31rpx;
+  /* justify-content: center; */
+  letter-spacing: 4rpx;
+  height: 80%;
+  width: 100%; /* 确保输入框宽度填满父元素 */
+}
+
+
+.result {
+  position: absolute; /* 添加绝对定位 */
+  top: 140rpx; /* 调整距离search的位置 */
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  width: 88%;
+  max-width: 720px;
+  max-height: 800rpx; /* 调整高度为固定值 */
+  background: #f8f8f8;
+  border: 1rpx solid #ccc;
+  border-radius: 10rpx;
+  box-sizing: border-box;
+  z-index: 999;
+}
+
+.list-container {
+  height: auto; /* 原 500rpx：加上相关推文后会超出，改为随内容增高，由 .result 滚动 */
+  display: block;
+  box-sizing: border-box;
+  padding-bottom: calc(120rpx + env(safe-area-inset-bottom)); /* 底部自定义 tabBar 占位：滚动内容内最后一项不被遮挡 */
+}
+
+.list {
+  /* margin-bottom: 10rpx; */
+  height: 90rpx;
+  padding: 10rpx;
+  font-size: 28rpx;  
+  background: #f8f8f8;
+  /* border-radius: 10rpx; */
+}
+
+.cat-name1{
+  font-size: 32rpx;
+  flex-direction: row;
+  margin-left: 28%;
+  color: #353535;
+  text-align: left;
+  width: 50%;
+  position: relative; 
+  top: -90rpx
+}
+.cat-isSterilization{
+  color: #575757;
+  margin-left: 52%;
+  width: 50%;
+  position: relative;
+  left: 104rpx; 
+  top: -125rpx
+}
+.cat-character{
+  color: #575757;
+  margin-left: 28%;
+  width: 373rpx;
+  height: 30rpx;
+  display: block;
+  box-sizing: border-box;
+  position: relative;
+  left: 0rpx;
+  top: -120rpx
+}
+/* 相关推文：猫行下方小字，与猫名/性格左对齐（margin-left 同 28%） */
+.rel-pages {
+  padding: 0 20rpx 8rpx 28%;
+  box-sizing: border-box;
+}
+.rel-page {
+  font-size: 22rpx;
+  color: #FF405E;
+  line-height: 1.8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rel-page-dot {
+  margin-right: 8rpx;
+}
+.rel-page-title {
+  color: #FF405E;
+}
+
+.auto-resizing-view {
+  min-height: 0; /* 取消最小高度限制 */
+}
+
+/* 页面底部的空白占位块：宽度铺满整行；高度 {{blankHeight}} 由 JS 动态传入，
+   因为高度要随列表内容多少实时变化，所以动态部分必须保留在 WXML 内联 style 中 */
+.blank {
+  width: 100%;
+}

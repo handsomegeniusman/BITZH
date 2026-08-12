@@ -1,0 +1,5 @@
+{
+  "usingComponents": {
+    "topic-editor": "/components/topic-editor/topic-editor"
+  }
+}

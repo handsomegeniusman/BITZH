@@ -1,0 +1,201 @@
+/* pages/addCat/addCat.wxss */
+
+/* 重名提示：名字输入框失焦后查到同名猫时显示 */
+.name-warn {
+  margin: 8rpx 40rpx 4rpx;
+  font-size: 22rpx;
+  color: #FF405E;
+}
+
+/* 恢复上次删除数据提示：名字下方一行小字，说明已把删除存档填回表单 */
+.deleted-restore-tip {
+  margin: 8rpx 40rpx 4rpx;
+  font-size: 22rpx;
+  color: #FF405E;
+}
+
+/* "发现同名删除记录"弹层正文（弹层容器复用删除图片的 .del-mask/.del-modal 样式） */
+.restore-content {
+  font-size: 26rpx;
+  color: #666;
+  line-height: 1.7;
+  margin-bottom: 8rpx;
+}
+
+/* "使用上次数据"按钮：琥珀色（区别于删除的红色） */
+.restore-btn-ok {
+  background: #FF405E;
+  color: #fff;
+}
+
+/* ===================== 图片区：提示文案 + 计数 ===================== */
+.img-tip {
+  font-size: 22rpx;
+  color: #999;
+  padding: 4rpx 20rpx 0;
+}
+.img-count {
+  font-size: 22rpx;
+  color: #999;
+  padding: 0 20rpx 10rpx;
+}
+
+/* ===================== 图片区：横向滚动轨道 ===================== */
+.image-swiper {
+  overflow-x: scroll;
+  overflow-y: hidden;
+  padding: 10px 0;
+  height: 226px; /* 图 180px + 工具行 30px + 留白 */
+}
+.image-track {
+  position: relative;
+  height: 226px;
+}
+.image-item {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 180px;
+  text-align: center;
+  will-change: transform;
+}
+.item-img-box {
+  position: relative;
+  width: 180px;
+  height: 180px;
+  background: #f3f3f3;
+}
+.item-image {
+  width: 100%;
+  height: 100%;
+}
+
+/* 封面角标：挂在第一张图上，拖拽排序后自动跟随 */
+.cover-badge {
+  position: absolute;
+  left: 8rpx;
+  top: 8rpx;
+  z-index: 5;
+  padding: 2rpx 12rpx;
+  border-radius: 8rpx;
+  background: rgba(255, 80, 60, 0.9);
+  color: #fff;
+  font-size: 20rpx;
+  line-height: 1.5;
+}
+
+/* 每张图下方的小工具行：设封面 / 删除角标 */
+.item-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 30px;
+  padding: 2rpx 6rpx;
+  box-sizing: border-box;
+}
+.tool-btn {
+  font-size: 22rpx;
+  color: #888;
+  padding: 0 4rpx;
+}
+.tool-btn.on {
+  color: #FF405E;
+}
+.delete-icon {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  padding: 4rpx;
+}
+
+/* ===================== 删除图片确认弹窗 ===================== */
+.del-mask {
+  position: fixed;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.del-modal {
+  width: 560rpx;
+  box-sizing: border-box;
+  padding: 36rpx 32rpx 28rpx;
+  background: #fff;
+  border-radius: 16rpx;
+}
+.del-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  text-align: center;
+  margin-bottom: 24rpx;
+}
+.del-option {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 30rpx;
+}
+.del-check {
+  font-size: 32rpx;
+  color: #ccc;
+  margin-right: 8rpx;
+}
+.del-check.on {
+  color: #FF405E;
+}
+.del-option-text {
+  font-size: 26rpx;
+  color: #666;
+}
+.del-btns {
+  display: flex;
+  justify-content: space-between;
+}
+.del-btn {
+  width: 220rpx;
+  margin: 0;
+  font-size: 28rpx;
+  border-radius: 8rpx;
+}
+.del-btn.cancel {
+  background: #f2f2f2;
+  color: #333;
+}
+.del-btn.ok {
+  background: #fa5151;
+  color: #fff;
+}
+
+/* ===================== 吸底按钮条 ===================== */
+.bottom-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  padding: 14rpx 24rpx;
+  padding-bottom: calc(14rpx + env(safe-area-inset-bottom));
+  background: #fff;
+  box-shadow: 0 -2rpx 10rpx rgba(0, 0, 0, 0.06);
+}
+.bar-btn {
+  flex: 1;
+  margin: 0 12rpx;
+  font-size: 30rpx;
+}
+/* 页面底部留白：随吸底条高度（含底部安全区）计算，避免遮挡表单最后一项 */
+.bottom-pad {
+  height: calc(160rpx + env(safe-area-inset-bottom));
+}
+
+/* "确定提交"按钮：清除按钮自带的默认外边距 */
+.reset-margin {
+  margin: 0;
+}

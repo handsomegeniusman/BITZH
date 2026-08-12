@@ -1,0 +1,31 @@
+<view class="container1">
+    <view class="title">公告管理
+  </view>
+  <button bindtap="addNotice" class="btn_add">新增</button>
+  <view wx:if="{{order}}" bindtap='inOrder' class="order">创建时间倒序</view>
+  <view wx:else="" bindtap='inOrder' class="order">创建时间正序</view>
+  <scroll-view class="announcementlist" scroll-y="true">
+    <view wx:for="{{announcementList}}" wx:key="_id">
+      <text> \n </text>
+      <view class="name">{{item.noticeName}}</view>
+      <view class="status">
+          <switch checked="{{item.status}}" bindchange="onSwitchChange" data-index="{{index}}" data-_id="{{item._id}}" class="switch" color="#0469fd"></switch>
+          <button bindtap="changeNotice" data-_id="{{item._id}}" data-noticename="{{item.noticeName}}" data-notice="{{item.notice}}" class="btn_change">修改</button>
+      </view>
+      <view class="list-container">
+           <text decode="{{true}}">&emsp;&emsp;{{item.notice}}</text>
+       </view>
+    </view>
+  </scroll-view>
+</view>
+<view id="modal" class="modal" hidden="{{!isModalVisible}}" bindtap="onModalBackgroundTap">
+    <view class="modal-content">
+        <view class="picker-wrapper">
+                  <text class="label">公告名：</text>
+                  <input class="other-input other-input-height" type="text" placeholder="请输入公告名" bindinput="onNameInput" value="{{noticeName}}"/>
+                  <text class="label">公告：</text>
+                  <input class="other-input other-input-height" type="text" placeholder="请输入公告内容" bindinput="onNoticeInput" value="{{notice}}"/>
+        </view>
+        <button class="confirm-btn" bindtap="confirmSelection">确认</button>
+    </view>
+</view>

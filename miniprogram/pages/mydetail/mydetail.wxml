@@ -1,0 +1,63 @@
+<import src="../templates/common.wxml"/>
+
+<view wx:if="{{blackNum}}">
+  <template is="blackNumPopup" data="{{popupAnimation}}"/>
+</view>
+<view wx:else class="mydetail-root">
+  <view wx:if="{{audit}}">
+    <view wx:if="{{!isFeeder}}">
+      <view class="btn_regist">
+        <button class="my-button2"  bindtap="editMessage">注册用户资料</button>
+      </view>
+    </view>
+    <view wx:if="{{isFeeder}}">
+      <view class="user-info" bindtap="editMessage">
+        <image class="avatar" lazy-load="true" src="{{displayAvatarUrl}}" />
+        <text class="nick-name">{{displayNickName}}</text>
+      </view>
+    </view>
+  </view>
+  <view class="navbar" bindtouchstart="onPageTap">
+    <text wx:for="{{navbar}}" data-idx="{{index}}" class="item {{currentTab==index ? 'active' : ''}}" wx:key="*this" bindtap="navbarTap">{{item}}</text>
+  </view>
+
+  <text> \n </text>
+
+  <!-- 历史：我发布且仍存在的帖子。统一样式卡片（大图 + 标题 + 编辑按钮）。
+       单击卡片像小猫书一样查看详情；长按卡片或点「编辑」按钮进编辑页修改 -->
+  <view hidden="{{currentTab!==0}}" bindtouchstart="onPageTap" class="c1">
+    <scroll-view class="history-list" scroll-y="true" bindscrolltolower="loadMoreMyPosts">
+      <view wx:if="{{myPosts.length == 0}}" class="empty-tip">还没有发布过帖子</view>
+      <block wx:for="{{myPosts}}" wx:for-item="item" wx:key="_id">
+        <view class="list-card" data-id="{{item._id}}" bindtap="toBookletDetail" bindlongpress="toEditPost">
+          <image class="list-pic" lazy-load="true" src="{{item.picUrl}}" mode="widthFix" />
+          <view class="list-title-row">
+            <text class="list-title">{{item.tittle}}</text>
+            <text class="list-edit" data-id="{{item._id}}" catchtap="toEditPost">编辑</text>
+          </view>
+          <text class="list-meta">{{item.meta}}</text>
+        </view>
+      </block>
+    </scroll-view>
+  </view>
+
+  <!-- 回收站：我删除过的帖子（与历史分栏统一样式）。单击卡片进 bookletDetail 回收站
+       预览（只读展示被删内容）；长按或点「编辑」按钮进恢复模式编辑页 -->
+  <view hidden="{{currentTab!==1}}" bindtouchstart="onPageTap" class="c1">
+    <scroll-view class="history-list" scroll-y="true" bindscrolltolower="loadMoreTrash">
+      <view wx:if="{{trashList.length == 0}}" class="empty-tip">回收站是空的</view>
+      <block wx:for="{{trashList}}" wx:for-item="item" wx:key="_id">
+        <view class="list-card" data-id="{{item._id}}" bindtap="toRecoverPreview" bindlongpress="toRecoverPost">
+          <image wx:if="{{item.picUrl}}" class="list-pic" lazy-load="true" src="{{item.picUrl}}" mode="widthFix" />
+          <view wx:else class="list-pic list-pic-empty">无照片存档</view>
+          <view class="list-title-row">
+            <text class="list-title">{{item.tittle}}</text>
+            <text class="list-edit" data-id="{{item._id}}" catchtap="toRecoverPost">编辑</text>
+          </view>
+          <text class="list-meta">{{item.meta}}</text>
+        </view>
+      </block>
+    </scroll-view>
+  </view>
+
+</view>

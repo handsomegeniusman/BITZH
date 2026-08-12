@@ -1,0 +1,289 @@
+<import src="../templates/common.wxml"/>
+<view class="container1">
+  <view class="image-container">
+    <!-- 高度 {{height}} 由 JS 动态控制，必须保留内联样式；其余静态样式见 .detail-swiper -->
+    <swiper
+    data-_id="{{ cat._id }}"
+    bindchange="bindChange"
+    circular="true"
+    indicator-dots="{{ true }}"
+    indicator-color="#ffffff"
+    indicator-active-color="#000000"
+    current="{{parseInt(currentImageIndex)}}"
+    class="detail-swiper"
+    style="height: {{height}}"
+    animation="{{animationData}}"
+    >
+
+    <block wx:for="{{photoArray}}" wx:key="*this">
+        <swiper-item>
+          <image
+            lazy-load="true"
+            src="{{imageUrls[index]}}"
+            data-_id="{{ cat._id }}"
+            data-index="{{index}}"
+            bindlongpress="editCat"
+            binderror="onSwiperImgError"
+            mode="aspectFit"
+            bindtap="previewImageHandler"
+            class="swiper-item-image">
+          </image>
+          <view class="showNum">
+    <text class="show-num-text">{{index+1}}/{{photoNum+1}}</text>
+  </view>
+        </swiper-item>
+      </block>
+  </swiper>
+  </view>
+</view>
+
+
+
+<view class="parent-view">
+
+      <view class="itemname1 itemname-box">
+        <view class="detail-label-wrap">
+          <view class="cat-card cat-detail-name">{{ cat.name }}</view>
+        </view>
+          <view class="name-spacer"></view>
+      </view>
+      
+</view>
+
+<view class="itemname1">
+  <view class="status-container">
+    <!-- 状态标签的背景色 {{bgcolor}} 由 JS 动态控制，必须保留内联样式 -->
+    <view wx:if="{{cat.status || cat.isSterilization}}" class="status-item" style="background-color: {{bgcolor}};">
+      <view class="status-item-label">{{cat.status}}</view>
+    </view>
+    <!-- 绝育标签的背景色 {{bgcolor1}} 由 JS 动态控制，必须保留内联样式 -->
+    <view wx:if="{{cat.isSterilization}}" class="status-item sterilizationStatus" style="background-color: {{bgcolor1}};">
+      <view class="status-item-label">{{cat.isSterilization}}</view>
+    </view>
+    <view class="status-spacer">
+    </view>
+  </view>
+  
+
+  <view wx:if="{{cat.furColor}}" class="flex-wrp">
+    <view class="detail-label-wrap">
+      <text user-select="true">毛色</text>
+    </view>
+    <view class="itemname2">
+      <text user-select="true">{{cat.furColor}}</text>
+    </view>
+  </view>
+  <view wx:if="{{showDetail}}">
+    <view wx:if="{{cat.gender}}" class="flex-wrp">
+      <view class="detail-label-wrap">
+        <text user-select="true">性别</text>
+      </view>
+      <view class="itemname2">
+        <text user-select="true">{{cat.gender}}</text>
+      </view>
+    </view>
+  </view>
+  <view wx:if="{{showDetail}}">
+    <view wx:if="{{cat.sterilizationTime}}" class="flex-wrp">
+      <view class="detail-label-wrap">
+        <text user-select="true">绝育时间</text>
+      </view>
+      <view class="itemname2">
+        <text user-select="true">{{cat.sterilizationTime}}</text>
+      </view>
+    </view>
+  </view>
+  <view wx:if="{{showDetail}}">
+    <view wx:if="{{cat.birthTime}}" class="flex-wrp">
+      <view class="detail-label-wrap">
+        <text user-select="true">出生时间</text>
+      </view>
+      <view class="itemname2">
+        <text user-select="true">{{cat.birthTime}}</text>
+      </view>
+    </view>
+  </view>
+  <view wx:if="{{cat.location}}" class="flex-wrp">
+    <view class="detail-label-wrap">
+      <text user-select="true">出没地点</text>
+    </view>
+    <view class="itemname2">
+      <text user-select="true">{{cat.location}}</text>
+    </view>
+  </view>
+  <view wx:if="{{cat.character}}" class="flex-wrp">
+    <view class="detail-label-wrap">
+      <text user-select="true">性格</text>
+    </view>
+    <view class="itemname2">
+      <text user-select="true">{{cat.character}}</text>
+    </view>
+  </view>
+  <view wx:if="{{showDetail}}">
+    <view wx:if="{{cat.firstSightingTime}}" class="flex-wrp">
+      <view class="detail-label-wrap">
+        <text user-select="true">第一次目击时间</text>
+      </view>
+      <view class="itemname2">
+        <text user-select="true">{{cat.firstSightingTime}}</text>
+      </view>
+    </view>
+  </view>
+  <view wx:if="{{showDetail}}">
+    <view wx:if="{{cat.missingTime}}" class="flex-wrp">
+      <view class="detail-label-wrap">
+        <text user-select="true">失踪时间</text>
+      </view>
+      <view class="itemname2">
+        <text user-select="true">{{cat.missingTime}}</text>
+      </view>
+    </view>
+  </view>
+  <view wx:if="{{showDetail}}">
+    <view wx:if="{{cat.deliveryTime}}" class="flex-wrp">
+      <view class="detail-label-wrap">
+        <text user-select="true">送养时间</text>
+      </view>
+      <view class="itemname2">
+        <text user-select="true">{{cat.deliveryTime}}</text>
+      </view>
+    </view>
+  </view>
+  <view wx:if="{{showDetail}}">
+    <view wx:if="{{cat.deathTime}}" class="flex-wrp">
+      <view class="detail-label-wrap">
+        <text user-select="true">离世时间</text>
+      </view>
+      <view class="itemname2">
+        <text user-select="true">{{cat.deathTime}}</text>
+      </view>
+    </view>
+  </view>
+  <view wx:if="{{showDetail}}">
+    <view wx:if="{{cat.appearance}}" class="flex-wrp">
+      <view class="detail-label-wrap">
+        <text user-select="true">外貌</text>
+      </view>
+      <view class="itemname2">
+        <text user-select="true">{{cat.appearance}}</text>
+      </view>
+    </view>
+  </view>
+  <view wx:if="{{showDetail}}">
+    <view wx:if="{{cat.namereason}}" class="flex-wrp">
+      <view class="detail-label-wrap">
+        <text user-select="true">名字来源</text>
+      </view>
+      <view class="itemname2">
+        <text user-select="true">{{cat.namereason}}</text>
+      </view>
+    </view>
+  </view>
+  <view wx:if="{{cat.moreInformation}}" class="flex-wrp">
+    <view class="detail-label-wrap">
+      <text user-select="true">更多</text>
+    </view>
+    <view class="itemname2">
+      <text user-select="true">{{cat.moreInformation}}</text>
+    </view>
+  </view>
+  <view wx:if="{{showDetail}}">
+    <view wx:if="{{cat.relationship}}" class="flex-wrp">
+      <view class="detail-label-wrap">
+        <text user-select="true">关系</text>
+      </view>
+      <view class="itemname2">
+        <text user-select="true">{{cat.relationship}}</text>
+      </view>
+    </view>
+  </view>
+</view>
+
+<view wx:if="{{showDetail}}">
+  <view wx:if="{{relatedCatsId}}" class="itemname3">
+    <scroll-view class="itemname3" scroll-x="true" enable-flex>
+      <view wx:for="{{relatedCatsId}}" wx:key="_id" data-_id="{{item._id}}" bindlongpress="editCat" class="related-cat-item">
+        <navigator url="/pages/catDetail/catDetail?_id={{item._id}}">
+          <view class="related-cat-avatar-wrap" data-_id="{{item._id}}">
+            <image lazy-load="true" class="related-cat-avatar" src="{{item._thumbFallback == 1 ? item._thumbJpg : (item._thumbFallback > 1 ? '/pages/images/logo.png' : item._thumbUrl)}}" binderror="onCatImgError" data-list="relatedCatsId" data-index="{{index}}"></image>
+          </view>
+          <view class="related-cat-name">{{item.name}}</view>
+          <view class="relation">{{relationMap[item.name]}}</view>
+        </navigator>
+      </view>
+    </scroll-view>
+  </view>
+</view>
+
+
+<view wx:if="{{showDetail}}">
+
+  <view class="showDetail_btn" bindtap="showDetail">
+    <view >隐藏详细信息</view>
+    <view class="arrow up"></view>
+  </view>
+  
+</view>
+<view wx:else>
+  <view class="showDetail_btn" bindtap="showDetail">
+    <view >显示详细信息</view>
+    <view class="arrow down"></view>
+  </view>
+</view>
+
+
+<view wx:if="{{listData.length}}">
+  <picker mode="multiSelector" bindchange="bindMultiPickerChange" value="{{multiIndex}}" range="{{multiArray}}">
+    <view class="detail-picker">
+      {{multiArray[0][multiIndex[0]]}}-{{multiArray[1][multiIndex[1]]}}
+    </view>
+  </picker>
+</view>
+
+<!-- 相关话题：聚合本猫出现在哪些推文话题里，带热度计数（有多少篇同标题文章）。
+     点胶囊多选，选中后在本页内联展示这些话题的文章（不跳页）。
+     个别猫话题过多 → 默认只显示前 8 个，可展开全部；真实猫名话题前加 🐱 猫头标识 -->
+<view wx:if="{{relatedTopics.length}}" class="topic-section">
+  <view class="topic-section-title">相关话题<text wx:if="{{selectedTopics.length}}" class="topic-section-selected">已选 {{selectedTopics.length}} 项</text></view>
+  <view class="topic-tags">
+    <view
+      wx:for="{{relatedTopicsShow}}"
+      wx:key="name"
+      class="topic-chip {{item.isCat ? 'topic-chip-cat' : ''}} {{topicSelectedMap[item.name] ? 'topic-chip-selected' : ''}}"
+      bindtap="toggleTopic"
+      data-name="{{item.name}}"
+    >
+      <text wx:if="{{item.isCat}}" class="topic-cat-icon">🐱</text>#{{item.name}}
+      <text class="topic-count">{{item.count}}</text>
+    </view>
+  </view>
+  <view wx:if="{{relatedTopics.length > 8}}" class="topic-toggle" bindtap="toggleTopics">{{topicsExpanded ? '收起' : '展开全部（' + relatedTopics.length + '）'}}</view>
+</view>
+
+<!-- 选中话题的文章：内联展示在详情页，不跳转。多选 = 多个话题的文章合并展示 -->
+<view wx:if="{{selectedTopics.length}}" class="topic-articles">
+  <view class="topic-articles-head">
+    <view class="topic-articles-title">已选话题的文章</view>
+    <view class="topic-articles-clear" bindtap="clearTopicFilter">清除选择</view>
+  </view>
+  <view wx:if="{{topicArticlesLoading}}" class="topic-articles-loading">加载中...</view>
+  <block wx:elif="{{topicArticles.length}}">
+    <view wx:for="{{topicArticles}}" wx:key="_id" class="topic-article-item">
+      <template is="pageCard" data="{{item, urlPage, showTime: true}}"></template>
+    </view>
+  </block>
+  <view wx:else class="topic-articles-empty">所选话题下暂无更多文章</view>
+</view>
+
+<view class="content">
+  <view class="left">
+    <block wx:for="{{listData}}" wx:key="_id" wx:for-item="item">
+      <template is="pageCard" data="{{item, urlPage, showTime: false}}" wx:if="{{index%2==0}}"></template>
+    </block>
+  </view>
+  <view class="right">
+    <block wx:for="{{listData}}" wx:key="_id" wx:for-item="item">
+      <template is="pageCard" data="{{item, urlPage, showTime: false}}" wx:if="{{index%2==1}}"></template>
+    </block>
+  </view>
+</view>

@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "@alicloud/mpserverless-sdk": "^3.1.1",
+    "cos-wx-sdk-v5": "^1.4.12"
+  }
+}

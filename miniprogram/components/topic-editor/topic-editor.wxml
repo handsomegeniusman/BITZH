@@ -1,0 +1,51 @@
+<!-- ============================================================
+     话题编辑器：chips + 输入框 + 建议下拉
+     （无需打 #，点「添加」按钮 / 点下方建议 / 按回车 都可生成标签）
+     建议行的「添加」用 touch 级兜底：键盘收起时 tap 可能被系统吃掉，
+     由 touchstart 记录意图 + blur 定时兜底，保证第一次点击就生效。
+============================================================ -->
+<view class="te-wrap">
+  <!-- 引导文案：告诉用户话题是什么、怎么加、可以点 -->
+  <view class="te-guide">话题 = 小猫名字或任意关键词；输入后点右侧「添加」按钮，或点下方建议、按回车生成。点击推文或猫页上的话题可跳转查看。</view>
+
+  <view class="te-box">
+    <view class="te-chips">
+      <view class="te-chip" wx:for="{{topics}}" wx:key="*this">
+        <text class="te-chip-text">#{{item}}</text>
+        <text class="te-chip-del" catchtap="removeTopic" data-index="{{index}}">×</text>
+      </view>
+      <input
+        class="te-input {{topics.length ? 'te-input-inline' : ''}}"
+        value="{{input}}"
+        bindinput="onInput"
+        bindconfirm="onConfirm"
+        bindblur="onBlur"
+        confirm-type="done"
+        placeholder="{{topics.length ? '继续输入' : '输入话题，如：小白 / 猫粮'}}"
+      />
+      <!-- 显式「添加」按钮：中文输入法的候选词会抢占空格键，
+           给用户一个不依赖空格/回车、一看就懂的添加方式 -->
+      <view class="te-add-btn" wx:if="{{input}}" catchtap="flush">添加</view>
+    </view>
+
+    <!-- 建议下拉：点选即加 chip（每行用 catchtouchstart 记录意图，
+         避免输入框失焦时 tap 被键盘收起吃掉 → "点击添加无反应"） -->
+    <view class="te-suggest" wx:if="{{showSuggest}}">
+      <block wx:if="{{suggestions.length}}">
+        <view
+          class="te-suggest-item"
+          wx:for="{{suggestions}}"
+          wx:key="*this"
+          data-item="{{item}}"
+          catchtouchstart="onItemTouchStart"
+          catchtouchcancel="onItemTouchCancel"
+          bindtap="tapSuggestion"
+        >
+          <text class="te-suggest-name">{{item}}</text>
+          <text class="te-suggest-add">添加</text>
+        </view>
+      </block>
+      <view wx:elif="{{suggestDone}}" class="te-suggest-empty">没有匹配，输入任意文字即可当作话题</view>
+    </view>
+  </view>
+</view>

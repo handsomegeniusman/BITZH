@@ -1,0 +1,235 @@
+<view class="img-tip">{{imgTip}}</view>
+<scroll-view class="image-swiper" scroll-x="{{!drag.active}}" scroll-y="false">
+  <view class="image-track" style="width: {{(tempFileList.length + 1) * drag.step}}px">
+    <!-- 每张图片：绝对定位，靠 translateX 排位；长按进入拖拽后跟手、邻居带动画让位 -->
+    <view
+      class="image-item"
+      wx:for="{{tempFileList}}"
+      wx:key="tempFilePath"
+      data-index="{{index}}"
+      style="transform: translateX({{index * drag.step + (index === drag.index ? drag.offsetX : 0)}}px){{index === drag.index && drag.active ? ' scale(1.06)' : ''}}; transition: {{drag.active && index === drag.index ? 'none' : 'transform .2s ease'}}; z-index: {{index === drag.index ? 99 : 1}};{{index === drag.index && drag.active ? ' opacity:.85' : ''}}"
+      bindtouchstart="onImgTouchStart"
+      bindtouchmove="onImgTouchMove"
+      bindtouchend="onImgTouchEnd"
+      bindtouchcancel="onImgTouchEnd"
+      bindtap="onImgTap"
+    >
+      <view class="item-img-box">
+        <image class="item-image" src="{{item.tempFilePath}}" mode="aspectFit"/>
+        <view class="cover-badge" wx:if="{{index === 0}}">封面</view>
+      </view>
+      <view class="item-tools">
+        <text wx:if="{{index > 0}}" class="tool-btn" catchtap="onSetCover" data-tool="1" data-index="{{index}}">☆ 设封面</text>
+        <text wx:else class="tool-btn on">★ 封面</text>
+        <image class="delete-icon" src="/pages/images/delete.jpg" catchtap="onDelete" data-tool="1" data-index="{{index}}" mode=""/>
+      </view>
+    </view>
+    <!-- 末尾"+"新增位：只响应点击，不参与拖拽/预览 -->
+    <view class="image-item add-item" style="transform: translateX({{tempFileList.length * drag.step}}px)" bindtap="getphoto">
+      <view class="item-img-box">
+        <image class="item-image" src="/pages/images/addPhoto.png" mode="aspectFit"/>
+      </view>
+    </view>
+  </view>
+</scroll-view>
+<view class="img-count">已选 {{tempFileList.length}} 张</view>
+
+<view class="head1">
+  <text user-select="true">名字</text>
+</view>
+<input data-key='name' bindinput="inputText" bindblur="onNameBlur" class="edit-input" value="{{cat.name}}" />
+<view class="name-warn" wx:if="{{nameDuplicate}}">{{nameDuplicate}}</view>
+<view class="deleted-restore-tip" wx:if="{{deletedRestoreTip}}">{{deletedRestoreTip}}</view>
+
+<view class="head1">
+  <text user-select="true">外貌</text>
+</view>
+<input data-key='appearance' bindinput="inputText" class="edit-input" value="{{cat.appearance}}" />
+
+<view class="head1">
+  <text user-select="true">毛色分类</text>
+</view>
+<picker mode="selector" data-key='classification' bindchange="bindPickerChange" range="{{pickers.classification}}" value='{{picker_selected.classification}}'>
+  <view class="edit-input">
+    {{cat.classification}}
+  </view>
+</picker>
+
+<view class="head1">
+  <text user-select="true">毛色</text>
+</view>
+<input data-key='furColor' bindinput="inputText" class="edit-input" value="{{cat.furColor}}" />
+
+<view class="head1">
+  <text user-select="true">性别</text>
+</view>
+<picker mode="selector" data-key='gender' bindchange="bindPickerChange" range="{{pickers.gender}}" value='{{picker_selected.gender}}'>
+  <view class="edit-input">
+    {{cat.gender}}
+  </view>
+</picker>
+
+<view class="head1">
+  <text user-select="true">下方加图片数</text>
+</view>
+<picker mode="selector" data-key='addPhotoNumber' bindchange="bindPickerChange" range="{{pickers.addPhotoNumber}}" value='{{picker_selected.addPhotoNumber}}'>
+  <view class="edit-input">
+    {{cat.addPhotoNumber}}
+  </view>
+</picker>
+
+<view class="head1">
+  <text user-select="true">状况</text>
+</view>
+<picker mode="selector" data-key='status' bindchange="bindPickerChange" range="{{pickers.status}}">
+  <view class="edit-input">
+    {{cat.status}}
+  </view>
+</picker>
+
+<view class="head1">
+  <text user-select="true">绝育情况</text>
+</view>
+<picker mode="selector" data-key='isSterilization' bindchange="bindPickerChange" range="{{pickers.isSterilization}}" value='{{picker_selected.isSterilization}}'>
+  <view class="edit-input">
+    {{cat.isSterilization}}
+  </view>
+</picker>
+
+<view class="head1">
+  <text user-select="true">绝育时间</text>
+</view>
+<picker mode="date" data-key='sterilizationTime' bindchange="bindDateChange" value='{{cat.sterilizationTime}}'>
+  <view class="edit-input">
+    {{cat.sterilizationTime}}
+  </view>
+</picker>
+
+<view class="head1">
+  <text user-select="true">出没地点</text>
+</view>
+<input data-key='location' bindinput="inputText" class="edit-input" value="{{cat.location}}" />
+
+<view class="head1">
+  <text user-select="true">出生时间</text>
+</view>
+<input data-key='birthTime' bindinput="inputText" class="edit-input" value="{{cat.birthTime}}" />
+
+<view class="head1">
+  <text user-select="true">性格</text>
+</view>
+<picker mode="selector" data-key='character' bindchange="bindPickerChange" range="{{pickers.character}}" value='{{picker_selected.character}}'>
+  <view class="edit-input">
+    {{cat.character}}
+  </view>
+</picker>
+
+<view class="head1">
+  <text user-select="true">第一次目击时间</text>
+</view>
+<input data-key='firstSightingTime' bindinput="inputText" class="edit-input" value="{{cat.firstSightingTime}}" />
+
+<view class="head1">
+  <text user-select="true">第一次目击地点</text>
+</view>
+<input data-key='firstSightingLocation' bindinput="inputText" class="edit-input" value="{{cat.firstSightingLocation}}" />
+
+<view class="head1">
+  <text user-select="true">失踪时间</text>
+</view>
+<picker mode="date" fields="month" data-key='missingTime' bindchange="bindDateChange" value='{{cat.missingTime}}'>
+  <view class="edit-input">
+    {{cat.missingTime}}
+  </view>
+</picker>
+
+<view class="head1">
+  <text user-select="true">送养时间</text>
+</view>
+<picker mode="date" fields="month" data-key='deliveryTime' bindchange="bindDateChange" value='{{cat.deliveryTime}}'>
+  <view class="edit-input">
+    {{cat.deliveryTime}}
+  </view>
+</picker>
+
+<view class="head1">
+  <text user-select="true">离世时间</text>
+</view>
+<picker mode="date" fields="month" data-key='deathTime' bindchange="bindDateChange" value='{{cat.deathTime}}'>
+  <view class="edit-input">
+    {{cat.deathTime}}
+  </view>
+</picker>
+
+<view class="head1">
+  <text user-select="true">离世原因</text>
+</view>
+<input data-key='deathReason' bindinput="inputText" class="edit-input" value="{{cat.deathReason}}" />
+
+<view class="head1">
+  <text user-select="true">名字来源</text>
+</view>
+<input data-key='namereason' bindinput="inputText" class="edit-input" value="{{cat.namereason}}" />
+
+<view class="head1">
+  <text user-select="true">更多</text>
+</view>
+<input data-key='moreInformation' bindinput="inputText" class="edit-input" value="{{cat.moreInformation}}" />
+
+<view class="head1">
+  <text user-select="true">关系</text>
+</view>
+<input data-key='relationship' bindinput="inputText" class="edit-input" value="{{cat.relationship}}" />
+
+<view class="head1">
+  <text user-select="true">相关猫咪关系</text>
+</view>
+<relation-editor
+  value="{{relationList}}"
+  cat-name="{{cat.name}}"
+  cat-gender="{{cat.gender}}"
+  bind:change="onRelationChange"
+/>
+
+<view class="head1">
+  <text user-select="true">搜索关键词（不用填写）</text>
+  <text> \n </text>
+</view>
+<text class="edit-input1">{{cat.nickname}}</text>
+
+<view class="bottom-pad"></view>
+
+<!-- 删除图片确认弹窗（勾选"下次不再询问"后直接删，不再弹窗） -->
+<view class="del-mask" wx:if="{{delModal.show}}" catchtouchmove="noop" bindtap="delCancel">
+  <view class="del-modal" catchtap="noop">
+    <view class="del-title">删除这张图片？</view>
+    <view class="del-option" catchtap="toggleNoAsk">
+      <text class="del-check {{delModal.noAsk ? 'on' : ''}}">{{delModal.noAsk ? '☑' : '☐'}}</text>
+      <text class="del-option-text">下次不再询问</text>
+    </view>
+    <view class="del-btns">
+      <button class="del-btn cancel" bindtap="delCancel">取消</button>
+      <button class="del-btn ok" bindtap="delConfirm">删除</button>
+    </view>
+  </view>
+</view>
+
+<!-- 发现同名删除记录：询问是否用上次删除的数据（自定义弹层，不用 wx.showModal，避开 bindblur 弹窗被吞） -->
+<view class="del-mask" wx:if="{{deletedAsk.show}}" catchtouchmove="noop" bindtap="hideDeletedAsk">
+  <view class="del-modal" catchtap="noop">
+    <view class="del-title">发现同名删除记录</view>
+    <view class="restore-content">「{{deletedAsk.name}}」曾在 {{deletedAsk.time}} 被删除</view>
+    <view class="restore-content">是否将上次删除的数据填入表单？</view>
+    <!-- hasPhotos：存档里带了"当时的照片清单"，确认后会连照片一起填回图片区 -->
+    <view class="restore-content" wx:if="{{deletedAsk.hasPhotos}}">含当时照片，将一并填回图片区</view>
+    <view class="del-btns">
+      <button class="del-btn cancel" bindtap="hideDeletedAsk">忽略</button>
+      <button class="del-btn restore-btn-ok" bindtap="confirmDeletedAsk">使用上次数据</button>
+    </view>
+  </view>
+</view>
+
+<!-- 吸底按钮条：确定提交 -->
+<view class="bottom-bar">
+  <button class="bar-btn primary reset-margin" bindtap="upload">确定提交</button>
+</view>

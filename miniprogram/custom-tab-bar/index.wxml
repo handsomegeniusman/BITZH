@@ -1,0 +1,19 @@
+<!-- 自定义底部导航：4 tab + 中间凸起加号。
+     加号用 catchtap 拦截，不参与 switchTab；点击进入发帖页。 -->
+<view class="tab-bar">
+  <view class="tab-bar-item" data-path="/pages/catSearch/catSearch" bindtap="switchTab">
+    <view class="tab-text {{selected === 0 ? 'active' : ''}}">查猫</view>
+  </view>
+  <view class="tab-bar-item" data-path="/pages/index/index" bindtap="switchTab">
+    <view class="tab-text {{selected === 1 ? 'active' : ''}}">小猫书</view>
+  </view>
+  <view class="tab-bar-center" catchtap="addPost">
+    <view class="add-btn">＋</view>
+  </view>
+  <view class="tab-bar-item" data-path="/pages/about/about" bindtap="switchTab">
+    <view class="tab-text {{selected === 2 ? 'active' : ''}}">关于</view>
+  </view>
+  <view class="tab-bar-item" data-path="/pages/mydetail/mydetail" bindtap="switchTab">
+    <view class="tab-text {{selected === 3 ? 'active' : ''}}">我的</view>
+  </view>
+</view>

@@ -1,0 +1,9 @@
+{
+  "name": "get-cos-sts",
+  "version": "1.0.0",
+  "description": "签发腾讯云 COS 临时密钥（STS）的 MPServerless 云函数",
+  "main": "index.js",
+  "dependencies": {
+    "qcloud-cos-sts": "^3.1.3"
+  }
+}

@@ -1,0 +1,354 @@
+/* pages/editCat/editCat.wxss */
+
+/* 重名提示：名字输入框失焦后查到同名猫时显示 */
+.name-warn {
+  margin: 8rpx 40rpx 4rpx;
+  font-size: 22rpx;
+  color: #FF405E;
+}
+
+/* ===================== 图片区：提示文案 + 计数 ===================== */
+.img-tip {
+  font-size: 22rpx;
+  color: #999;
+  padding: 4rpx 20rpx 0;
+}
+.img-count {
+  font-size: 22rpx;
+  color: #999;
+  padding: 0 20rpx 10rpx;
+}
+
+/* ===================== 图片区：横向滚动轨道 ===================== */
+/* 轨道宽 = (图片数+1)*step，在 WXML 内联 style 计算；子项全部绝对定位靠 translateX 排位 */
+.image-swiper {
+  overflow-x: scroll;
+  overflow-y: hidden;
+  padding: 10px 0;
+  height: 226px; /* 图 180px + 工具行 30px + 留白 */
+}
+.image-track {
+  position: relative;
+  height: 226px;
+}
+.image-item {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 180px;
+  text-align: center;
+  will-change: transform;
+}
+.item-img-box {
+  position: relative;
+  width: 180px;
+  height: 180px;
+  background: #f3f3f3;
+}
+.item-image {
+  width: 100%;
+  height: 100%;
+}
+
+/* 封面角标：挂在第一张图上，拖拽排序后自动跟随 */
+.cover-badge {
+  position: absolute;
+  left: 8rpx;
+  top: 8rpx;
+  z-index: 5;
+  padding: 2rpx 12rpx;
+  border-radius: 8rpx;
+  background: rgba(255, 80, 60, 0.9);
+  color: #fff;
+  font-size: 20rpx;
+  line-height: 1.5;
+}
+
+/* 每张图下方的小工具行：设封面 / 删除角标 */
+.item-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 30px;
+  padding: 2rpx 6rpx;
+  box-sizing: border-box;
+}
+.tool-btn {
+  font-size: 22rpx;
+  color: #888;
+  padding: 0 4rpx;
+}
+.tool-btn.on {
+  color: #FF405E;
+}
+.delete-icon {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  padding: 4rpx;
+}
+
+/* ===================== 删除图片确认弹窗 ===================== */
+.del-mask {
+  position: fixed;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.del-modal {
+  width: 560rpx;
+  box-sizing: border-box;
+  padding: 36rpx 32rpx 28rpx;
+  background: #fff;
+  border-radius: 16rpx;
+}
+.del-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  text-align: center;
+  margin-bottom: 24rpx;
+}
+.del-option {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 30rpx;
+}
+.del-check {
+  font-size: 32rpx;
+  color: #ccc;
+  margin-right: 8rpx;
+}
+.del-check.on {
+  color: #FF405E;
+}
+.del-option-text {
+  font-size: 26rpx;
+  color: #666;
+}
+.del-btns {
+  display: flex;
+  justify-content: space-between;
+}
+.del-btn {
+  width: 220rpx;
+  margin: 0;
+  font-size: 28rpx;
+  border-radius: 8rpx;
+}
+.del-btn.cancel {
+  background: #f2f2f2;
+  color: #333;
+}
+.del-btn.ok {
+  background: #fa5151;
+  color: #fff;
+}
+
+/* ===================== 历史照片弹层 ===================== */
+.history-btn {
+  margin: 0 0 20rpx;
+  font-size: 28rpx;
+  color: #FF405E;
+  background: #fff;
+  border: 2rpx solid #FF8FA3;
+  border-radius: 8rpx;
+  line-height: 2.2;
+}
+.history-modal {
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+.history-hint {
+  font-size: 22rpx;
+  color: #FF405E;
+  text-align: center;
+  margin: -12rpx 0 16rpx;
+}
+.history-scroll {
+  flex: 1;
+  min-height: 0;
+  max-height: 60vh;
+}
+.history-version {
+  margin-bottom: 24rpx;
+}
+.history-meta {
+  font-size: 24rpx;
+  color: #888;
+  margin-bottom: 12rpx;
+}
+.history-photos {
+  display: flex;
+  flex-wrap: wrap;
+}
+.history-photo-wrap {
+  position: relative;
+  width: 140rpx;
+  height: 140rpx;
+  margin: 0 12rpx 12rpx 0;
+}
+.history-photo {
+  width: 100%;
+  height: 100%;
+  border-radius: 8rpx;
+  background: #f2f2f2;
+}
+/* "已有"角标：内容已包含在当前列表里的历史照片，置灰标记，点了会提示不能再加 */
+.history-has-badge {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  padding: 2rpx 10rpx;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 18rpx;
+  line-height: 1.6;
+  border-radius: 8rpx 0 8rpx 0;
+}
+.history-close {
+  width: 100%;
+  background: #FF405E;
+}
+
+/* ===================== 吸底按钮条 ===================== */
+.bottom-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  padding: 14rpx 24rpx;
+  padding-bottom: calc(14rpx + env(safe-area-inset-bottom));
+  background: #fff;
+  box-shadow: 0 -2rpx 10rpx rgba(0, 0, 0, 0.06);
+}
+.bar-btn {
+  flex: 1;
+  margin: 0 12rpx;
+  font-size: 30rpx;
+}
+.bar-btn.warn {
+  background: #fa5151;
+  color: #fff;
+}
+/* 页面底部留白：给吸底条 + 删除按钮让位。
+   高度随吸底条（14rpx + 按钮 + 14rpx + 底部安全区）计算，保证滚动到底时
+   「删除整只猫」不会被吸底条盖住。 */
+.bottom-pad {
+  height: calc(220rpx + env(safe-area-inset-bottom));
+}
+
+/* 删除整只猫：随内容滚动的严肃按钮，不吸底，避免误触 */
+.delete-cat-btn {
+  display: block;
+  width: 80%;
+  margin: 40rpx auto 24rpx;
+  font-size: 30rpx;
+  background: #fa5151;
+  color: #fff;
+  border-radius: 8rpx;
+}
+
+/* ===================== 恢复上次数据 ===================== */
+/* 恢复按钮：琥珀/橙色小胶囊，位于图片下方、名字上方（进入页面检测到可恢复历史才显示） */
+.restore-btn {
+  display: block;
+  width: 260rpx;
+  margin: 14rpx auto 0;
+  padding: 6rpx 0;
+  font-size: 26rpx;
+  line-height: 1.9;
+  background: #FF405E;
+  color: #fff;
+  border-radius: 999rpx;
+}
+
+/* 全部使用上次数据：细边描边胶囊，弱于主恢复按钮 */
+.restore-all-btn {
+  display: block;
+  width: 300rpx;
+  margin: 6rpx auto 14rpx;
+  padding: 6rpx 0;
+  font-size: 24rpx;
+  line-height: 1.9;
+  background: #fff;
+  color: #FF405E;
+  border: 2rpx solid #FF8FA3;
+  border-radius: 999rpx;
+}
+
+/* 差异字段红框：红色描边 + 浅红底，可点击；显示"上次：旧值" */
+.restore-old {
+  box-sizing: border-box;
+  margin: 12rpx 24rpx 4rpx;
+  padding: 12rpx 20rpx;
+  background: #fff1f1;
+  border: 2rpx solid #fa5151;
+  border-radius: 8rpx;
+  font-size: 24rpx;
+  color: #fa5151;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+/* 已应用的旧值框：置灰，表示已填回表单 */
+.restore-old.applied {
+  background: #f5f5f5;
+  border-color: #bbb;
+  color: #999;
+}
+
+/* 红框内的"已用"小徽标 */
+.restore-tag {
+  margin-left: 12rpx;
+  padding: 2rpx 10rpx;
+  background: #e0e0e0;
+  color: #666;
+  font-size: 20rpx;
+  border-radius: 6rpx;
+}
+
+/* 该猫上次编辑人（名字卡下方一行小字） */
+.editor-line {
+  font-size: 22rpx;
+  color: #999;
+  text-align: center;
+  padding: 4rpx 20rpx 0;
+}
+
+/* 恢复区的编辑信息（时间 + 编辑人） */
+.restore-meta {
+  margin: 0 24rpx 10rpx;
+  padding: 8rpx 16rpx;
+  font-size: 22rpx;
+  color: #888;
+  background: #fafafa;
+  border-radius: 8rpx;
+  text-align: center;
+}
+
+/* ===================== */
+/* 以下样式原本写在 WXML 的内联 style 中，迁移到这里统一管理 */
+/* ===================== */
+
+/* 猫咪名字左侧的标签栏：固定宽度、不压缩 */
+.detail-label-wrap {
+  flex-shrink: 0;
+  box-sizing: border-box;
+  width: 350rpx;
+}
+
+/* "确定提交"按钮：清除按钮自带的默认外边距 */
+.reset-margin {
+  margin: 0;
+}

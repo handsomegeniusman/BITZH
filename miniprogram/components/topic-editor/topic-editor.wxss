@@ -1,0 +1,142 @@
+/* ============================================================
+   话题编辑器样式
+============================================================ */
+.te-wrap {
+  padding: 8rpx 40rpx 20rpx;
+  background: #fff;
+}
+
+/* 引导文案：小字灰色，解释话题是什么 + 可点击跳转 */
+.te-guide {
+  font-size: 22rpx;
+  color: #b08b6f;
+  line-height: 1.6;
+  margin-bottom: 12rpx;
+}
+
+/* 输入区容器：chip + 输入框自动换行 */
+.te-box {
+  position: relative; /* 建议下拉定位基准 */
+}
+
+.te-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 12rpx 20rpx;
+  background: #faf5ef;
+  border: 1px solid #efe0d0;
+  border-radius: 16rpx;
+  min-height: 72rpx;
+  box-sizing: border-box;
+}
+
+/* 单个话题 chip */
+.te-chip {
+  display: inline-flex;
+  align-items: center;
+  margin: 4rpx 12rpx 4rpx 0;
+  padding: 4rpx 6rpx 4rpx 20rpx;
+  background: #FF405E;
+  color: #fff;
+  font-size: 26rpx;
+  border-radius: 999rpx;
+  line-height: 1.7;
+}
+.te-chip-text {
+  max-width: 240rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.te-chip-del {
+  width: 40rpx;
+  text-align: center;
+  font-size: 30rpx;
+  color: #fff;
+  opacity: 0.85;
+}
+.te-chip-del:active {
+  opacity: 1;
+}
+
+/* 输入框：与 chips 同行，占满剩余宽度 */
+.te-input {
+  flex: 1;
+  min-width: 260rpx;
+  height: 68rpx;
+  font-size: 28rpx;
+  color: #333;
+  box-sizing: border-box;
+}
+/* 无 chip 时占满整行（min-width 已保证，此处仅去掉多余高度） */
+.te-input-inline {
+  min-width: 260rpx;
+}
+
+/* 「添加」按钮：输入框有内容时显示，点击即把当前文字生成 chip。
+   中文输入法候选词会抢占空格键，这个按钮是比空格更可靠、更直观的添加方式。 */
+.te-add-btn {
+  flex-shrink: 0;
+  margin: 4rpx 0 4rpx 8rpx;
+  padding: 0 22rpx;
+  height: 60rpx;
+  line-height: 60rpx;
+  font-size: 26rpx;
+  color: #fff;
+  background: #FF405E;
+  border-radius: 999rpx;
+}
+.te-add-btn:active {
+  background: #E63A57;
+}
+
+/* 建议下拉：绝对定位贴在输入区下方 */
+.te-suggest {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  z-index: 20;
+  margin-top: 8rpx;
+  background: #fff;
+  border: 1px solid #f0e2d2;
+  border-radius: 12rpx;
+  box-shadow: 0 8rpx 24rpx rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+}
+.te-suggest-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18rpx 24rpx;
+  border-bottom: 1rpx solid #f7f1e8;
+}
+.te-suggest-item:last-child {
+  border-bottom: none;
+}
+.te-suggest-item:active {
+  background: #fff7ee;
+}
+.te-suggest-name {
+  font-size: 28rpx;
+  color: #222;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-right: 20rpx;
+}
+.te-suggest-add {
+  flex-shrink: 0;
+  font-size: 22rpx;
+  color: #FF405E;
+  padding: 2rpx 16rpx;
+  border: 1rpx solid #ffb75e;
+  border-radius: 999rpx;
+}
+.te-suggest-empty {
+  padding: 24rpx;
+  text-align: center;
+  font-size: 24rpx;
+  color: #999;
+}

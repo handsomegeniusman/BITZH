@@ -1,0 +1,58 @@
+/* 自定义底部导航：白底细线 + 中间凸起加号（小红书风） */
+.tab-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 100rpx;
+  padding-bottom: env(safe-area-inset-bottom);
+  background: #fff;
+  border-top: 1rpx solid #eee;
+  display: flex;
+  align-items: center;
+  z-index: 999;
+}
+
+.tab-bar-item {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100rpx;
+}
+
+.tab-text {
+  font-size: 24rpx;
+  color: #888;
+}
+
+.tab-text.active {
+  color: #FF405E;
+  font-weight: 600;
+}
+
+/* 中间加号列：加号凸起悬浮在 tab 条上方 */
+.tab-bar-center {
+  flex: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  height: 100rpx;
+  padding-top: 6rpx;
+}
+
+.add-btn {
+  width: 84rpx;
+  height: 84rpx;
+  border-radius: 50%;
+  background: #FF405E;
+  color: #fff;
+  font-size: 52rpx;
+  line-height: 82rpx;
+  text-align: center;
+  box-shadow: 0 6rpx 16rpx rgba(255, 64, 94, 0.35);
+}
+
+.add-btn:active {
+  background: #E63A57;
+}

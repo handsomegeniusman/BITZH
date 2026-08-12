@@ -1,0 +1,148 @@
+/* pages/mydetail/mydetail.wxss */
+/* 底部自定义 tabBar 占位（用根容器 class，不用 page 标签选择器） */
+.mydetail-root {
+  padding-bottom: calc(120rpx + env(safe-area-inset-bottom));
+}
+
+.navbar {
+  flex: none;
+  display: flex;
+  justify-content: center; /* 水平居中 */
+  background: #fff;
+  position: relative;
+  top: 20rpx;
+  width: 60%; /* 设置宽度为 80% */
+  margin: 0 auto; /* 水平居中 */
+}
+
+.navbar .item {
+  position: relative;
+  flex: auto;
+  text-align: center;
+  line-height: 80rpx;
+  color: #888888;
+  font-size: 32rpx;
+}
+
+.navbar .item.active {
+  color: #FF405E;
+}
+
+.navbar .item.active:after {
+  content: "";
+  display: block;
+  position: absolute;
+  bottom: 0;
+  left: 40rpx;
+  right: 40rpx;
+  height: 4rpx;
+  background: #FF405E;
+}
+.btn_regist{
+  margin-bottom: 60rpx;
+}
+.my-button2 {
+  margin: 20rpx auto;
+  background-color: #FF405E;
+  color: #fff;
+  text-align: center;
+  font-size: 36rpx;
+  line-height: 130rpx;
+  border-radius: 5rpx;
+  box-shadow: 0 8rpx 12rpx #CCC4B8;
+  position: relative;
+  left: 10rpx;
+  top: 36rpx;
+  width: 606rpx;
+  height: 130rpx;
+  display: block;
+  box-sizing: border-box；
+}
+.user-info {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-top: 60rpx;
+}
+.user-info .avatar {
+  width: 160rpx;
+  height: 160rpx;
+  border-radius: 50%;
+}
+.user-info .nick-name {
+  margin-left: 32rpx;
+  font-size: 40rpx;
+  font-weight: bold;
+  color: #333;
+}
+.history-list {
+  position: relative;
+  display: block;
+  box-sizing: border-box
+}
+.history-list,
+.scrollView {
+  padding: 20rpx;
+}
+
+/* ============ 统一卡片：历史 / 回收站（像小猫书列表：大图 + 标题 + 编辑按钮） ============ */
+.list-card {
+  background-color: #fff;
+  border-radius: 16rpx;
+  overflow: hidden;
+  margin-bottom: 20rpx;
+  box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.06);
+  box-sizing: border-box;
+}
+.list-pic {
+  display: block;
+  width: 100%;
+  background: #f0f2f5;
+}
+.list-pic-empty {
+  height: 200rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #b0b3bb;
+  font-size: 24rpx;
+  box-sizing: border-box;
+}
+.list-title-row {
+  display: flex;
+  align-items: center;
+  padding: 16rpx 20rpx 4rpx;
+}
+.list-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 30rpx;
+  font-weight: bold;
+  color: #2f3542;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.list-edit {
+  flex: none;
+  margin-left: 16rpx;
+  padding: 6rpx 24rpx;
+  font-size: 24rpx;
+  color: #FF405E;
+  border: 2rpx solid #FF8FA3;
+  border-radius: 28rpx;
+  line-height: 1.6;
+  background: #fff;
+}
+.list-meta {
+  display: block;
+  padding: 0 20rpx 16rpx;
+  font-size: 24rpx;
+  color: #a0a4ad;
+}
+.empty-tip {
+  text-align: center;
+  color: #b0b3bb;
+  font-size: 26rpx;
+  padding: 80rpx 0;
+}

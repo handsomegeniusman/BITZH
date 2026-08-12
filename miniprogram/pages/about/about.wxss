@@ -1,0 +1,54 @@
+/* pages/About/about.wxss */
+/* 底部自定义 tabBar 占位（用根容器 class，不用 page 标签选择器） */
+.about-root {
+  padding-bottom: calc(120rpx + env(safe-area-inset-bottom));
+}
+
+.erweima-img {
+	position: relative;
+	left: 0rpx;
+	top: 7rpx;
+	width: 34rpx;
+	height: 34rpx;
+  }
+
+/* ===================== */
+/* 以下样式原本写在 WXML 的内联 style 中，迁移到这里统一管理 */
+/* ===================== */
+
+/* 关于页顶部 logo 的容器：让内容水平垂直居中 */
+.about-logo-wrap {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* 关于页顶部 logo 图片：占容器宽度的 80% */
+.about-logo {
+  width: 80%;
+}
+
+/* 可点击的二维码/文字区域（如"点击并扫描二维码可跳转"）：内联排列，不换行 */
+.qr-click-wrap {
+  display: inline-block;
+}
+
+/* "高校动保索引"入口：固定宽度、文字居中、不压缩 */
+.navi-mini-wrap {
+  flex-shrink: 0;
+  box-sizing: border-box;
+  width: 180rpx;
+  text-align: center;
+}
+
+/* "高校动保索引"入口图标：固定大小 */
+.navi-mini-icon {
+  width: 90rpx;
+  height: 90rpx;
+}
+
+/* "高校动保索引"入口下方文字：居中、深灰色 */
+.navi-mini-text {
+  text-align: center;
+  color: #353535;
+}

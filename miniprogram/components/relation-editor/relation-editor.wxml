@@ -1,0 +1,178 @@
+<!-- ============================================================
+     猫咪关系编辑器：左侧固定「＋」+ 横向滑动关系卡片
+     （卡片样式与 catDetail 页相关猫咪一致：头像/名字/关系）
+============================================================ -->
+<view class="rel-wrap">
+  <view class="rel-row">
+    <!-- 固定在最左侧的添加按钮，不随滑动移动 -->
+    <view class="rel-add" bindtap="openSearch">
+      <text class="rel-add-symbol">＋</text>
+      <text class="rel-add-text">添加</text>
+    </view>
+    <scroll-view class="rel-scroll" scroll-x="true" enhanced="true" show-scrollbar="false">
+      <view class="rel-cards">
+        <view
+          class="rel-card {{item.missing ? 'rel-card-missing' : ''}}"
+          wx:for="{{list}}"
+          wx:key="name"
+          data-index="{{index}}"
+          bindtap="editRelation"
+        >
+          <view class="rel-avatar-wrap">
+            <image
+              class="rel-avatar"
+              src="{{item._thumbFallback == 1 ? url + item.name + '0.jpg' : (item._thumbFallback > 1 ? '/pages/images/logo.png' : url + item.name + '.png')}}"
+              binderror="onAvatarError"
+              data-list="list"
+              data-index="{{index}}"
+            ></image>
+            <text wx:if="{{item.missing}}" class="rel-missing-badge">未找到</text>
+          </view>
+          <view class="rel-name">{{item.name}}</view>
+          <view class="rel-relation">{{item.relation}}</view>
+        </view>
+        <view wx:if="{{!list.length}}" class="rel-empty">还没有关系，点左侧「＋」添加</view>
+      </view>
+    </scroll-view>
+  </view>
+</view>
+
+<!-- ==================== 搜索弹窗 ==================== -->
+<view class="rel-mask" wx:if="{{showSearch}}" catchtouchmove="noop" bindtap="closeSearch">
+  <view class="rel-sheet" catchtap="noop">
+    <view class="rel-sheet-title">添加关系</view>
+    <view class="rel-search-box">
+      <input
+        class="rel-search-input"
+        placeholder="输入小猫名称搜索"
+        focus
+        value="{{keyword}}"
+        bindinput="onSearchInput"
+        confirm-type="search"
+      />
+    </view>
+    <scroll-view class="rel-search-list" scroll-y="true">
+      <view
+        class="rel-search-item"
+        wx:for="{{searchResults}}"
+        wx:key="_id"
+        data-index="{{index}}"
+        bindtap="pickResult"
+      >
+        <image
+          class="rel-search-avatar"
+          src="{{item._thumbFallback == 1 ? url + item.name + '0.jpg' : (item._thumbFallback > 1 ? '/pages/images/logo.png' : url + item.name + '.png')}}"
+          binderror="onAvatarError"
+          data-list="searchResults"
+          data-index="{{index}}"
+        ></image>
+        <view class="rel-search-info">
+          <view class="rel-search-name">{{item.name}}</view>
+          <view class="rel-search-loc">{{item.location}}</view>
+        </view>
+      </view>
+    </scroll-view>
+    <view wx:if="{{searching}}" class="rel-tip">搜索中...</view>
+    <view wx:elif="{{searchDone && !searchResults.length}}" class="rel-no-result">
+      <view class="rel-no-result-text">未找到「{{keyword}}」这只猫</view>
+      <button class="rel-keep-btn" bindtap="keepUnmatched">暂存这个名字的关系（日后创建该猫时自动关联）</button>
+    </view>
+    <view class="rel-sheet-btns">
+      <button class="rel-sheet-btn cancel" bindtap="closeSearch">取消</button>
+    </view>
+  </view>
+</view>
+
+<!-- ==================== 填关系弹窗 ==================== -->
+<view class="rel-mask" wx:if="{{showRelation}}" catchtouchmove="noop" bindtap="closeRelation">
+  <view class="rel-sheet" catchtap="noop">
+    <view class="rel-sheet-title">{{editIndex >= 0 ? '编辑关系' : '添加关系'}}</view>
+    <view class="rel-target" wx:if="{{target}}">
+      <image
+        class="rel-target-avatar"
+        src="{{target._thumbFallback == 1 ? url + target.name + '0.jpg' : (target._thumbFallback > 1 ? '/pages/images/logo.png' : url + target.name + '.png')}}"
+        binderror="onTargetAvatarError"
+      ></image>
+      <view class="rel-target-name">
+        {{target.name}}
+        <text wx:if="{{target.missing}}" class="rel-target-missing">（未找到 · 创建后自动关联）</text>
+      </view>
+    </view>
+    <view class="rel-relation-label">
+      {{catName ? catName + ' 与 ' + (target ? target.name : '') + ' 的关系是：' : '请填写关系：'}}
+    </view>
+    <view class="rel-relation-input-row">
+      <input
+        class="rel-relation-input"
+        placeholder="例如：母亲 / 朋友"
+        value="{{relationText}}"
+        bindinput="onRelationInput"
+      />
+    </view>
+    <view class="rel-chips">
+      <view
+        class="rel-chip"
+        wx:for="{{commonRelations}}"
+        wx:key="*this"
+        data-rel="{{item}}"
+        bindtap="tapChip"
+      >{{item}}</view>
+    </view>
+    <view class="rel-sheet-btns">
+      <button wx:if="{{editIndex >= 0}}" class="rel-sheet-btn danger" bindtap="removeRelationFromSheet">删除这条关系</button>
+      <button class="rel-sheet-btn cancel" bindtap="closeRelation">取消</button>
+      <button class="rel-sheet-btn ok" bindtap="saveRelation">保存</button>
+    </view>
+  </view>
+</view>
+
+<!-- ==================== 同步确认弹窗 ==================== -->
+<view class="rel-mask" wx:if="{{showSync}}" catchtouchmove="noop" bindtap="noop">
+  <view class="rel-sheet" catchtap="noop" wx:if="{{syncInfo}}">
+    <view class="rel-sheet-title">确认同步</view>
+    <view class="rel-sync-summary">
+      将保存：<text class="rel-em">{{catName || '当前猫'}}</text> → <text class="rel-em">{{syncInfo.targetName}}</text>（<text class="rel-em">{{syncInfo.relationLabel}}</text>）
+    </view>
+    <view class="rel-sync-inverse">
+      <view class="rel-sync-label">{{syncInfo.targetName}} 页面上对应的反向关系：</view>
+      <view class="rel-relation-input-row">
+        <input
+          class="rel-relation-input"
+          placeholder="{{syncInfo.candidates.length ? '请选择或输入对方关系' : '特殊关系，请手动输入对方的关系'}}"
+          value="{{syncInfo.inverseText}}"
+          bindinput="onInverseInput"
+        />
+      </view>
+      <view class="rel-chips" wx:if="{{syncInfo.candidates.length}}">
+        <view
+          class="rel-chip"
+          wx:for="{{syncInfo.candidates}}"
+          wx:key="*this"
+          data-rel="{{item}}"
+          bindtap="tapInverseChip"
+        >{{item}}</view>
+      </view>
+    </view>
+    <view class="rel-noask">
+      <text class="rel-check {{noAsk ? 'on' : ''}}" bindtap="toggleNoAsk">{{noAsk ? '☑' : '☐'}}</text>
+      <text class="rel-noask-text" bindtap="toggleNoAsk">本次编辑不再询问（后续自动同步）</text>
+    </view>
+    <view class="rel-sheet-btns">
+      <button class="rel-sheet-btn cancel" bindtap="skipSync">仅改当前猫</button>
+      <button class="rel-sheet-btn ok" bindtap="confirmSync">同步到对方</button>
+    </view>
+  </view>
+</view>
+
+<!-- ==================== 删除确认弹窗 ==================== -->
+<view class="rel-mask" wx:if="{{showDelete}}" catchtouchmove="noop" bindtap="noop">
+  <view class="rel-sheet" catchtap="noop">
+    <view class="rel-sheet-title">删除这条关系？</view>
+    <view class="rel-delete-hint">是否同时删除对方页面上对应的反向关系？</view>
+    <view class="rel-sheet-btns">
+      <button class="rel-sheet-btn cancel" bindtap="closeDelete">取消</button>
+      <button class="rel-sheet-btn warn" bindtap="deleteOnly">仅删除本条</button>
+      <button class="rel-sheet-btn danger" bindtap="deleteAndSync">同时删除对方</button>
+    </view>
+  </view>
+</view>

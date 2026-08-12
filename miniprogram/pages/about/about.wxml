@@ -1,0 +1,106 @@
+<import src="../templates/common.wxml"/>
+
+<view wx:if="{{blackNum}}">
+  <template is="blackNumPopup" data="{{popupAnimation}}"/>
+</view>
+<view wx:else class="about-root">
+  <view class="about-logo-wrap" bindlongpress="edit">
+    <image class="about-logo" mode="widthFix" src="/pages/images/logo.png">
+    </image>
+  </view>
+
+  <text> \n </text>
+
+  <view class="head1">简介</view>
+
+  <view class="body">
+    北理珠流浪猫关爱部：由北京理工大学珠海学院学生发起的猫咪群护志愿组织，负责照顾北京理工大学珠海学院的流浪猫，主要进行喂食、绝育与送养等工作。
+  </view>
+
+  <view class="head1">联系方式</view>
+  <view class="body">
+    微信、手机号：<text bindtap="copyTBL" class="copy">18122371332</text>
+  </view>
+  <view class="body">
+    邮箱：<text bindtap="copyTBL1" class="copy">1758906597@qq.com</text>
+  </view>
+  <view class="body">
+    公众号：<text bindtap="previewQR1" class="copy"> 金凤路6号流浪猫关爱部</text>
+    <image class="erweima-img" src="/pages/images/toweima.jpg"></image>
+  </view>
+
+  <view class="head1">关于周边</view>
+  <view class="body">
+    <view class="qr-click-wrap" bindtap="copyTBL6">
+      <text class="copy">点击并扫描二维码可跳转</text>
+      <image class="erweima-img" src="/pages/images/toweima.jpg"></image>
+    </view>
+  </view>
+
+  <view class="head1">关于赞助</view>
+  <view class="body">
+    可点击
+    <text bindtap="showVideo" class="copy">按钮</text>
+    观看广告，也可点击
+    <view class="qr-click-wrap" bindtap="previewQR2">
+      <text  class="copy">二维码</text>
+      <image class="erweima-img" src="/pages/images/toweima.jpg"></image>
+    </view>
+    向财务进行赞助
+  </view>
+
+  <view class="head1">关于校外猫咪</view>
+  <view class="body">
+    学校不接收外来弃养猫咪
+  </view>
+
+  <view class="head1">关于收入</view>
+  <view class="body">
+    此小程序内的所有利润，将全部交由
+    <view class="qr-click-wrap" bindtap="previewQR1">
+      <text class="copy">金凤路6号流浪猫关爱部</text>
+      <image class="erweima-img" src="/pages/images/toweima.jpg"></image>
+    </view>
+    公众号管理者使用，用于对校内流浪猫进行救治、绝育等，详情请在
+    <view class="qr-click-wrap" bindtap="previewQR1">
+      <text class="copy">金凤路6号流浪猫关爱部</text>
+      <image class="erweima-img" src="/pages/images/toweima.jpg"></image>
+    </view>
+    的财务公示进行查看
+  </view>
+
+  <view class="head1">特别鸣谢</view>
+
+  <view class="body">
+    小程序所有代码全部开源，可在GitHub中搜索【<text bindtap="copyWechat" class="copy">北大猫协</text>】，配有教学视频，学习使用，
+    点击<text bindtap="copyTBL4" class="copy">复制链接</text>并在浏览器进入。
+  </view>
+
+  <text> \n </text>
+
+
+
+  <view class="itemname1">
+    <view class="navi-mini-wrap" bindtap="naviToMini">
+      <image class="navi-mini-icon" src="/pages/images/circle.png"></image>
+      <view class="navi-mini-text"> \n 高校动保索引 </view>
+    </view>
+  </view>
+
+
+
+  <text> \n </text>
+  <view class="staff">
+    小程序开发： 北理珠流浪猫关爱部
+  </view>
+  <view class="staff">
+    信息整理： 北理珠流浪猫关爱部
+  </view>
+  <view class="staff">
+    logo制作： 梨压梨
+  </view>
+  <view class="staff">
+    v5.2.0
+  </view>
+
+</view>

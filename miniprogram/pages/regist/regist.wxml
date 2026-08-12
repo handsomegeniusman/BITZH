@@ -1,0 +1,23 @@
+<view wx:if="{{audit}}">
+  <view class="page">
+    <view class="card">
+      <button class="avatar-button" open-type="chooseAvatar" bind:chooseavatar="onChooseAvatar">
+      <image class="avatar-img" src="{{userInfo.avatarUrl}}" ></image>
+      </button>
+      <view class="input-container">
+        <text class="input-label">昵称：</text>
+        <input type="nickname" class="input-field" placeholder="请输入昵称" value="{{userInfo.nickName}}" bindinput="onInput"/>
+      </view>
+      <view class="input-container1">
+        <view class="tip-message" wx:if="{{sameName}}">已重名，请修改昵称</view>
+        <view class="tip-message1" wx:else></view>
+      </view>
+      <view class="input-container2">
+        <text class="input-label1">手机号：</text>
+        <input type="text" class="input-field" value="{{userInfo.phoneNum}}" bindinput="onInput1" placeholder="可不填"></input>
+      </view>
+
+    </view>
+    <button class="submit-button" bindtap="upload">提交</button>
+  </view>
+</view>

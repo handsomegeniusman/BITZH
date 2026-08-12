@@ -1,0 +1,153 @@
+<!--index.wxml-->
+<import src="../templates/common.wxml"/>
+
+<view wx:if="{{blackNum}}">
+  <template is="blackNumPopup" data="{{popupAnimation}}"/>
+</view>
+<view wx:else>
+
+  <view wx:if="{{showPopup}}">
+    <template is="noticePopup" data="{{notice, popupAnimation}}"/>
+  </view>
+
+  <view class="wrapper">
+    <view class="circle" bindtouchstart="onPageTap">
+      <image lazy-load='true' bindtap="imageTap" class='avator' src="/pages/images/logo.png" mode='aspectFill'></image>
+    </view>
+    <view class="container"> 
+      <view class="search">
+        <icon type="search" />
+        <input id="input"  type="text" placeholder="输入猫咪名字或位置" bindinput="onInput" bindblur="onBlur" bindfocus="onFocus" confirm-type="search"  />
+      </view>
+      
+      <scroll-view id="result" class="result" wx:if="{{showResult}}" scroll-y="true" >
+      <!-- 列表内容 -->
+        <view class="list-container" >
+          <!-- 每只猫一个条目：猫行（点击进猫详情）+ 猫名下方相关推文（点击进推文详情） -->
+          <block wx:for="{{resultList}}" wx:key="_id">
+            <view class="list" bindtap="onClick" bindlongpress="editCat" data-_id="{{item._id}}">
+              <image lazy-load='true' class='avator' src="{{item._thumbFallback == 1 ? item._thumbJpg : (item._thumbFallback > 1 ? '/pages/images/logo.png' : item._thumbUrl)}}" binderror="onCatImgError" data-list="resultList" data-index="{{index}}" mode='aspectFill'></image>
+              <view class="cat-name1">{{item.name}}</view>
+              <view class="cat-isSterilization">绝育:{{item.isSterilization}}</view>
+              <text class="cat-character" decode="{{true}}">性格:&nbsp;&nbsp;{{item.character}}</text>
+            </view>
+            <!-- 相关推文：独立块放在猫行下方，点击进推文详情（不冒泡到猫行的 onClick） -->
+            <view class="rel-pages" wx:if="{{item._relPages.length}}">
+              <view class="rel-page" wx:for="{{item._relPages}}" wx:for-item="pg" wx:for-index="pgIndex" wx:key="_id" bindtap="onRelPageTap" data-id="{{pg._id}}">
+                <text class="rel-page-dot">·</text>
+                <text class="rel-page-title">{{pg.tittle}}</text>
+              </view>
+            </view>
+            <view class="divLine"></view>
+          </block>
+        </view>
+      </scroll-view>
+    </view>
+  </view>
+  <view class="navbar" bindtouchstart="onPageTap">
+    <text wx:for="{{navbar}}" data-idx="{{index}}" class="item {{currentTab==index ? 'active' : ''}}" wx:key="*this" bindtap="navbarTap">{{item}}</text>
+  </view>
+  <view class="white"></view>
+
+  <!-- 在校 -->
+  <view hidden="{{currentTab!==0}}" bindtouchstart="onPageTap" class="topItem">
+  <navigator url="/pages/所有/所有">
+    <view class="catitem">
+      <image lazy-load='true' class='avator' src="/pages/images/logo.png" mode='aspectFill'></image>
+      <view class="cat-name">所有</view>
+    </view>
+  </navigator>
+  <view class="divLine"></view>
+
+      <!-- 毛色分类入口：数据驱动，从 classifications 数组循环渲染 -->
+    <block wx:for="{{classifications}}" wx:key="img">
+      <view class="divLine"></view>
+      <navigator url="/pages/所有/所有?classification={{item.img}}">
+        <view class="catitem">
+          <image lazy-load='true' class='avator' src="{{url}}{{item.img}}.png" mode='aspectFill'></image>
+          <view class="cat-name">{{item.name}}</view>
+        </view>
+      </navigator>
+    </block>
+
+
+
+    <text> \n </text>
+
+    <view class="body">若您在校内偶遇流浪猫，<text class="bodybold">切记</text>人类的食物<text class="bodybold">不要</text>喂给流浪猫！
+    </view>
+    <view class="body">
+      🚫<text class="bodybold">巧克力、葡萄制品、大葱、洋葱</text>等食品对猫<text class="bodybold">有毒</text>，可能会引起急性肾衰竭，切<text class="bodybold">不可以</text>喂食！
+    </view>
+    <view class="body">
+      🚫<text class="bodybold">火腿肠</text>和<text class="bodybold">牛奶</text>也并<text class="bodybold">不适合</text>猫咪，会引起肠胃反应，造成腹泻等状况。
+    </view>
+    <view class="body">
+      🚫酸性的各类水果、香辛料制的肉类、乌贼等海产也<text class="bodybold">均不适合</text>猫咪食用。
+    </view>
+    <view class="body">
+      猫常见的较合适的食物有猫粮、猫罐头、以及其它一些猫咪零食。
+    </view>
+    <!-- <ad unit-id="adunit-9bc04800e48cc6da"></ad> -->
+  </view>
+
+  <!-- 送养 -->
+
+
+
+  <view hidden="{{currentTab!==1}}" bindtouchstart="onPageTap" class="c1">
+    <navigator block wx:for="{{fostered_cat}}" wx:key="_id" url="/pages/catDetail/catDetail?_id={{item._id}}">
+      <view bindlongpress="editCat" data-_id="{{item._id}}" class="catitem">
+        <image lazy-load="true" class="avator" src="{{item._thumbFallback == 1 ? item._thumbJpg : (item._thumbFallback > 1 ? '/pages/images/logo.png' : item._thumbUrl)}}" binderror="onCatImgError" data-list="fostered_cat" data-index="{{index}}" mode="aspectFill"></image>
+        <view class="cat-name">{{item.name}}</view>
+      </view>
+      <view class="divLine"></view>
+    </navigator>
+    <!-- <ad unit-id="adunit-9bc04800e48cc6da"></ad> -->
+    <!-- 空白模块：宽度见 .blank 类；高度 {{blankHeight}} 由 JS 动态控制，必须保留内联样式 -->
+    <view class="blank" style="height: {{ blankHeight }}px;" bindtap="onPageTap"></view>
+  </view>
+
+  <!-- 逃学 -->
+
+  <view hidden="{{currentTab!==2}}" bindtouchstart="onPageTap" class="c1">
+    <navigator block wx:for="{{unknown_cat}}" wx:key="_id" url="/pages/catDetail/catDetail?_id={{item._id}}">
+      <view bindlongpress='editCat' data-_id="{{item._id}}" class="catitem">
+        <image lazy-load='true' class='avator' src="{{item._thumbFallback == 1 ? item._thumbJpg : (item._thumbFallback > 1 ? '/pages/images/logo.png' : item._thumbUrl)}}" binderror="onCatImgError" data-list="unknown_cat" data-index="{{index}}" mode='aspectFill'></image>
+        <view class="cat-name">{{item.name}}</view>
+      </view>
+      <view class="divLine"></view>
+    </navigator>
+    <!-- 空白模块：宽度见 .blank 类；高度 {{blankHeight}} 由 JS 动态控制，必须保留内联样式 -->
+    <view class="blank" style="height: {{blankHeight}}rpx;"></view>
+    <!-- <ad-custom unit-id="adunit-5a40f448000f2651" style="width: 133rpx; height: 200rpx; display: block; box-sizing: border-box; left: 618rpx; top: 482rpx; position: relative"></ad-custom> -->
+  </view>
+
+  <!-- 喵星 -->
+
+  <view hidden="{{currentTab!==3}}" bindtouchstart="onPageTap" class="c1">
+    <navigator block wx:for="{{dead_cat}}" wx:key="_id" url="/pages/catDetail/catDetail?_id={{item._id}}">
+      <view bindlongpress='editCat' data-_id="{{item._id}}" class="catitem">
+        <image lazy-load='true' class='avator' src="{{item._thumbFallback == 1 ? item._thumbJpg : (item._thumbFallback > 1 ? '/pages/images/logo.png' : item._thumbUrl)}}" binderror="onCatImgError" data-list="dead_cat" data-index="{{index}}" mode='aspectFill'></image>
+        <view class="cat-name">{{item.name}}</view>
+      </view>
+      <view class="divLine"></view>
+    </navigator>
+    <!-- <ad-custom unit-id="adunit-5a40f448000f2651" style="width: 133rpx; height: 200rpx; display: block; box-sizing: border-box; left: 618rpx; top: 500rpx; position: relative"></ad-custom> -->
+
+  </view>
+
+  <!-- 待抓 -->
+
+  <view hidden="{{currentTab!==4}}" bindtouchstart="onPageTap" class="c1">
+    <navigator block wx:for="{{becatch_cat}}" wx:key="_id" url="/pages/catDetail/catDetail?_id={{item._id}}">
+      <view bindlongpress='editCat' data-_id="{{item._id}}" class="catitem">
+        <image lazy-load='true' class='avator' src="{{item._thumbFallback == 1 ? item._thumbJpg : (item._thumbFallback > 1 ? '/pages/images/logo.png' : item._thumbUrl)}}" binderror="onCatImgError" data-list="becatch_cat" data-index="{{index}}" mode='aspectFill'></image>
+        <view class="cat-name">{{item.name}}</view>
+      </view>
+      <view class="divLine"></view>
+    </navigator>
+    <!-- <ad-custom unit-id="adunit-5a40f448000f2651" style="width: 133rpx; height: 200rpx; display: block; box-sizing: border-box; left: 618rpx; top: 300rpx; position: relative"></ad-custom> -->
+  </view>
+
+</view>

@@ -1,0 +1,148 @@
+/* pages/someBooklet/someBooklet.wxss */
+
+/* 顶部"年-月"排序选择器：文字居中、灰色（原本写在 WXML 内联 style 中） */
+.picker {
+  text-align: center;
+  color: #868686;
+}
+
+.top {
+  display: flex;
+  flex-direction: row;
+  align-items: center; /* 垂直居中 */
+  margin-bottom: 20rpx;
+  text-align: center;
+  justify-content: center
+}
+
+.tittle-toux {
+  width: 170rpx;
+  height: 170rpx;
+  border-radius: 80rpx;
+  margin-left: 10rpx;
+}
+
+.tittle {
+  font-size: 50rpx;
+  color: rgb(0, 0, 0);
+  font-weight: 300;
+  margin-left: 20rpx;
+  display: flex; /* 增加 flex 布局 */
+  align-items: center; /* 垂直居中 */
+}
+
+
+.content {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between; /* 左右两列贴住内容列两端，不留右侧空缝 */
+    align-items: flex-start; /* 两列顶对齐，较矮一列不被垂直居中（覆盖全局 .content 的 center） */
+    flex-wrap: wrap; /* 空态提示独占一行时换行，避免挤缩两列 */
+    max-width: 720px; /* 宽屏内容列居中 */
+    margin: 0rpx auto 20rpx;
+  }
+.empty-tip {
+  flex: 0 0 100%; /* 独占一行 */
+  text-align: center;
+  padding: 80rpx 0;
+  font-size: 26rpx;
+  color: #999;
+}
+.float-image {
+  position: fixed;
+  z-index: 9999;
+  right: 28rpx; /* 贴右缘，宽屏不错位 */
+  bottom: calc(56rpx + env(safe-area-inset-bottom)); /* 底部悬浮，避开 iPhone 底部横条 */
+  left: auto;
+  top: auto;
+}
+/* 左右两列都在文档流内（flex 双列），同 index：不裁卡片、宽屏不留右缝 */
+.left,
+.right {
+  width: calc(50% - 8rpx);
+  display: flex;
+  flex-direction: column;
+}
+
+.li {
+  background: #ffffff;
+  border-radius: 10rpx;
+  margin-bottom: 16rpx;
+}
+
+.pic {
+  border-radius: 15rpx 15rpx 0rpx 0rpx;
+  width: 100%;
+  display: block;
+}
+
+.bottom {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 20rpx;
+  align-items: center;
+
+}
+
+.title-wrap {
+
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #333;
+}
+
+.title {
+  font-size: 35rpx;
+  text-align: left;
+  margin-top: 14rpx;
+  margin-bottom: 0rpx;
+  margin-right: 5rpx;
+  margin-left: 25rpx;
+  font-weight: bold;
+  pointer-events: none;
+}
+
+.toux {
+  width: 35rpx;
+  height: 35rpx;
+  border-radius: 30rpx;
+  margin-left: 10rpx;
+}
+
+.name {
+  font-size: 23rpx;
+  color: #333;
+  font-weight: 300;
+  margin-left: 20rpx;
+    align-items: center;
+}
+
+.toux-name {
+  display: flex;
+  align-items: center;
+  margin: 20rpx 0rpx;
+}
+.love{
+  color: #333;
+  display: flex;
+  align-items: center;
+}
+.love-num {
+  color: rgb(145, 145, 145);
+}
+
+.num {
+  font-size: 25rpx;
+  margin-left: 5rpx;
+}
+
+/* 右下角悬浮"添加"按钮的图片：固定大小并微调位置（原本写在 WXML 内联 style 中） */
+.add-image {
+  width: 260rpx;
+  height: 203rpx;
+  display: inline-block;
+  box-sizing: border-box;
+  position: relative;
+  left: 0rpx;
+  top: -9rpx;
+}

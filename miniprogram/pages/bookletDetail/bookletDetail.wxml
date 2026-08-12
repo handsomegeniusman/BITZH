@@ -1,0 +1,81 @@
+<!--pages/bookletDetail/bookletDetail.wxml-->
+<!-- 整体内容列：max-width 720px 居中，宽屏（平板/电脑）不拉伸 -->
+<view class="page-wrap">
+
+  <!-- 顶部图片轮播：高度自适应（手机≈屏宽、宽屏由 vh 封顶），不超屏 -->
+  <view class="image-container">
+    <!-- 回收站预览且无照片存档：占位提示，不渲染空轮播 -->
+    <view wx:if="{{recoverMode && imageUrls.length == 0}}" class="no-archive-photo">无照片存档（删除时未保留照片）</view>
+    <!-- circular="true"：轮播到头会自动循环（和猫详情页一样），不会滑到最后一张就停住 -->
+    <swiper wx:else class="detail-swiper" circular="true" data-_id="{{ listData._id }}" bindchange="bindChange" bindlongpress="editBooklet" data-authorid="{{listData.authorId}}" indicator-dots="{{ true }}" indicator-color="#ffffff" indicator-active-color="#FF405E" current="{{currentImageIndex}}" animation="{{animationData}}">
+      <block wx:for="{{imageUrls}}" wx:key="*this">
+        <swiper-item>
+          <image lazy-load="true" class="item-image" src="{{item}}" mode="aspectFit" bindtap="previewImageHandler"/>
+          <view class="showNum">
+            <text class="show-num-text">{{index+1}}/{{listData.photoNum}}</text>
+          </view>
+        </swiper-item>
+      </block>
+    </swiper>
+  </view>
+
+  <!-- 正文卡片 -->
+  <view class="content-card">
+    <view class="head">
+      <text user-select="true">{{listData.tittle}}</text>
+    </view>
+    <!-- 拍摄时间：放在标题正下方，不滑动也能看到 -->
+    <view wx:if="{{listData.photoTime}}" class="photoTime">拍摄于 {{listData.photoTime}}</view>
+    <view class="main" user-select="true">{{listData.main}}</view>
+
+    <!-- 话题：胶囊可点，跳到相关猫咪或话题文章 -->
+    <view wx:if="{{relativeList.length}}" class="topic-block">
+      <view class="relative-tags">
+        <view class="relative-chip" wx:for="{{relativeList}}" wx:key="*this" bindtap="toRelative" data-name="{{item}}">#{{item}}</view>
+      </view>
+      <view class="relative-guide">点击话题可查看相关猫咪或文章</view>
+    </view>
+  </view>
+
+  <!-- 回收站预览：提示 + 进恢复模式编辑页入口（恢复/彻底删除/返回都在编辑页完成） -->
+  <view wx:if="{{recoverMode}}" class="recover-bar">
+    <text class="recover-tip">回收站预览：这条推文已被删除，以上是删除前的存档内容。</text>
+    <button class="recover-edit-btn" bindtap="editRecover">编辑 / 恢复</button>
+  </view>
+
+  <!-- 评论区 -->
+  <view wx:if="{{audit && !recoverMode}}" class="comment-section">
+    <view class="comment-tittle">评论<text wx:if="{{Comment.length}}" class="comment-count"> {{Comment.length}}</text></view>
+
+    <view wx:if="{{showComment}}" class="empty-comment">
+      <view><image src="/pages/images/logo.png" mode="" class="empty-comment-logo"/></view>
+      <view class="empty-comment-text">还没有评论，来抢沙发吧～</view>
+    </view>
+
+    <view class="comment" wx:for="{{Comment}}" wx:key="myCommentId" bindlongpress="choseComment" data-mycommentid="{{item.myCommentId}}" data-authorid="{{item.authorId}}" data-main="{{item.main}}">
+      <view class="comment-img">
+        <image lazy-load='true' class='avator' mode='aspectFill' src="{{item.authorImg}}" bindtap="showAuthorImg" data-authorimg="{{item.authorImg}}"></image>
+      </view>
+      <view class="comment-content">
+        <view class="comment-head">
+          <text class="comment-name">{{item.author}}</text>
+          <text class="comment-time">{{item.commentTime}}</text>
+        </view>
+        <view class="comment-main">
+          <text class="comment-main-text">{{item.main}}</text>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 底部评论输入栏：固定底部 + 安全区 + 宽屏居中（与评论区同级，便于评论区底部留白） -->
+  <view wx:if="{{audit && !recoverMode}}" class="view-wrapper">
+    <view wx:if="{{isFeeder}}" class="toComment">
+      <textarea data-key='main' bindinput="inputText" class="comment_input" auto-height="true" placeholder-class="comment-placeholder" placeholder="善语结善缘，恶语伤人心" value="{{comment}}"></textarea>
+      <button bindtap="addComment" class="new-button">发送</button>
+    </view>
+    <view wx:else="" class="toComment">
+      <textarea data-key='main' bindinput="inputText" class="comment_input" auto-height="true" placeholder-class="comment-placeholder" placeholder="评论功能暂时下线" value="{{comment}}"></textarea>
+    </view>
+  </view>
+</view>

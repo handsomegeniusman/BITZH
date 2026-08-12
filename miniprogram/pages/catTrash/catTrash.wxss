@@ -1,0 +1,9 @@
+/* 回收站（被删除的猫）—— 页面级 .container 覆盖 */
+/* 其余 .trash-* 样式已统一提取到 app.wxss，本页无需重复定义 */
+
+/* 覆盖全局 .container：列表页贴近顶部、左右留白 */
+.container {
+  padding: 40rpx 24rpx;
+  align-items: stretch;
+  justify-content: flex-start;
+}

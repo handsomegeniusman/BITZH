@@ -1,0 +1,461 @@
+page {
+  width: 100%;
+  margin: 0;
+  background: #F2F2F2;
+}
+.container1 {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: #fff;
+}
+.showNum{
+  position: absolute;
+  top: 20rpx;
+  right: 20rpx;
+  padding: 12rpx 24rpx;
+  background-color: rgba(200, 200, 200, 0.8);
+  border-radius: 40rpx;
+}
+.image-container { 
+  display: flex; 
+  justify-content: center; 
+  align-items: center;
+  z-index: 10; 
+}
+
+.normal-image {
+  width: 50%;
+  margin: 0 auto;
+}
+
+.enlarged-image {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  max-width: 100%;
+  max-height: 100%;
+  margin: auto;
+}
+
+.left-arrow, .right-arrow { 
+  display: flex; 
+  z-index: 20;
+  justify-content: center;
+  align-items: center; 
+  position: absolute; 
+  top: 50%; 
+  transform: translateY(-50%); 
+  z-index: 15; 
+  width: 80rpx;
+  height: 80rpx;
+  border-radius: 50%;
+  background-color: rgba(0, 0, 0, 0.5);
+  color: white;
+  font-size: 48rpx; 
+}
+
+.left-arrow {
+  left: 40rpx;
+}
+.right-arrow {
+  right: 20rpx;
+}
+.status-container {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  margin-bottom: 20rpx;
+  margin-top: -20rpx;
+}
+.status-item {
+  display: inline-block;
+  width: 120rpx;
+  height: 50rpx;
+  margin-left: -5rpx;
+  text-align: center;
+  line-height: 50rpx;
+  font-size: 26rpx;
+  font-weight: bold;
+  border-radius: 25rpx;
+  margin-right: 15rpx;
+  color: #fff;
+}
+.showDetail_btn{
+  display: flex; /* 使用Flexbox布局 */
+  align-items: center; /* 水平居中对齐内部元素 */
+  justify-content: center;
+  background-color: transparent;
+  box-sizing: border-box; /* width:100% 包含边框，避免右侧描边被挤出容器 */
+  border-style: solid;
+  border-top: none;
+  border-bottom-left-radius: 40rpx;
+  border-bottom-right-radius: 40rpx;
+  color: black;
+  font-size: 28rpx;
+  line-height: 70rpx;
+  text-align: center;
+  width: 100%;
+  height: 80rpx;
+}
+
+.arrow {
+  margin-left: 10rpx;
+  width: 20rpx;
+  height: 20rpx;
+  border-right: 4rpx solid var(--color-primary);
+  border-bottom: 4rpx solid var(--color-primary);
+  position: relative;
+}
+.arrow.down {
+  transform: rotate(45deg);
+  top: -7rpx; /* 下箭头视觉重心偏低，上移补偿 */
+}
+.arrow.up {
+  transform: rotate(-135deg);
+  top: 7rpx;  /* 上箭头视觉重心偏高，下移补偿 */
+}
+
+/* ============================================================
+   相关推文瀑布流：左右两列都留在文档流内（flex 双列）。
+   【原bug】.left 设 position:absolute（脱离文档流）→ 当只有 1 篇推文
+   （index 0 落入左列）时，.right 为空、父容器高度被裁成 0，
+   .content 的 overflow:hidden 把唯一卡片裁掉 → "只有一个关联话题不显示"。
+   改为两列都在文档流内，父容器高度由内容撑起，单篇也能正常显示。
+   ============================================================ */
+.content {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: flex-start; /* 两列顶对齐，较矮一列不被垂直居中（覆盖全局 .content 的 center） */
+  max-width: 720px; /* 宽屏内容列居中 */
+  margin: 20rpx auto;
+}
+
+.left,
+.right {
+  width: calc(50% - 8rpx);
+  display: flex;
+  flex-direction: column;
+}
+
+.li {
+  background: #ffffff;
+  border-radius: 10rpx;
+  margin-bottom: 16rpx;
+}
+
+.pic {
+  border-radius: 15rpx 15rpx 0rpx 0rpx;
+  width: 100%;
+  display: block;
+}
+
+.bottom {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 20rpx;
+  align-items: center;
+}
+
+.title-wrap {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #333;
+}
+
+.title {
+  font-size: 35rpx;
+  text-align: left;
+  margin-top: 14rpx;
+  margin-bottom: 0rpx;
+  margin-right: 5rpx;
+  margin-left: 25rpx;
+  font-weight: bold;
+  pointer-events: none;
+}
+
+.toux {
+  width: 35rpx;
+  height: 35rpx;
+  border-radius: 30rpx;
+  margin-left: 10rpx;
+}
+
+.name {
+  font-size: 23rpx;
+  color: #333;
+  font-weight: 300;
+  margin-left: 20rpx;
+    align-items: center;
+}
+
+.toux-name {
+  display: flex;
+  align-items: center;
+  margin: 20rpx 0rpx;
+}
+
+/* ===================== */
+/* 以下样式原本写在 WXML 的内联 style 中，迁移到这里统一管理 */
+/* 迁移原则：只迁移固定值；凡是包含 {{变量}} 的动态样式必须保留内联 */
+/* ===================== */
+
+/* 顶部轮播图：固定宽度铺满一行；高度 {{height}} 由 JS 动态传入，因此保留内联 style */
+.detail-swiper {
+  width: 750rpx;
+  display: block;
+  box-sizing: border-box;
+}
+
+/* 轮播图内的大图：占满整个轮播项 */
+.swiper-item-image {
+  width: 100%;
+  height: 100%;
+  display: inline-block;
+  box-sizing: border-box;
+}
+
+/* 轮播图右上角的页码文字（如 1/5）：白色，方便在图片上识别 */
+.show-num-text {
+  color: #fff;
+  font-size: 30rpx;
+}
+
+/* 猫咪名字下方的横条容器：固定宽高 */
+.parent-view {
+  width: 750rpx;
+  height: 104rpx;
+  display: block;
+  box-sizing: border-box;
+}
+
+/* 猫咪名字栏：在全局 .itemname1 基础上叠加的固定宽高与盒模型 */
+.itemname-box {
+  width: 298rpx;
+  height: 113rpx;
+  display: flex;
+  box-sizing: content-box;
+}
+
+/* 详情信息（毛色/性别/绝育时间/外貌等）左侧的标签栏：固定宽度、不压缩 */
+.detail-label-wrap {
+  flex-shrink: 0;
+  box-sizing: border-box;
+  width: 350rpx;
+}
+
+/* 猫咪大号名字：固定宽高 */
+.cat-detail-name {
+  width: 426rpx;
+  height: 58rpx;
+  display: block;
+  box-sizing: border-box;
+}
+
+/* 名字右侧的占位空白（用于撑开右侧区域） */
+.name-spacer {
+  width: 222rpx;
+  height: 187rpx;
+  display: inline-block;
+  box-sizing: border-box;
+  position: relative;
+  left: 479rpx;
+  top: -90rpx;
+}
+
+/* 状态标签后的空白占位：向右留出 300px 间距 */
+.status-spacer {
+  margin-right: 600rpx;
+}
+
+/* 详情信息项：内容在垂直方向排列（标签在上、内容在下） */
+.flex-wrp {
+  flex-direction: column;
+}
+
+/* 关联猫咪横向滚动列表中的每一项：固定宽度、横排显示 */
+.related-cat-item {
+  flex-shrink: 0;
+  box-sizing: border-box;
+  width: 185rpx;
+  display: inline-block;
+}
+
+/* 关联猫咪头像的外层：内部元素水平居中 */
+.related-cat-avatar-wrap {
+  text-align: center;
+}
+
+/* 关联猫咪头像：固定大小 */
+.related-cat-avatar {
+  width: 90rpx;
+  height: 90rpx;
+}
+
+/* 关联猫咪名字：黑字、固定宽度 */
+.related-cat-name {
+  text-align: center;
+  color: #000000;
+  width: 185rpx;
+  font-size: 25rpx;
+}
+
+/* 关联猫咪的关系描述（如"兄妹"）：灰色小字 */
+.relation {
+  text-align: center;
+  color: #474747;
+  width: 185rpx;
+  font-size: 20rpx;
+  height: 24rpx;
+}
+
+/* 顶部"年-月"选择器：文字居中 */
+.detail-picker {
+  text-align: center;
+}
+
+/* ===================== 相关话题区 ===================== */
+.topic-section {
+  max-width: 720px;
+  margin: 40rpx auto 0;
+  padding: 0 40rpx;
+  box-sizing: border-box;
+}
+.topic-section-title {
+  font-size: 30rpx;
+  font-weight: bold;
+  color: rgb(32, 31, 31);
+  margin-bottom: 16rpx;
+}
+.topic-tags {
+  display: flex;
+  flex-wrap: wrap;
+}
+.topic-chip {
+  display: inline-flex;
+  align-items: center;
+  margin: 0 16rpx 16rpx 0;
+  padding: 6rpx 24rpx;
+  background: #FF405E;
+  color: #fff;
+  font-size: 26rpx;
+  border-radius: 999rpx;
+  line-height: 1.7;
+  max-width: 320rpx;
+  overflow: hidden;
+}
+/* 话题名过长省略；计数徽标不参与省略 */
+.topic-chip > .topic-cat-icon,
+.topic-chip > .topic-count {
+  flex-shrink: 0;
+}
+.topic-chip:active {
+  background: #E63A57;
+}
+/* 真实猫名的话题：白底粉描边，与普通话题（粉底白字）区分，提示"这是猫" */
+.topic-chip-cat {
+  background: #fff;
+  border: 2rpx solid #FF8FA3;
+  color: #E63A57;
+  padding: 4rpx 20rpx; /* 有边框，略收内边距保持高度一致 */
+}
+.topic-chip-cat:active {
+  background: #FFE5EA;
+}
+/* 已选中的话题：加深描边 + 打勾，多选状态一目了然 */
+.topic-chip-selected {
+  box-shadow: inset 0 0 0 4rpx #fff, inset 0 0 0 5rpx #E63A57;
+}
+.topic-chip-cat.topic-chip-selected {
+  background: #FFE5EA;
+  border-color: #E63A57;
+  color: #E63A57;
+}
+/* 热度计数：话题名右上角小徽标（告诉用户有几篇同标题文章） */
+.topic-count {
+  margin-left: 10rpx;
+  font-size: 20rpx;
+  background: rgba(255, 255, 255, 0.35);
+  border-radius: 999rpx;
+  padding: 0 10rpx;
+  line-height: 1.5;
+}
+.topic-chip-cat .topic-count {
+  background: #FFE5EA;
+  color: #E63A57;
+}
+.topic-chip-cat.topic-chip-selected .topic-count {
+  background: #fff;
+}
+/* 猫头 emoji 与话题名之间的间距 */
+.topic-cat-icon {
+  margin-right: 4rpx;
+}
+/* 展开/收起按钮：粉色小字可点 */
+.topic-toggle {
+  display: inline-block;
+  margin-top: 4rpx;
+  padding: 8rpx 8rpx 8rpx 0;
+  font-size: 26rpx;
+  color: #FF405E;
+}
+/* 标题行右侧"已选 N 项"提示 */
+.topic-section-title {
+  display: flex;
+  align-items: baseline;
+}
+.topic-section-selected {
+  margin-left: 12rpx;
+  font-size: 24rpx;
+  font-weight: normal;
+  color: #E63A57;
+}
+
+/* ===================== 选中话题的文章（内联展示，不跳页） ===================== */
+.topic-articles {
+  max-width: 720px;
+  margin: 8rpx auto 0;
+  padding: 24rpx 40rpx 0;
+  box-sizing: border-box;
+}
+.topic-articles-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16rpx;
+}
+.topic-articles-title {
+  font-size: 30rpx;
+  font-weight: bold;
+  color: rgb(32, 31, 31);
+}
+.topic-articles-clear {
+  font-size: 26rpx;
+  color: #E63A57;
+  padding: 6rpx 0;
+}
+.topic-articles-clear:active {
+  opacity: 0.7;
+}
+.topic-articles-loading,
+.topic-articles-empty {
+  text-align: center;
+  color: #999;
+  font-size: 26rpx;
+  padding: 40rpx 0;
+}
+.topic-article-item {
+  margin-bottom: 16rpx;
+}
+
+
+
+
+
+ 
+
+

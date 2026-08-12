@@ -1,0 +1,33 @@
+<view class="container">
+  <view class="page">
+    <text class="title">回收站（被删除的帖子）</text>
+
+    <view wx:if="{{list.length === 0}}" class="trash-empty">暂无删除记录</view>
+
+    <view wx:for="{{list}}" wx:key="_id" class="trash-item">
+      <view class="trash-head" bindtap="toggleExpand" data-id="{{item._id}}">
+        <view class="trash-name">{{item.tittle}}</view>
+        <view class="trash-meta">{{item.photoUrls.length}} 张照片｜{{item.timeText}}｜{{item.operator}}</view>
+      </view>
+
+      <view wx:if="{{expandedId === item._id}}" class="trash-detail">
+        <block wx:if="{{item.hasArchive && item.photoUrls.length}}">
+          <!-- flex 换行排列，不用 scroll-view（动态 wx:if 里创建/销毁 scroll-view 易触发渲染层框架错误） -->
+          <view class="trash-photos">
+            <image lazy-load="true"
+              wx:for="{{item.photoUrls}}"
+              wx:for-item="photo"
+              wx:key="*this"
+              class="trash-photo"
+              src="{{photo}}"
+              mode="aspectFill"
+            />
+          </view>
+        </block>
+        <view wx:else class="trash-no-photo">无照片存档（老记录的帖子照片已随旧版删除，无法找回）</view>
+
+        <button class="trash-restore" bindtap="restore" data-id="{{item._id}}">恢复推文</button>
+      </view>
+    </view>
+  </view>
+</view>

@@ -1,0 +1,120 @@
+.page {
+  background-color: #fff0f5;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.card {
+  display: flex;
+  flex-direction: column; /* 子元素按照列排列 */
+  height: 1000rpx; /* 调整名片高度 */
+  padding: 60rpx;
+  background-color: #fff;
+  border-radius: 10rpx;
+  box-shadow: 0 4rpx 20rpx rgba(0, 0, 0, 0.1);
+  position: relative;
+  margin: 40rpx; /* 调整与页面边缘之间的间距 */
+}
+
+.avatar-container {
+  margin-bottom: 60rpx; /* 调整头像容器与输入框容器之间的距离 */
+  position: relative;
+}
+
+.avatar-button {
+  display: flex;
+  top: 80rpx;
+  width: 360rpx; /* 头像框变大 */
+  height: 320rpx; /* 头像框变大 */
+  background-color: #f6daff;
+}
+
+.avatar-img {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+}
+
+.input-container {
+  display: flex;
+  align-items: center;
+  margin-top: 180rpx; /* 调整输入框容器与头像容器之间的距离 */
+  margin-left: -30rpx;
+}
+
+.input-container1 {
+  display: flex;
+  margin-top: 20rpx;
+  align-items: center;
+  margin-left: 190rpx;
+}
+
+.input-container2 {
+  display: flex;
+  align-items: center;
+  margin-top: 40rpx; /* 调整输入框容器与头像容器之间的距离 */
+  margin-left: -30rpx;
+}
+
+.input-label {
+  font-size: 32rpx;
+  font-weight: bold;
+  text-align: right;
+  margin-right: 40rpx;
+  width: 160rpx;
+}
+
+.input-label1 {
+  font-size: 32rpx;
+  font-weight: bold;
+  text-align: right;
+  margin-right: 30rpx;
+  width: 170rpx;
+}
+
+.tip-message {
+  height: 40rpx;
+  color: red;
+  font-size: 28rpx;
+}
+
+.tip-message1 {
+  height: 40rpx;
+  width: 100%;
+}
+
+  
+
+.input-field {
+  flex: 1;
+  font-size: 32rpx;
+  padding: 10rpx 20rpx;
+  border: none;
+  border-radius: 4rpx;
+  outline: none;
+  background-color: #fff5ee;
+  color: #000000;
+}
+
+.submit-button {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  position: absolute;
+  bottom: 120rpx;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 80vw;
+  height: 100rpx;
+  border-radius: 25rpx;
+  background-color: #FF405E;
+  color: white;
+  font-size: 40rpx;
+  font-weight: bold;
+  border: none;
+  outline: none;
+  box-shadow: 4rpx 4rpx 16rpx rgba(0, 0, 0, 0.3);
+}

@@ -1,0 +1,133 @@
+/* pages/editAnnouncement/editAnnouncement.wxss */
+.divLine{
+  background: #eee;
+  height: 5rpx;
+  margin-left: 150rpx;
+  position: relative;
+  top: -90rpx;
+  left: -70rpx; 
+  top: -110rpx
+}
+
+.container1 {
+  flex: 1;
+  padding: 20rpx;
+  height: auto;
+  border-radius: 10rpx;
+  box-sizing: border-box;
+  margin-left: 40rpx;
+}
+
+.list-container {
+  display: block;
+  box-sizing: border-box;
+}
+
+.announcementlist {
+  max-height: 1200rpx;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 10rpx 0;
+}
+
+.search {
+  width: 100%;
+}
+.result {
+  position: absolute; /* 添加绝对定位 */
+  top: 160rpx; /* 调整距离search的位置 */
+  left: 40rpx;
+  width: 90%;
+  max-height: 600rpx; /* 调整高度为固定值 */
+  background: #f8f8f8;
+  border: 1rpx solid #ccc;
+  border-radius: 10rpx;
+  box-sizing: border-box;
+  padding: 10rpx;
+  z-index: 999;
+}
+.list {
+  margin-bottom: 10rpx;
+  height: 90rpx;
+  padding: 10rpx;
+  font-size: 28rpx;  
+  background: #f8f8f8;
+  border-radius: 10rpx;
+}
+.btn_add{
+  position: relative;
+  width: 30%;
+  height: 60rpx;
+  font-size: 36rpx;
+  left: 35%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  color: #fff;
+  background-color: #FF405E;
+  border: none;
+  border-radius: 25rpx;
+  box-shadow: 0 0 20rpx rgba(4, 105, 253, 0.5);
+}
+.name{
+  position: relative; 
+  display: flex;
+  font-size: 36rpx;
+  position: relative;
+  font-weight: bold;
+  justify-content: center;
+}
+.switch{
+  position: relative; 
+  left: 30%;
+}
+.btn_change{
+  position: absolute;
+  width: 20%;
+  height: 60rpx;
+  left: 50%;
+  display: inline-flex;
+  font-size: 30rpx;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  color: #fff;
+  background-color: #FF405E;
+  border: none;
+  border-radius: 25rpx;
+  box-shadow: 0 0 20rpx rgba(4, 105, 253, 0.5);
+}
+.modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.modal-content {
+  background-color: #fff;
+  padding: 40rpx;
+  border-radius: 5rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 480rpx;
+}
+
+
+
+
+
+
+
+

@@ -1,0 +1,23 @@
+# ============================================================
+# .gitignore —— 发布到远端前请保留这些忽略规则
+# 【作用】把私密配置、构建产物和本地工具配置挡在仓库之外
+# ============================================================
+
+# 1) 密钥配置（真实密钥在 miniprogram/config.js，提交到仓库的是 config.example.js）
+miniprogram/config.js
+
+# 2) 依赖与构建产物
+node_modules/
+miniprogram/miniprogram_npm/
+
+# 3) 微信开发者工具本地配置
+**/project.private.config.json
+
+# 4) Claude Code 本地配置（不含共享设置）
+.claude/
+
+# 5) 系统文件
+.DS_Store
+Thumbs.db
+Desktop.ini
+tags

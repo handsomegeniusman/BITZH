@@ -1,0 +1,23 @@
+<view class="container">
+    <view class="page">
+        <text class="title">北理流浪猫管理员后台</text>
+        <view class="card-list">
+            <view class="feature-card">
+                <text class="feature-title">审核开关</text>
+                <button bindtap="manage" class="feature-button">切换发布开关</button>
+            </view>
+            <view class="feature-card">
+                <text class="feature-title">管理公告板</text>
+                <button bindtap="manageNotice" class="feature-button">管理公告板</button>
+            </view>
+            <view class="feature-card">
+                <text class="feature-title">回收站</text>
+                <button bindtap="manageTrash" class="feature-button">被删除的猫（可恢复）</button>
+            </view>
+            <view class="feature-card">
+                <text class="feature-title">帖子回收站</text>
+                <button bindtap="managePageTrash" class="feature-button">被删除的帖子（可恢复）</button>
+            </view>
+        </view>
+    </view>
+</view>

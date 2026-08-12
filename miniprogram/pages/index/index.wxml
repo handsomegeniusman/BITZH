@@ -1,0 +1,72 @@
+<import src="../templates/common.wxml"/>
+
+<view wx:if="{{blackNum}}">
+  <template is="blackNumPopup" data="{{popupAnimation}}"/>
+</view>
+<view wx:else class="index-root">
+
+  <view wx:if="{{showPopup}}">
+    <template is="noticePopup" data="{{notice, popupAnimation}}"/>
+  </view>
+
+  <!-- 用户选择排序方式 -->
+  <view class="picker">
+    <picker mode="multiSelector" bindchange="bindMultiPickerChange" value="{{multiIndex}}" range="{{multiArray}}">
+      <view >
+        {{multiArray[0][multiIndex[0]]}}-{{multiArray[1][multiIndex[1]]}}
+      </view>
+    </picker>
+  </view>
+
+  <!-- 搜索框：按话题 / 猫名 / 标题搜索推文（与查猫页的搜索互补：这里搜推文） -->
+  <view class="search-bar">
+    <input
+      class="search-input"
+      value="{{search}}"
+      bindinput="onSearchInput"
+      placeholder="🔍 搜索猫名 / 绰号 / 地点 / 话题"
+      confirm-type="search"
+      placeholder-class="search-placeholder"
+    />
+    <text wx:if="{{search}}" class="search-clear" bindtap="onSearchClear">×</text>
+  </view>
+
+  <!-- 猫横条：搜索命中猫（大名 / 绰号 / "X的妈妈或孩子"）时展示，点击直达猫详情 -->
+  <view wx:if="{{search && catResults.length}}" class="cat-results">
+    <view class="cat-results-title">猫咪</view>
+    <view class="cat-bar" wx:for="{{catResults}}" wx:key="_id" bindtap="toCatDetail" data-_id="{{item._id}}">
+      <image
+        class="cat-bar-img"
+        lazy-load="true"
+        src="{{item._thumbFallback == 1 ? item._thumbJpg : (item._thumbFallback > 1 ? '/pages/images/logo.png' : item._thumbUrl)}}"
+        binderror="onCatImgError"
+        data-list="catResults"
+        data-index="{{index}}"
+      ></image>
+      <view class="cat-bar-info">
+        <view class="cat-bar-name">{{item.name}}</view>
+        <view class="cat-bar-sub">{{item._sub}}</view>
+      </view>
+      <view class="cat-bar-arrow">›</view>
+    </view>
+  </view>
+
+  <!-- 搜索空态：无猫也无推文才提示 -->
+  <view wx:if="{{search && loaded && !listData.length && !catResults.length}}" class="search-empty">没有找到相关内容，换个关键词试试</view>
+
+  <view wx:if="{{audit}}">
+    <view class="content" >
+      <view class="left">
+        <block wx:for="{{leftList}}" wx:key="_id" wx:for-item="item">
+          <template is="pageCard" data="{{item, urlPage, showTime: searchMode}}"></template>
+        </block>
+      </view>
+      <view class="right">
+        <block wx:for="{{rightList}}" wx:key="_id" wx:for-item="item">
+          <template is="pageCard" data="{{item, urlPage, showTime: searchMode}}"></template>
+        </block>
+      </view>
+    </view>
+  </view>
+
+</view>

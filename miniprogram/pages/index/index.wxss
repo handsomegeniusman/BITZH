@@ -1,0 +1,231 @@
+/* 页面底色与底部占位改到根容器 class（不用 page 标签选择器，避免自定义 tabBar 页被按组件 lint 误报） */
+.index-root {
+  width: 100%;
+  min-height: 100vh;
+  box-sizing: border-box;
+  background: #f5f6f8; /* 白净灰底（统一） */
+  padding-bottom: calc(120rpx + env(safe-area-inset-bottom)); /* 底部自定义 tabBar 占位 */
+}
+
+/* 排序选择器：普通流内布局（不再绝对定位），宽屏限宽居中不错位 */
+.picker {
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  height: 60rpx;
+  line-height: 60rpx;
+  text-align: center;
+  color: #666;
+  font-size: 26rpx;
+}
+
+  /* ===================== 搜索框（话题 / 猫名 / 标题） ===================== */
+  .search-bar {
+    position: relative;
+    margin: 16rpx auto 0;
+    max-width: 672px; /* 720 - 2×24 留白，宽屏下与内容列对齐 */
+    display: flex;
+    align-items: center;
+    background: #fff;
+    border-radius: 999rpx;
+    padding: 0 24rpx;
+    height: 72rpx;
+    box-sizing: border-box;
+    box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
+  }
+  .search-input {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    font-size: 28rpx;
+    color: #333;
+  }
+  .search-placeholder {
+    color: #999;
+  }
+  .search-clear {
+    flex: none;
+    width: 44rpx;
+    height: 44rpx;
+    line-height: 40rpx;
+    text-align: center;
+    border-radius: 50%;
+    background: #ddd;
+    color: #fff;
+    font-size: 30rpx;
+    margin-left: 12rpx;
+  }
+  /* 搜索无结果空态 */
+  .search-empty {
+    max-width: 720px;
+    margin: 60rpx auto 0;
+    text-align: center;
+    font-size: 26rpx;
+    color: #999;
+  }
+
+  /* 猫横条：搜索命中猫（大名/绰号/关系词）时的横向卡片，点击直达猫详情 */
+  .cat-results {
+    max-width: 672px;
+    margin: 20rpx auto 0;
+  }
+  .cat-results-title {
+    font-size: 24rpx;
+    color: #999;
+    margin-bottom: 12rpx;
+  }
+  .cat-bar {
+    display: flex;
+    align-items: center;
+    background: #fff;
+    border-radius: 16rpx;
+    padding: 16rpx 20rpx;
+    margin-bottom: 14rpx;
+    box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
+  }
+  .cat-bar:active {
+    background: #f7f9fc;
+  }
+  .cat-bar-img {
+    width: 84rpx;
+    height: 84rpx;
+    border-radius: 12rpx;
+    background: #f2f3f5;
+    flex: none;
+  }
+  .cat-bar-info {
+    flex: 1;
+    min-width: 0;
+    margin-left: 20rpx;
+  }
+  .cat-bar-name {
+    font-size: 30rpx;
+    font-weight: 600;
+    color: #1a1a1a;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cat-bar-sub {
+    margin-top: 6rpx;
+    font-size: 22rpx;
+    color: #999;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cat-bar-arrow {
+    flex: none;
+    font-size: 40rpx;
+    color: #ccc;
+    margin-left: 12rpx;
+    line-height: 1;
+  }
+
+  .content {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between; /* 左右两列贴住内容列两端，不留右侧空缝 */
+    align-items: flex-start; /* 两列顶对齐，较矮一列不被垂直居中（覆盖全局 .content 的 center） */
+    max-width: 720px;
+    margin: 20rpx auto; /* 宽屏居中 */
+  }
+.float-image {
+  position: fixed;
+  z-index: 9999;
+  right: 28rpx; /* 贴右缘，宽屏不错位 */
+  bottom: calc(56rpx + env(safe-area-inset-bottom)); /* 底部悬浮，避开 iPhone 底部横条 */
+  left: auto;
+  top: auto;
+}
+/* 左右两列都在文档流内（flex 双列）：
+   - 父容器高度由较高的一列撑起，右列不再绝对定位溢出被裁 → 刷新到底时最后一张也完整可下滑
+   - 列宽用百分比，任意屏宽下两列+间隔正好铺满内容列，宽屏不会留出右侧大空缝 */
+.left,
+.right {
+  width: calc(50% - 8rpx);
+  display: flex;
+  flex-direction: column;
+}
+
+.li {
+  background: #ffffff;
+  border-radius: 10rpx;
+  margin-bottom: 16rpx; /* 卡片间距，避免两列贴成整块白墙 */
+}
+
+.pic {
+  border-radius: 15rpx 15rpx 0rpx 0rpx;
+  width: 100%;
+  display: block;
+}
+
+.bottom {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 20rpx;
+  align-items: center;
+
+}
+
+.title-wrap {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #333;
+}
+
+.title {
+  font-size: 35rpx;
+  margin-top: 14rpx;
+  margin-bottom: 0rpx;
+  margin-right: 5rpx;
+  margin-left: 25rpx;
+  font-weight: bold;
+  pointer-events: none;
+  text-align: left;
+}
+
+.toux {
+  width: 35rpx;
+  height: 35rpx;
+  border-radius: 30rpx;
+  margin-left: 10rpx;
+}
+
+.name {
+  font-size: 23rpx;
+  color: #333;
+  font-weight: 300;
+  margin-left: 20rpx;
+    align-items: center;
+}
+
+.toux-name {
+  display: flex;
+  align-items: center;
+  margin: 20rpx 0rpx;
+}
+.love{
+  color: #333;
+  display: flex;
+  align-items: center;
+}
+.love-num {
+  color: rgb(145, 145, 145);
+}
+
+.num {
+  font-size: 25rpx;
+  margin-left: 5rpx;
+}
+
+/* 右下角悬浮"添加"按钮的图片：固定大小并微调位置（原本写在 WXML 内联 style 中） */
+.add-image {
+  width: 260rpx;
+  height: 203rpx;
+  display: inline-block;
+  box-sizing: border-box;
+  position: relative;
+  left: 0rpx;
+  top: -9rpx;
+}

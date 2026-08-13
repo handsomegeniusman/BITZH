@@ -137,10 +137,12 @@ BITZH/
 | --- | --- | --- |
 | `BITZH` | 猫咪档案 | `name` 名字、`addPhotoNumber` 照片数、`status` 状态、`isSterilization` 绝育、`furColor` 毛色、`relatedCats` 相关猫咪、`appearance` 外貌等 |
 | `Page` | 小猫书（推文） | `tittle` 标题、`relative` 关联标签（话题 / 猫名）、`pageTime`/`photoTime` 时间、`good` 点赞、`authorId`/`authorImg` 作者、`comment` 评论 |
-| `Feeder` | 用户资料 | 昵称、头像、openid 等 |
+| `Feeder` | 用户资料 | 昵称、头像、`userId`（openid）等 |
 | `Notice` | 公告 | 公告内容、是否展示 |
 | `Comment` | 评论 | 小猫书下的评论 |
-| `Administrator` | 管理配置 | 第一条记录存放「是否开放注册 / 发布」等开关，其 `_id` 配置在 `config.js` 的 `administratorRecordId` |
+| `Administrator` | 审核开关 | 一条记录存放「是否开放注册 / 发布」等开关，其 `_id` 填到 `config.js` 的 `administratorRecordId` |
+| `BITZHAdministrator` | **管理员名单** | 每条记录一个管理员：`userId`（openid）+ `name`（姓名）；小程序启动时按 `userId` 匹配判断是否管理员 |
+| `BlackNum` | 黑名单 | 被封禁用户的 `userId` |
 
 ---
 
@@ -178,13 +180,15 @@ BITZH/
    - **空间 ID**（spaceId）
    - **客户端密钥**（clientSecret，可重新生成）
    - **网关地址**（endpoint，一般是 `https://api.next.bspapp.com`）
-4. 进入空间 → **云数据库**，创建以下集合（名称一字不差）：
+4. 进入空间 → **云数据库**，创建以下集合（名称一字不差，共 8 个）：
    - `BITZH`（猫咪档案）
    - `Page`（小猫书 / 推文）
    - `Feeder`（用户资料）
    - `Notice`（公告）
    - `Comment`（评论）
-   - `Administrator`（管理配置）
+   - `Administrator`（审核开关）
+   - `BITZHAdministrator`（管理员名单）
+   - `BlackNum`（黑名单）
 5. （强烈建议）在每个集合的「权限设置」里开启**权限校验**，并配置规则，避免任意用户增删改数据。具体规则可参考阿里云官方文档，或先用「仅创建者可读写」起步。
 
 ### 4. 创建图片存储（腾讯云 COS，约 10 分钟）
@@ -232,15 +236,23 @@ module.exports = {
 
 ```json
 {
-  "isOpenRegister": true,
-  "isOpenPublish": true
+  "audit": true
 }
 ```
 
-   （这两个字段用来控制是否开放注册和发布，具体字段名以代码为准，见 `utils/db.js`。）
+   （`audit` 是「是否开放注册 / 发布」的总开关：`true`=开放、`false`=关闭。字段逻辑见 `utils/db.js` 的 `getAudit`。）
 
 2. 复制这条记录的 **`_id`**，填到 `config.js` 的 `administratorRecordId`。
-3. 想让某个人成为管理员：到 `Feeder` 集合里，把对应用户记录的 `isAdministrator` 字段改为 `true`（判断逻辑见 `utils/db.js`）。
+3. 想让某个人成为管理员：到 **`BITZHAdministrator`** 集合**新增一条记录**：
+
+```json
+{
+  "userId": "那个用户的openid",
+  "name": "管理员姓名"
+}
+```
+
+   （小程序启动时会按当前用户的 `userId`（openid）在 `BITZHAdministrator` 里匹配，命中的用户即为管理员。判断逻辑见 `utils/db.js` 的 `initUserState`。openid 可在开发工具 Console 打印 `app.globalData.userId` 查看。）
 
 ### 7. 首次运行（约 5 分钟）
 

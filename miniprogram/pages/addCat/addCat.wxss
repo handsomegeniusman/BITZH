@@ -28,6 +28,37 @@
   color: #fff;
 }
 
+/* ===================== 必填星号 + 校验红框 + 错误提示（仿 editBooklet） ===================== */
+/* 必填字段旁边的红星标注 */
+.req-star {
+  margin-left: 6rpx;
+  color: #e64340;
+  font-size: 32rpx;
+  line-height: 1;
+}
+/* 必填项未填时输入框变红（提交时触发） */
+.input-error {
+  border-bottom-color: #e64340 !important;
+  color: #e64340 !important;
+  background: rgba(255, 77, 66, 0.04);
+}
+/* 输入框下方的错误提示文字 */
+.field-error {
+  margin-left: 40rpx;
+  margin-right: 40rpx;
+  margin-top: -2rpx;
+  margin-bottom: 10rpx;
+  font-size: 24rpx;
+  color: #e64340;
+  line-height: 1.6;
+}
+/* 图片区未选照片：整体加红框提示 */
+.photo-error {
+  border: 2rpx solid #e64340;
+  border-radius: 8rpx;
+  box-sizing: border-box;
+}
+
 /* ===================== 图片区：提示文案 + 计数 ===================== */
 .img-tip {
   font-size: 22rpx;
@@ -41,15 +72,15 @@
 }
 
 /* ===================== 图片区：横向滚动轨道 ===================== */
+/* 高度只比照片大一点点：图 180px + 工具行 30px = 210px，恰好放下、不竖向滚动 */
 .image-swiper {
   overflow-x: scroll;
   overflow-y: hidden;
-  padding: 10px 0;
-  height: 226px; /* 图 180px + 工具行 30px + 留白 */
+  height: 210px;
 }
 .image-track {
   position: relative;
-  height: 226px;
+  height: 210px;
 }
 .image-item {
   position: absolute;

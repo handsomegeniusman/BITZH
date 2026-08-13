@@ -1,38 +1,15 @@
-<view class="img-tip">{{imgTip}}</view>
-<scroll-view class="image-swiper" scroll-x="{{!drag.active}}" scroll-y="false">
-  <view class="image-track" style="width: {{(imageUrls.length + 1) * drag.step}}px">
-    <!-- 每张图片：绝对定位，靠 translateX 排位；长按进入拖拽后跟手、邻居带动画让位 -->
-    <view
-      class="image-item"
-      wx:for="{{imageUrls}}"
-      wx:key="*this"
-      data-index="{{index}}"
-      style="transform: translateX({{index * drag.step + (index === drag.index ? drag.offsetX : 0)}}px){{index === drag.index && drag.active ? ' scale(1.06)' : ''}}; transition: {{drag.active && index === drag.index ? 'none' : 'transform .2s ease'}}; z-index: {{index === drag.index ? 99 : 1}};{{index === drag.index && drag.active ? ' opacity:.85' : ''}}"
-      bindtouchstart="onImgTouchStart"
-      bindtouchmove="onImgTouchMove"
-      bindtouchend="onImgTouchEnd"
-      bindtouchcancel="onImgTouchEnd"
-      bindtap="onImgTap"
-    >
-      <view class="item-img-box">
-        <image class="item-image" src="{{imageUrls[index]}}" mode="aspectFit"/>
-        <view class="cover-badge" wx:if="{{index === 0}}">封面</view>
-      </view>
-      <view class="item-tools">
-        <text wx:if="{{index > 0}}" class="tool-btn" catchtap="onSetCover" data-tool="1" data-index="{{index}}">☆ 设封面</text>
-        <text wx:else class="tool-btn on">★ 封面</text>
-        <image class="delete-icon" src="/pages/images/delete.jpg" catchtap="onDelete" data-tool="1" data-index="{{index}}" mode=""/>
-      </view>
-    </view>
-    <!-- 末尾"+"新增位：只响应点击，不参与拖拽/预览 -->
-    <view class="image-item add-item" style="transform: translateX({{imageUrls.length * drag.step}}px)" bindtap="getphoto">
-      <view class="item-img-box">
-        <image class="item-image" src="/pages/images/addPhoto.png" mode="aspectFit"/>
-      </view>
-    </view>
-  </view>
-</scroll-view>
-<view class="img-count">已选 {{imageUrls.length}} 张</view>
+<view class="img-tip"><text user-select="true">照片</text><text class="req-star">*</text></view>
+<!-- 图片区：横向拖拽排序（长按拖拽/单击预览/删除确认/设封面/末尾新增，全部在 image-sorter 组件内） -->
+<image-sorter
+  items="{{imageUrls}}"
+  tip="{{imgTip}}"
+  show-tools="{{true}}"
+  show-add="{{true}}"
+  invalid="{{formErrors.photo}}"
+  bind:change="onImgChange"
+  bind:add="getphoto"
+/>
+<view class="field-error" wx:if="{{formErrors.photo}}">请至少上传一张照片</view>
 
 <!-- 历史照片：查看各编辑版本的存档照片，可挑一张恢复为当前 -->
 <button class="history-btn" bindtap="loadHistory">历史照片</button>
@@ -52,11 +29,24 @@
 <view class="editor-line" wx:if="{{lastEditor}}">上次编辑：{{lastEditor}}</view>
 
 <view class="head1">
-  <text user-select="true">名字</text>
+  <text user-select="true">名字</text><text class="req-star">*</text>
 </view>
-<input data-key='name' bindinput="inputText" bindblur="onNameBlur" class="edit-input" value="{{cat.name}}" />
+<input data-key='name' bindinput="inputText" bindblur="onNameBlur" class="edit-input {{formErrors.name ? 'input-error' : ''}}" value="{{cat.name}}" />
+<view class="field-error" wx:if="{{formErrors.name}}">名字为必填项，请填写</view>
 <view class="name-warn" wx:if="{{nameDuplicate}}">{{nameDuplicate}}</view>
 <view wx:if="{{restoreOld.name}}" class="restore-old {{restoreApplied.name ? 'applied' : ''}}" data-key="name" bindtap="applyOld"><text>上次：{{restoreOld.name}}</text><text wx:if="{{restoreApplied.name}}" class="restore-tag">已用</text></view>
+
+<view class="head1">
+  <text user-select="true">别名 / 外号</text>
+</view>
+<input data-key='otherName' bindinput="inputText" class="edit-input" value="{{cat.otherName}}" placeholder="多个用空格或逗号分隔，如：猫哥 小奶猫" />
+<view wx:if="{{restoreOld.otherName}}" class="restore-old {{restoreApplied.otherName ? 'applied' : ''}}" data-key="otherName" bindtap="applyOld"><text>上次：{{restoreOld.otherName}}</text><text wx:if="{{restoreApplied.otherName}}" class="restore-tag">已用</text></view>
+
+<view class="head1">
+  <text user-select="true">曾用名</text>
+</view>
+<input data-key='usedName' bindinput="inputText" class="edit-input" value="{{cat.usedName}}" placeholder="多个用空格或逗号分隔，如：黄条子" />
+<view wx:if="{{restoreOld.usedName}}" class="restore-old {{restoreApplied.usedName ? 'applied' : ''}}" data-key="usedName" bindtap="applyOld"><text>上次：{{restoreOld.usedName}}</text><text wx:if="{{restoreApplied.usedName}}" class="restore-tag">已用</text></view>
 
 <view class="head1">
   <text user-select="true">外貌</text>
@@ -232,21 +222,6 @@
 <button class="delete-cat-btn" bindtap="delete">删除整只猫</button>
 
 <view class="bottom-pad"></view>
-
-<!-- 删除图片确认弹窗（勾选"下次不再询问"后直接删，不再弹窗） -->
-<view class="del-mask" wx:if="{{delModal.show}}" catchtouchmove="noop" bindtap="delCancel">
-  <view class="del-modal" catchtap="noop">
-    <view class="del-title">删除这张图片？</view>
-    <view class="del-option" catchtap="toggleNoAsk">
-      <text class="del-check {{delModal.noAsk ? 'on' : ''}}">{{delModal.noAsk ? '☑' : '☐'}}</text>
-      <text class="del-option-text">下次不再询问</text>
-    </view>
-    <view class="del-btns">
-      <button class="del-btn cancel" bindtap="delCancel">取消</button>
-      <button class="del-btn ok" bindtap="delConfirm">删除</button>
-    </view>
-  </view>
-</view>
 
 <!-- 吸底按钮条：提交 -->
 <view class="bottom-bar">

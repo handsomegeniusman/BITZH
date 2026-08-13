@@ -21,6 +21,8 @@ const LPRS_MS = 350;      // 长按判定阈值（毫秒）
 const MOVE_THRESHOLD = 10; // 长按激活前允许的位移，超过视为"滚动"
 const MAX_IMGS = 20;      // 图片上限（与 utils/media.js chooseImages 的 count 一致）
 const NOASK_KEY = 'imgDeleteNoAsk'; // "删除不再询问"的 storage 标记
+const EDGE_ZONE = 90;     // 手指距容器左右边缘多少 px 内 → 触发自动滚动（px）
+const AUTO_SPEED = 40;    // 自动滚动速度（px/帧，30ms 一帧 ≈ 1300px/s，手指贴缘持续滚）
 
 // rAF 节流：拖拽中同一帧内多次 touchmove 合并为一次 setData，避免渲染层过载卡顿。
 // 逻辑层支持 requestAnimationFrame；低版本缺省时回退到 16ms 定时器，效果相同。
@@ -78,35 +80,57 @@ function touchStart(page, e) {
     startX: touch.clientX,
     active: false,
     cancelled: false,
+    lastTouchX: touch.clientX,          // 最新触摸横坐标（边缘自动滚动判断用）
+    scrollLeft0: page._scrollLeft || 0, // 起拖时容器的滚动位置（位移补偿用，保证图跟手）
   };
   pending.timer = setTimeout(function () {
     if (!page._dragPending || page._dragPending.cancelled) return;
     page._dragPending.active = true;
     page.setData({ drag: { active: true, index: index, offsetX: 0, step: STEP } });
+    startAutoScroll(page); // 激活拖拽后：手指贴到容器左右边缘 → 滑条自动滚动，拖得到列表两端
   }, LPRS_MS);
   page._dragPending = pending;
+  // 顺手量一次容器尺寸（异步）：非拖拽滑动手动滚动 / 拖拽边缘自动滚动都要用它钳制范围
+  querySwiper(page).then(function (info) { if (info) page._swiperInfo = info; });
 }
 
-/** touchmove：长按激活后驱动拖拽；未激活且位移过大则取消长按（视为滚动） */
+/** touchmove：长按激活后驱动拖拽；未激活时驱动滑条 JS 手动滚动（跟随手指）。
+ *  图片项用 catchtouchmove 拦截了原生滚动，这里完全接管横向滚动，行为规则：
+ *    - 未激活（滑动/还没到长按判定）：手指往哪滑，滑条往哪滚（手动滚动）
+ *    - 已激活（长按拖拽中）：滑条【锁定】，不随手指滚动；只有手指贴到
+ *      左右边缘时才由 startAutoScroll 自动滚动 —— 满足"拖到两端能继续拖" */
 function touchMove(page, e) {
   const p = page._dragPending;
   const touch = e.touches && e.touches[0];
   if (!p || !touch) return;
   if (!p.active) {
-    if (Math.abs(touch.clientX - p.startX) > MOVE_THRESHOLD) {
-      p.cancelled = true;
+    // ===== 未激活：手动滚动（非拖拽滑动手势） =====
+    const dx = touch.clientX - p.startX;
+    if (Math.abs(dx) > MOVE_THRESHOLD) {
+      p.cancelled = true;  // 位移过大 → 判为滑动，取消长按（本次触摸不进拖拽）
       clearTimeout(p.timer);
+    }
+    let sl = (p.scrollLeft0 || 0) - dx; // 起拖时的位置 - 手指位移（左滑 → 内容左移）
+    if (page._swiperInfo) sl = Math.max(0, Math.min(page._swiperInfo.maxScrollLeft, sl));
+    else sl = Math.max(0, sl); // 还没量出尺寸时只防负值，让 scroll-view 自己兜底
+    if (sl !== (page._scrollLeft || 0)) {
+      page._scrollLeft = sl;
+      page.setData({ scrollLeft: sl });
     }
     return;
   }
   const list = listOf(page);
   if (!list.length) return;
 
-  // 被拖图的期望位置 = 起按槽位 × 步进 + 手指相对起点的横向位移；
-  // 整体钳制在轨道内（首槽 ~ 尾槽），不越界、不错位。
+  // ===== 已激活：拖拽排序（滑条锁定，不随手指滚动） =====
+  // 被拖图的期望位置 = 起按槽位 × 步进 + 手指相对起点的横向位移 + 容器滚动补偿。
+  // 滚动补偿只在【边缘自动滚动】移动滑条时生效（scrollDelta 非零），
+  // 普通拖动滑条不动，scrollDelta=0 → 图纯跟手指走；滑条锁定后不会出现"图乱跑"。
   const start = p.startIndex;
   const maxPos = (list.length - 1) * STEP;
-  let pos = start * STEP + (touch.clientX - p.startX);
+  const scrollDelta = (page._scrollLeft || 0) - p.scrollLeft0;
+  p.lastTouchX = touch.clientX; // 供边缘自动滚动定时器读取（无论拖不拖都记录最新手指位置）
+  let pos = start * STEP + (touch.clientX - p.startX) + scrollDelta;
   pos = Math.max(0, Math.min(maxPos, pos));
 
   // 目标槽位：越过相邻图片的中点 → 邻居让位
@@ -153,12 +177,78 @@ function touchEnd(page) {
   const p = page._dragPending;
   page._dragPending = null;
   page._dragFrame = null; // 丢弃未落地的一帧（applyDrag 会因 _dragPending 为空直接跳过）
+  page._swiperInfo = null; // 丢弃缓存的容器尺寸，下次拖拽重新测量
+  stopAutoScroll(page);    // 停止边缘自动滚动
   if (!p) return;
   clearTimeout(p.timer);
   if (p.active) {
     page._justDragged = true; // 300ms 内忽略 tap，防误触预览
     page.setData({ drag: { active: false, index: -1, offsetX: 0, step: STEP } });
     setTimeout(function () { page._justDragged = false; }, 300);
+  }
+}
+
+// ============ 1.5 拖拽边缘自动滚动 ============
+
+/** scroll-view 滚动回调：记录当前滚动位置（拖拽位移补偿用）。不做 setData，避免滚↔set 循环 */
+function onScroll(page, e) {
+  const sl = e && e.detail && e.detail.scrollLeft;
+  if (typeof sl === 'number') page._scrollLeft = sl;
+}
+
+/** 测量滑条容器：可视区左右边界（屏幕坐标）+ 最大可滚动距离 */
+function querySwiper(page) {
+  return new Promise(function (resolve) {
+    wx.createSelectorQuery().in(page).select('.image-swiper').boundingClientRect().scrollOffset().exec(function (res) {
+      if (!res || !res[0] || !res[1]) { resolve(null); return; }
+      resolve({
+        left: res[0].left,
+        right: res[0].left + res[0].width,
+        maxScrollLeft: Math.max(0, res[1].scrollWidth - res[0].width),
+      });
+    });
+  });
+}
+
+/** 激活拖拽时启动：手指贴到容器左右边缘 → 每帧向该方向滚动滑条，让用户能拖到列表两端 */
+function startAutoScroll(page) {
+  if (page._autoScrollTimer) return;
+  page._autoScrollTimer = setInterval(function () {
+    const p = page._dragPending;
+    if (!p || !p.active) { stopAutoScroll(page); return; }
+    if (typeof p.lastTouchX !== 'number') return;
+    if (!page._swiperInfo) {
+      // 首次先量尺寸，量完这一帧就滚
+      querySwiper(page).then(function (info) {
+        if (!info) { stopAutoScroll(page); return; }
+        page._swiperInfo = info;
+        autoScrollTick(page, info);
+      });
+      return;
+    }
+    autoScrollTick(page, page._swiperInfo);
+  }, 30);
+}
+
+function autoScrollTick(page, info) {
+  const p = page._dragPending;
+  if (!p || !p.active) return;
+  let delta = 0;
+  if (p.lastTouchX > info.right - EDGE_ZONE) delta = AUTO_SPEED;    // 贴右缘 → 向右滚
+  else if (p.lastTouchX < info.left + EDGE_ZONE) delta = -AUTO_SPEED; // 贴左缘 → 向左滚
+  if (!delta) return;
+  let sl = (page._scrollLeft || 0) + delta;
+  sl = Math.max(0, Math.min(info.maxScrollLeft, sl));
+  if (sl !== page._scrollLeft) {
+    page._scrollLeft = sl;
+    page.setData({ scrollLeft: sl }); // 驱动 scroll-view 滚动（scroll-left 数据变化才生效）
+  }
+}
+
+function stopAutoScroll(page) {
+  if (page._autoScrollTimer) {
+    clearInterval(page._autoScrollTimer);
+    page._autoScrollTimer = null;
   }
 }
 
@@ -238,6 +328,7 @@ module.exports = {
   touchStart: touchStart,
   touchMove: touchMove,
   touchEnd: touchEnd,
+  onScroll: onScroll,
   // 单击预览
   tap: tap,
   // 删除确认

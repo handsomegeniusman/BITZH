@@ -57,9 +57,11 @@ function pageImages(page) {
 /** 把一串地址写回页面图片列表：新增页存对象 {tempFilePath}，编辑页存字符串 */
 function setPageImages(page, urls) {
   const asObjects = !!page.data.draftImagesAsObjects;
-  imgEditor.setList(page, asObjects
+  const next = asObjects
     ? urls.map(function (u) { return { tempFilePath: u }; })
-    : urls);
+    : urls;
+  console.log('[draft.restore] setPageImages → 字段=' + page.data.imgField + ' 对象格式=' + asObjects + ' 写入' + next.length + '张');
+  imgEditor.setList(page, next);
 }
 
 /** 草稿保存时间的中文描述：'刚刚' / '5分钟前' / '3小时前' / '2天前' */
@@ -255,6 +257,11 @@ function readDraft(type, id) {
  */
 async function restore(page, type, id, apply) {
   const d = readDraft(type, id);
+  console.log('[draft.restore] 第0步：读取草稿 type=' + type + ' id=' + id +
+    ' 找到=' + (!!d) + (d ? ' savedAt=' + d.savedAt + ' images=' + (Array.isArray(d.images) ? d.images.length : '非数组') : ''));
+  if (d && Array.isArray(d.images) && d.images.length) {
+    console.log('[draft.restore] 图片样例：' + d.images.slice(0, 3).join(' | '));
+  }
   if (!d || !d.savedAt) return false;
   const res = await new Promise(function (resolve) {
     wx.showModal({
@@ -267,16 +274,20 @@ async function restore(page, type, id, apply) {
     });
   });
   if (!res || !res.confirm) {
+    console.log('[draft.restore] 用户点了"放弃草稿"，清除草稿');
     clearDraft(page, type, id); // 用户明确放弃 → 清掉，下次编辑再自动保存
     return false;
   }
   page._draftDirty = true; // 恢复后的内容也要继续自动保存（onHide 兜底）
+  console.log('[draft.restore] 用户点了"恢复"，开始回填');
   // 1) 填回表单字段
   if (apply && typeof apply.fields === 'function' && d.fields) {
+    console.log('[draft.restore] 第1步：回填表单字段 keys=' + Object.keys(d.fields).join(','));
     apply.fields(page, d.fields);
   }
   // 2) 填回关系（猫页）
   if (apply && typeof apply.relation === 'function') {
+    console.log('[draft.restore] 第2步：回填关系 relationList=' + (Array.isArray(d.relationList) ? d.relationList.length : 0));
     apply.relation(page, d.relationList || [], d.relationSyncTasks || []);
   }
   // 3) 图片：剔除已失效的本地路径（卡退后最后一次选的临时图可能已不存在）
@@ -287,12 +298,18 @@ async function restore(page, type, id, apply) {
     const u = urls[i];
     if (isLocal(u)) {
       if (await fileExists(u)) alive.push(u);
-      else dead++;
+      else {
+        dead++;
+        console.log('[draft.restore] 失效本地图已剔除：' + u);
+      }
     } else {
       alive.push(u); // 网络 URL（草稿目录图/正式图）直接保留
     }
   }
+  console.log('[draft.restore] 第3步：图片 存活=' + alive.length + ' 总数=' + urls.length + '（剔除 ' + dead + ' 张）');
   setPageImages(page, alive);
+  console.log('[draft.restore] 第3步完成：写入后列表 ' + imgEditor.listOf(page).length + ' 张，imgField=' + page.data.imgField +
+    ' asObjects=' + !!page.data.draftImagesAsObjects);
   if (dead > 0) {
     wx.showToast({ icon: 'none', title: '已跳过 ' + dead + ' 张失效图片（可重新添加）' });
   }

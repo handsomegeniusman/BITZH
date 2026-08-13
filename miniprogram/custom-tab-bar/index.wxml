@@ -7,7 +7,7 @@
   <view class="tab-bar-item" data-path="/pages/index/index" bindtap="switchTab">
     <view class="tab-text {{selected === 1 ? 'active' : ''}}">小猫书</view>
   </view>
-  <view class="tab-bar-center" catchtap="addPost">
+  <view class="tab-bar-center" catchtap="addPost" wx:if="{{audit}}">
     <view class="add-btn">＋</view>
   </view>
   <view class="tab-bar-item" data-path="/pages/about/about" bindtap="switchTab">

@@ -173,18 +173,39 @@
 }
 
 /* ---------- 搜索弹窗 ---------- */
+/* 搜索弹窗用纵向 flex：标题/搜索框/暂存/取消固定，结果列表自适应收缩，
+   键盘弹出导致弹窗变矮时按钮仍可见（不会滚到屏幕外） */
+.rel-sheet-search {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
 .rel-search-box {
   background: #f5f5f5;
   border-radius: 12rpx;
   padding: 0 24rpx;
   margin-bottom: 16rpx;
+  flex-shrink: 0;
 }
 .rel-search-input {
   height: 76rpx;
   font-size: 28rpx;
 }
 .rel-search-list {
-  max-height: 42vh;
+  flex: 1;
+  min-height: 0;
+  /* 兜底上限：列表最高约半屏，超出部分内部滚动；保证列表永远在「暂存」按钮上方结束，
+     不会因父容器 auto 高度不收缩而无限长盖住 暂存/取消 按钮（真机上 scroll-view 在
+     height:auto + max-height 的 flex 里可能不收缩，必须给个硬上限才可靠） */
+  max-height: 45vh;
+  padding-bottom: 8rpx; /* 最后一项与下方边界线之间留点空隙 */
+}
+/* 底部固定区：边界线在「暂存」按钮上方；键盘弹出弹窗变矮时也固定可见，不随列表滚动 */
+.rel-search-footer {
+  flex-shrink: 0;
+  margin-top: 12rpx;
+  padding-top: 16rpx;
+  border-top: 2rpx solid #f0f0f0; /* 可见边界：搜索结果列表到此为止 */
 }
 .rel-search-item {
   display: flex;
@@ -232,11 +253,16 @@
   color: #888;
 }
 .rel-keep-btn {
-  margin-top: 20rpx;
+  margin-top: 12rpx;
+  width: 100%;
   font-size: 26rpx;
   background: #fff7ee;
   color: #FF405E;
   border-radius: 10rpx;
+  flex-shrink: 0;
+}
+.rel-keep-btn:active {
+  background: #ffe4c9;
 }
 
 /* ---------- 填关系弹窗 ---------- */

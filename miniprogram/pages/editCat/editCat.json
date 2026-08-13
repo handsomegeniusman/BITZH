@@ -1,5 +1,6 @@
 {
   "usingComponents": {
-    "relation-editor": "/components/relation-editor/relation-editor"
+    "relation-editor": "/components/relation-editor/relation-editor",
+    "image-sorter": "/components/image-sorter/image-sorter"
   }
 }

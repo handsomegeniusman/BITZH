@@ -313,9 +313,29 @@ page {
   height: 24rpx;
 }
 
-/* 顶部"年-月"选择器：文字居中 */
+/* 排序选择器：胶囊样式 + 「排序」引导 + ▾，让用户知道可点击切换 */
 .detail-picker {
-  text-align: center;
+  display: inline-flex;
+  align-items: center;
+  margin: 0 auto;
+  padding: 8rpx 26rpx;
+  background: #f5f5f5;
+  border-radius: 999rpx;
+  font-size: 26rpx;
+  color: #555;
+}
+.detail-picker-label {
+  color: #999;
+  margin-right: 10rpx;
+}
+.detail-picker-value {
+  color: #333;
+  font-weight: 500;
+}
+.detail-picker-arrow {
+  margin-left: 10rpx;
+  color: #999;
+  font-size: 30rpx; /* 22→30：箭头放大，接近正文大小，不再显得太小 */
 }
 
 /* ===================== 相关话题区 ===================== */
@@ -331,17 +351,47 @@ page {
   color: rgb(32, 31, 31);
   margin-bottom: 16rpx;
 }
+/* 全选 / 取消选择：标题下方一行粉色小字 */
+.topic-actions {
+  display: flex;
+  margin: -4rpx 0 12rpx;
+}
+.topic-action-btn {
+  font-size: 24rpx;
+  color: #E63A57;
+  padding: 6rpx 24rpx 6rpx 0;
+}
+.topic-action-btn:active {
+  opacity: 0.7;
+}
+/* 相关话题默认一行：横向 scroll-view，左右滑动看前 8 个 */
 .topic-tags {
+  display: flex;
+  width: 100%;
+  white-space: nowrap;
+}
+.topic-tags-inner {
+  display: inline-flex;
+  padding-right: 20rpx;
+}
+/* 展开后：全部话题换行展示（不再横向滚动），胶囊补上下间距 */
+.topic-tags-expanded {
   display: flex;
   flex-wrap: wrap;
 }
+.topic-tags-expanded .topic-chip {
+  margin: 0 16rpx 16rpx 0;
+}
+/* 话题胶囊统一白底：普通话题与猫名话题不再区分颜色（全部白色），
+   猫名用 🐱 图标标识；选中态用粉色描边 + 粉色文字 + ✓ 区分 */
 .topic-chip {
   display: inline-flex;
   align-items: center;
-  margin: 0 16rpx 16rpx 0;
-  padding: 6rpx 24rpx;
-  background: #FF405E;
-  color: #fff;
+  margin: 0 16rpx 0 0;
+  padding: 4rpx 20rpx;
+  background: #fff;
+  border: 2rpx solid #eee;
+  color: #555;
   font-size: 26rpx;
   border-radius: 999rpx;
   line-height: 1.7;
@@ -354,52 +404,43 @@ page {
   flex-shrink: 0;
 }
 .topic-chip:active {
-  background: #E63A57;
+  background: #f7f7f7;
 }
-/* 真实猫名的话题：白底粉描边，与普通话题（粉底白字）区分，提示"这是猫" */
-.topic-chip-cat {
-  background: #fff;
-  border: 2rpx solid #FF8FA3;
-  color: #E63A57;
-  padding: 4rpx 20rpx; /* 有边框，略收内边距保持高度一致 */
-}
-.topic-chip-cat:active {
-  background: #FFE5EA;
-}
-/* 已选中的话题：加深描边 + 打勾，多选状态一目了然 */
+/* 已选中的话题：粉色描边 + 粉色文字 + 打勾，多选状态一目了然（仍是白底） */
 .topic-chip-selected {
-  box-shadow: inset 0 0 0 4rpx #fff, inset 0 0 0 5rpx #E63A57;
-}
-.topic-chip-cat.topic-chip-selected {
-  background: #FFE5EA;
   border-color: #E63A57;
   color: #E63A57;
+  font-weight: bold;
+}
+/* 选中打勾：与话题名之间留点间距 */
+.topic-check {
+  margin-right: 6rpx;
+  font-size: 24rpx;
 }
 /* 热度计数：话题名右上角小徽标（告诉用户有几篇同标题文章） */
 .topic-count {
   margin-left: 10rpx;
   font-size: 20rpx;
-  background: rgba(255, 255, 255, 0.35);
+  background: #f3f3f3;
+  color: #888;
   border-radius: 999rpx;
   padding: 0 10rpx;
   line-height: 1.5;
 }
-.topic-chip-cat .topic-count {
+.topic-chip-selected .topic-count {
   background: #FFE5EA;
   color: #E63A57;
-}
-.topic-chip-cat.topic-chip-selected .topic-count {
-  background: #fff;
 }
 /* 猫头 emoji 与话题名之间的间距 */
 .topic-cat-icon {
   margin-right: 4rpx;
 }
-/* 展开/收起按钮：粉色小字可点 */
+/* 展开/收起按钮：粉色小字可点。
+   与标签行/横向滚动条拉开间距 + 加大点击热区，避免在标签上左右滑动时误触「展开全部/收起」 */
 .topic-toggle {
   display: inline-block;
-  margin-top: 4rpx;
-  padding: 8rpx 8rpx 8rpx 0;
+  margin-top: 20rpx;
+  padding: 12rpx 24rpx 12rpx 0;
   font-size: 26rpx;
   color: #FF405E;
 }

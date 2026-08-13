@@ -27,14 +27,15 @@ const DELETE_COLLECTION = 'BITZHdelete'; // 删除存档集合（删除整只猫
 // 可恢复的编辑字段（与下方 WXML 表单一一对应；自动生成的 nickname/relatedCats、
 // 图片数量 addPhotoNumber 不参与恢复，照片由图片区单独管理）
 const RESTORE_FIELDS = [
-  'name', 'appearance', 'classification', 'furColor', 'gender', 'status',
+  'name', 'otherName', 'usedName', 'appearance', 'classification', 'furColor', 'gender', 'status',
   'isSterilization', 'sterilizationTime', 'location', 'birthTime', 'character',
   'firstSightingTime', 'firstSightingLocation', 'missingTime', 'deliveryTime',
   'deathTime', 'deathReason', 'namereason', 'moreInformation', 'relationship',
 ];
 // 字段中文名（红框提示 / 提交确认弹窗标题用）
 const FIELD_LABELS = {
-  name: '名字', appearance: '外貌', classification: '毛色分类', furColor: '毛色',
+  name: '名字', otherName: '别名/外号', usedName: '曾用名', appearance: '外貌',
+  classification: '毛色分类', furColor: '毛色',
   gender: '性别', status: '状况', isSterilization: '绝育情况',
   sterilizationTime: '绝育时间', location: '出没地点', birthTime: '出生时间',
   character: '性格', firstSightingTime: '第一次目击时间',
@@ -67,8 +68,6 @@ Page({
     changName: false,     // 猫咪名字是否被修改过
     imgField: 'imageUrls', // 图片列表字段名（imgEditor 按此读写）
     imgTip: '长按拖动排序，单击预览', // 图片区提示文案
-    drag: { active: false, index: -1, offsetX: 0, step: 190 }, // 拖拽状态（step=图宽180+间距10）
-    delModal: { show: false, index: -1, noAsk: false }, // 删除图片确认弹窗
     relationList: [],     // 关系编辑器当前的关系数组 [{name, relation}]
     relationSyncTasks: [], // 待提交的同步任务（编辑页面提交时才写入对方猫）
     restoreOld: {},       // 恢复数据：key -> 上一次的值（用于红框显示；空值显示为"（空）"）
@@ -83,6 +82,7 @@ Page({
     historyShow: false,   // "历史照片"弹层是否显示
     historyList: [],      // 历史照片版本列表 [{time, operator, photos:[{url,src,i}]}]
     draftImagesAsObjects: false, // 草稿图片写回时用字符串格式（编辑页图片条用 URL 字符串）
+    formErrors: {},       // 必填校验错误 {name: true, photo: true}（未填时输入框/图片区变红，仿 editBooklet）
   },
 
   /** 页面加载：只有管理员可以编辑猫咪；缺 _id 时兜底，避免误编辑随机记录 */
@@ -139,7 +139,7 @@ Page({
 
   /** 页面加载后检查是否有未完成的草稿，有则询问是否恢复 */
   async checkDraft() {
-    await draft.restore(this, this._draftType, this._draftId, {
+    const ok = await draft.restore(this, this._draftType, this._draftId, {
       // 填回表单字段：合并到 cat，再重算下拉选中下标与昵称（派生字段不能直接存）
       fields: (page, fields) => {
         page.setData({ cat: Object.assign({}, page.data.cat, fields) });
@@ -151,6 +151,8 @@ Page({
         page.setData({ relationList: relationList || [], relationSyncTasks: relationSyncTasks || [] });
       },
     });
+    console.log('[editCat.checkDraft] 恢复结果=' + ok + ' imageUrls=' + this.data.imageUrls.length +
+      ' 首张=' + (this.data.imageUrls[0] ? String(this.data.imageUrls[0]).slice(0, 80) : '(空)'));
   },
 
   /** 立即保存草稿（onHide/onUnload 兜底 + 防抖定时器到点时调用） */
@@ -201,15 +203,35 @@ Page({
     draft.markDirty(this);
   },
 
+  /** 必填校验：名字 + 至少一张照片，未填 → 标红并滚到页面顶部（两个必填项都在最上方） */
+  validateRequired() {
+    const errs = {};
+    // 清洗猫名（会用作图片文件名）后再判空：全非法字符（如 ***）也算没填
+    if (guard.isEmpty(guard.sanitizeFileName(this.data.cat.name || '', 20))) errs.name = true;
+    if (!this.data.imageUrls.length) errs.photo = true;
+    return errs;
+  },
+
+  /** 输入/改动后清除该字段的必填报错（红框是"提交时未填"的错误态，改了就该消） */
+  clearFieldError(key) {
+    const errs = Object.assign({}, this.data.formErrors);
+    delete errs[key];
+    this.setData({ formErrors: errs });
+  },
+
   /** 点击"确定提交" */
   upload() {
     if (this._submitting) return; // 防止异步流程中重复提交
-    // 清洗猫名（会用作图片文件名），sanitize 已限长 20
-    const name = guard.sanitizeFileName(this.data.cat.name || '', 20);
-    if (guard.isEmpty(name)) {
-      wx.showToast({ icon: 'error', title: '猫名不能为空' });
+    // 必填校验（仿 editBooklet）：名字 + 至少一张照片
+    const errs = this.validateRequired();
+    if (Object.keys(errs).length) {
+      this.setData({ formErrors: errs }); // 必填项未填 → 输入框/图片区变红
+      wx.showToast({ icon: 'none', title: '请先填写必填项' });
+      wx.pageScrollTo({ scrollTop: 0, duration: 300 }); // 必填项都在最上方，滚回去
       return;
     }
+    // 清洗猫名（会用作图片文件名），sanitize 已限长 20
+    const name = guard.sanitizeFileName(this.data.cat.name || '', 20);
     this.setData({ 'cat.name': name });
     // 有尚未处理的"上次数据"差异字段 → 先逐项确认用旧的还是保留本次
     const pending = this.pendingRestoreKeys();
@@ -271,22 +293,26 @@ Page({
             // 猫改名：同步更新所有相关推文的 relative 字段（旧名 → 新名），
             // 保证改名后 catDetail 的推文列表不丢失关联
             const newName = this.data.cat.name;
+            let renamed = { renamed: 0, inherited: 0 };
             if (this.data.beforeName && this.data.beforeName !== newName) {
               try {
                 await this.updatePageRelative(this.data.beforeName, newName);
               } catch (err) {
                 console.error('同步推文关联失败', err);
               }
-              // 同步其他猫 relatedCats 里的旧名 → 新名，保持关系图一致（含昵称刷新）
+              // 同步其他猫 relatedCats 里的旧名 → 新名，保持关系图一致（含昵称刷新）。
+              // 同时补全反向关系：暂存了"新名字"的猫（改名后新名字才存在）此前只有
+              // 单向关联，改名时把反向关系合并进被改名猫，避免"我能关联它、它关联不到我"
               try {
-                await relation.renameCat(this.data.beforeName, newName);
+                renamed = await relation.renameCat(this.data.beforeName, newName, this.data.cat.gender);
               } catch (err) {
                 console.error('同步关系引用旧名→新名失败', err);
               }
             }
             // 双向同步：把关系同步到对方猫的页面（只读对方、按需写入）
+            let synced = 0;
             try {
-              await relation.applySyncTasks(this.data.relationSyncTasks, this.data.cat.name);
+              synced = await relation.applySyncTasks(this.data.relationSyncTasks, this.data.cat.name);
             } catch (err) {
               console.error('同步关系失败', err);
             }
@@ -295,7 +321,14 @@ Page({
             wx.hideLoading();
             this._submitting = false;
             wx.showToast({ icon: 'success', title: '操作成功' });
-            setTimeout(() => wx.reLaunch({ url: '/pages/catSearch/catSearch' }), 600);
+            // 自动关联结果提示：改名补全的反向关系 + 同步到对方的猫数
+            const autoCount = renamed.inherited + synced;
+            if (autoCount > 0) {
+              setTimeout(() => wx.showToast({ icon: 'none', title: '已自动关联 ' + autoCount + ' 只猫的关系' }), 400);
+              setTimeout(() => wx.reLaunch({ url: '/pages/catSearch/catSearch' }), 1600);
+            } else {
+              setTimeout(() => wx.reLaunch({ url: '/pages/catSearch/catSearch' }), 600);
+            }
           }).catch((err) => {
             cos.clearETagCache(); // 即使失败，照片 key 也可能被部分覆盖，缓存一律清掉
             wx.hideLoading();
@@ -653,6 +686,7 @@ Page({
         this.setData({ imageUrls }, () => {
           draft.markDirty(this); // 图片列表变了 → 纳入草稿自动保存
           this.closeHistory(); // 关掉弹层露出图片条，方便用户拖动排序
+          this.clearFieldError('photo'); // 补了照片 → 消图片区红框
           wx.showToast({ icon: 'success', title: '已加入，提交后生效' });
         });
       },
@@ -669,6 +703,7 @@ Page({
     const key = e.currentTarget.dataset.key;
     if (key === 'name') {
       this.setData({ changName: true, nameDuplicate: '' }); // 名字被修改，清除旧重名提示
+      this.clearFieldError('name'); // 名字填上了 → 消红框
     }
     setField(this, 'cat.' + key, e.detail.value); // 动态字段名赋值
     this.setnickname();
@@ -845,7 +880,10 @@ Page({
   /** 把某个字段的值写回表单：刷新下拉选中下标/昵称，并标记已应用 */
   applyRestoreValue(key, value) {
     if (value === undefined || value === null) return;
-    if (key === 'name') this.setData({ nameDuplicate: '' }); // 名字被恢复，旧重名提示作废
+    if (key === 'name') {
+      this.setData({ nameDuplicate: '' }); // 名字被恢复，旧重名提示作废
+      this.clearFieldError('name'); // 名字填上了 → 消红框
+    }
     if (key === 'relatedCats') {
       // 关系：解析成卡片数组交给 relation-editor 回显（observers.value 自动刷新卡片）
       this.setData({ relationList: relation.parseRelatedCats(value) });
@@ -877,36 +915,18 @@ Page({
       return;
     }
     // 选图是异步的，用 onChange 回调标记草稿"已变"，防抖保存才能看到刚加入的图
-    media.chooseImages(this, 'imageUrls', left, true, () => draft.markDirty(this));
+    media.chooseImages(this, 'imageUrls', left, true, () => {
+      draft.markDirty(this);
+      this.clearFieldError('photo'); // 补了照片 → 消图片区红框
+    });
   },
 
-  // ============ 图片区交互（共享逻辑见 utils/imgEditor.js） ============
-  // 微信事件绑定只传事件对象 e，这里统一薄封装把页面实例 this 一并传入
-  /** 长按开始 / 移动 / 结束（拖拽排序） */
-  onImgTouchStart(e) { imgEditor.touchStart(this, e); },
-  onImgTouchMove(e) { imgEditor.touchMove(this, e); },
-  onImgTouchEnd(e) {
-    imgEditor.touchEnd(this, e);
-    draft.markDirty(this); // 拖拽结束可能改了排序 → 触发自动保存
+  /** 图片区变化（拖拽排序/删除/设封面/新增）→ 写回页面数组并标记草稿已变 */
+  onImgChange(e) {
+    setField(this, this.data.imgField, e.detail.items);
+    draft.markDirty(this);
   },
-  /** 单击图片 → 微信原生预览 */
-  onImgTap(e) { imgEditor.tap(this, e); },
-  /** 删除图片：带确认框 + "下次不再询问" */
-  onDelete(e) {
-    imgEditor.onDelete(this, e);
-    draft.markDirty(this); // 点击删除（确认后图片列表会变）→ 触发自动保存
-  },
-  delConfirm(e) {
-    imgEditor.delConfirm(this, e);
-    draft.markDirty(this); // 确认删除 → 图片列表变了
-  },
-  delCancel(e) { imgEditor.delCancel(this, e); },
-  toggleNoAsk(e) { imgEditor.toggleNoAsk(this, e); },
-  /** 设为封面（移到第一位） */
-  onSetCover(e) {
-    imgEditor.setCover(this, e);
-    draft.markDirty(this); // 封面变化 → 顺序变了
-  },
+  /** 空拦截：historyShow 弹层 catchtouchmove/catchtap 用（阻止事件穿透） */
   noop() {},
 
   /**

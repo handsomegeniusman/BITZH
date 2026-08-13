@@ -27,7 +27,7 @@ const DELETE_COLLECTION = 'BITZHdelete'; // 删除存档集合（删除整只猫
 // 可恢复的字段（与下方表单一一对应；自动生成的 nickname/relatedCats、
 // 图片数量 addPhotoNumber 不参与，照片需重新选择）
 const RESTORE_FIELDS = [
-  'name', 'appearance', 'classification', 'furColor', 'gender', 'status',
+  'name', 'otherName', 'usedName', 'appearance', 'classification', 'furColor', 'gender', 'status',
   'isSterilization', 'sterilizationTime', 'location', 'birthTime', 'character',
   'firstSightingTime', 'firstSightingLocation', 'missingTime', 'deliveryTime',
   'deathTime', 'deathReason', 'namereason', 'moreInformation', 'relationship',
@@ -46,16 +46,15 @@ Page({
     pickers: catForm.pickers, // 下拉框选项（与 editCat 共用一份）
     picker_selected: {},   // 记录每个下拉框选中的下标
     tempFileList: [],      // 选中的本地图片列表
-    imgField: 'tempFileList', // 图片列表字段名（imgEditor 按此读写）
-    imgTip: '长按拖动排序，单击预览', // 图片区提示文案
-    drag: { active: false, index: -1, offsetX: 0, step: 190 }, // 拖拽状态（step=图宽180+间距10）
-    delModal: { show: false, index: -1, noAsk: false }, // 删除图片确认弹窗
+    imgField: 'tempFileList', // 图片列表字段名（image-sorter 排序后按此写回）
+    imgTip: '长按拖动排序，单击预览', // 图片区提示文案（显示在图片条上方）
     relationList: [],     // 关系编辑器当前的关系数组 [{name, relation}]
     relationSyncTasks: [], // 待提交的同步任务（新增提交时才写入对方猫）
     nameDuplicate: '',    // 名字失焦后的重名提示（非空时显示）
     deletedRestoreTip: '', // 已把"上次删除的数据"填回表单的提示（非空时显示）
     deletedAsk: { show: false, name: '', time: '' }, // "发现同名删除记录"询问弹层（自定义弹层，不用 wx.showModal）
     draftImagesAsObjects: true, // 草稿图片写回时用对象格式 {tempFilePath}（新增页图片条用对象）
+    formErrors: {},              // 必填校验错误 {name: true, photo: true}（未填时输入框/图片区变红，仿 editBooklet）
   },
 
   /** 页面加载：只有管理员可以新增猫咪 */
@@ -74,7 +73,7 @@ Page({
 
   /** 页面加载后检查是否有未完成的草稿，有则询问是否恢复 */
   async checkDraft() {
-    await draft.restore(this, this._draftType, this._draftId, {
+    const ok = await draft.restore(this, this._draftType, this._draftId, {
       // 填回表单字段：合并到 cat，再重算下拉选中下标与昵称（派生字段不能直接存）
       fields: (page, fields) => {
         page.setData({ cat: Object.assign({}, page.data.cat, fields) });
@@ -86,6 +85,8 @@ Page({
         page.setData({ relationList: relationList || [], relationSyncTasks: relationSyncTasks || [] });
       },
     });
+    console.log('[addCat.checkDraft] 恢复结果=' + ok + ' tempFileList=' + this.data.tempFileList.length +
+      ' 首张=' + (this.data.tempFileList[0] ? JSON.stringify(this.data.tempFileList[0]).slice(0, 80) : '(空)'));
   },
 
   /** 立即保存草稿（onHide/onUnload 兜底 + 防抖定时器到点时调用） */
@@ -116,6 +117,22 @@ Page({
     draft.markDirty(this);
   },
 
+  /** 必填校验：名字 + 至少一张照片，未填 → 标红并滚到页面顶部（两个必填项都在最上方） */
+  validateRequired() {
+    const errs = {};
+    // 清洗猫名（会用作图片文件名）后再判空：全非法字符（如 ***）也算没填
+    if (guard.isEmpty(guard.sanitizeFileName(this.data.cat.name || '', 20))) errs.name = true;
+    if (!this.data.tempFileList.length) errs.photo = true;
+    return errs;
+  },
+
+  /** 输入/改动后清除该字段的必填报错（红框是"提交时未填"的错误态，改了就该消） */
+  clearFieldError(key) {
+    const errs = Object.assign({}, this.data.formErrors);
+    delete errs[key];
+    this.setData({ formErrors: errs });
+  },
+
   /** 点击"确定提交" */
   upload() {
     wx.showModal({
@@ -124,17 +141,15 @@ Page({
       success: (res) => {
         if (!res.confirm) return;
         if (this._submitting) return; // 防止异步流程中重复提交
-        // 清洗猫名（会用作图片文件名），并做必填/长度校验
+        // 必填校验（仿 editBooklet）：清洗猫名（会用作图片文件名）后看是否为空
+        const errs = this.validateRequired();
+        if (Object.keys(errs).length) {
+          this.setData({ formErrors: errs }); // 必填项未填 → 输入框/图片区变红
+          wx.showToast({ icon: 'none', title: '请先填写必填项' });
+          wx.pageScrollTo({ scrollTop: 0, duration: 300 }); // 必填项都在最上方，滚回去
+          return;
+        }
         const name = guard.sanitizeFileName(this.data.cat.name || '', 20);
-        if (guard.isEmpty(name)) {
-          wx.showToast({ icon: 'error', title: '请输入猫名' });
-          return;
-        }
-        // 必须至少选一张照片，否则 addPhotoNumber 会算出 -1、封面缺失
-        if (this.data.tempFileList.length === 0) {
-          wx.showToast({ icon: 'error', title: '请至少选择一张照片' });
-          return;
-        }
         // 校验通过后才限频（防连点）：校验失败不消耗限频，改完即可立即重提
         if (!guard.throttle('addCat_submit', 1500)) return;
         this.setData({ 'cat.name': name });
@@ -254,19 +269,24 @@ Page({
     doc.photoVer = Date.now();
     try {
       await db.insertOne('BITZH', doc);
-      // 3. 双向同步：把关系同步到对方猫的页面
+      // 3. 双向同步：把关系同步到对方猫的页面（统计实际成功同步了几只猫）
+      let synced = 0;
       try {
-        await relation.applySyncTasks(this.data.relationSyncTasks || [], name);
+        synced = await relation.applySyncTasks(this.data.relationSyncTasks || [], name);
       } catch (err) {
         console.error('同步关系失败', err);
       }
       draft.clearDraft(this, this._draftType, this._draftId); // 添加成功 → 清掉草稿
       this._submitting = false;
       wx.showToast({ icon: 'success', title: '操作成功' });
-      if (inherited.length) {
-        setTimeout(() => wx.showToast({ icon: 'none', title: '已自动关联 ' + inherited.length + ' 条旧关系' }), 600);
+      // 自动关联结果提示：暂存关系补全（写进新猫自己）+ 同步到对方的猫数
+      const autoCount = inherited.length + synced;
+      if (autoCount > 0) {
+        setTimeout(() => wx.showToast({ icon: 'none', title: '已自动关联 ' + autoCount + ' 只猫的关系' }), 400);
+        setTimeout(() => wx.reLaunch({ url: '/pages/catSearch/catSearch' }), 1600);
+      } else {
+        setTimeout(() => wx.reLaunch({ url: '/pages/catSearch/catSearch' }), 600);
       }
-      setTimeout(() => wx.reLaunch({ url: '/pages/catSearch/catSearch' }), 600);
     } catch (err) {
       wx.hideLoading();
       this._submitting = false;
@@ -293,6 +313,7 @@ Page({
     if (key === 'name') {
       // 名字改动后清除旧重名提示 / 恢复提示，并允许重新询问"用上次删除的数据"
       this.setData({ nameDuplicate: '', deletedRestoreTip: '' });
+      this.clearFieldError('name'); // 名字填上了 → 消红框
       this._deletedAskedName = '';
       this._deletedRec = null;
     }
@@ -434,6 +455,8 @@ Page({
     });
     this.initPickerSelected(); // 下拉框回填选中下标
     this.setnickname();        // 昵称由各字段拼成，恢复后重新生成
+    this.clearFieldError('name');  // 名字/照片已填回 → 消必填红框
+    this.clearFieldError('photo');
     draft.markDirty(this);     // 恢复的"上次删除数据"也要纳入草稿自动保存
   },
 
@@ -445,35 +468,17 @@ Page({
       return;
     }
     // 选图是异步的，用 onChange 回调标记草稿"已变"，防抖保存才能看到刚加入的图
-    media.chooseImages(this, 'tempFileList', left, false, () => draft.markDirty(this));
+    media.chooseImages(this, 'tempFileList', left, false, () => {
+      draft.markDirty(this);
+      this.clearFieldError('photo'); // 补了照片 → 消图片区红框
+    });
   },
 
-  // ============ 图片区交互（共享逻辑见 utils/imgEditor.js） ============
-  // 微信事件绑定只传事件对象 e，这里统一薄封装把页面实例 this 一并传入
-  /** 长按开始 / 移动 / 结束（拖拽排序） */
-  onImgTouchStart(e) { imgEditor.touchStart(this, e); },
-  onImgTouchMove(e) { imgEditor.touchMove(this, e); },
-  onImgTouchEnd(e) {
-    imgEditor.touchEnd(this, e);
-    draft.markDirty(this); // 拖拽结束可能改了排序 → 触发自动保存
+  // ============ 图片区（image-sorter 组件） ============
+  /** 图片顺序/增删变化 → 把新数组写回页面字段（草稿自动保存读的是页面数组） */
+  onImgChange(e) {
+    setField(this, this.data.imgField, e.detail.items);
+    draft.markDirty(this); // 图片列表变了 → 触发自动保存
   },
-  /** 单击图片 → 微信原生预览 */
-  onImgTap(e) { imgEditor.tap(this, e); },
-  /** 删除图片：带确认框 + "下次不再询问" */
-  onDelete(e) {
-    imgEditor.onDelete(this, e);
-    draft.markDirty(this);
-  },
-  delConfirm(e) {
-    imgEditor.delConfirm(this, e);
-    draft.markDirty(this); // 确认删除 → 图片列表变了
-  },
-  delCancel(e) { imgEditor.delCancel(this, e); },
-  toggleNoAsk(e) { imgEditor.toggleNoAsk(this, e); },
-  /** 设为封面（移到第一位，第一张会成为首页缩略图） */
-  onSetCover(e) {
-    imgEditor.setCover(this, e);
-    draft.markDirty(this); // 封面变化 → 顺序变了
-  },
-  noop() {},
+  noop() {}, // 弹层通用空操作（"发现同名删除记录"弹层的 catchtouchmove/catchtap 用）
 });

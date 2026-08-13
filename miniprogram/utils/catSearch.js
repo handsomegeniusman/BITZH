@@ -108,9 +108,11 @@ const INV_RELS = {
 // 名字用懒惰匹配，保证「肥仔的女儿」的"的"被 的? 吃下、名字落在"肥仔"上。
 const REL_PHRASE_RE = /^(.{1,20}?)的?(妈妈|老妈|母亲|妈|爸爸|老爸|父亲|爹|爸|孩子|崽|儿子|女儿|姐姐|哥哥|妹妹|弟弟|奶奶|爷爷|外婆|姥姥|外公|姥爷|朋友|邻居|饭友|兄弟|姐妹|同胞|老婆|老公|妻子|丈夫)$/;
 
-/** 普通关键词搜索覆盖的字段：大名/绰号 + 地名/外貌/花色/状态/性别/性格等（防老猫 nickname 缺失或过期） */
+/** 普通关键词搜索覆盖的字段：大名/绰号 + 别名/曾用名 + 地名/外貌/花色/状态/性别/性格等
+ *  （防老猫 nickname 缺失或过期——别名功能上线前保存的老猫 nickname 里没有 otherName/usedName，
+ *  直接搜这两个字段才能命中「肥猪→发福」这类外号） */
 const PLAIN_FIELDS = [
-  'name', 'nickname', 'location', 'appearance', 'classification', 'furColor',
+  'name', 'otherName', 'usedName', 'nickname', 'location', 'appearance', 'classification', 'furColor',
   'status', 'gender', 'isSterilization', 'character', 'firstSightingLocation', 'namereason',
 ];
 

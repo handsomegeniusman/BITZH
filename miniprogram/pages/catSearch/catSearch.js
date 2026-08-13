@@ -94,6 +94,7 @@ Page({
     // 同步底部自定义 tabBar 选中态（查猫=0），置于刷新逻辑之前
     if (typeof this.getTabBar === 'function' && this.getTabBar()) {
       this.getTabBar().setData({ selected: 0 });
+      if (typeof this.getTabBar().refreshAudit === 'function') this.getTabBar().refreshAudit();
     }
     if (!this._firstShow) {
       this._firstShow = true;
@@ -250,18 +251,33 @@ Page({
 
   // 输入框聚焦时触发（与 onInput 行为一致，兼容 wxml 绑定）
   onFocus: function (e) {
+    console.log('[catSearch.onFocus] 输入框聚焦, value=', e.detail && e.detail.value);
     this.onInput(e);
   },
 
-  // 输入框失焦时隐藏搜索结果（并取消尚未发出的查询）
-  onBlur: function () {
+  // 键盘"搜索/完成"键：明确结束搜索 → 收起搜索结果
+  onConfirm: function () {
+    console.log('[catSearch.onConfirm] 点击搜索/完成，收起搜索结果');
     clearTimeout(this._searchTimer);
     this._searchSeq = (this._searchSeq || 0) + 1;
     this.setData({ showResult: false, showList: false });
   },
 
-  // 点击页面空白处时隐藏搜索结果
+  // 输入框失焦（键盘收起）时【不】收起搜索结果：
+  // 真机上滑一下搜索框就会让键盘收起并触发 blur，若 blur 就隐藏结果，搜索收缩太灵敏。
+  // 现在结果保留到用户点空白处 / 按搜索完成 / 清空输入才收起，只取消尚未发出的查询防过期。
+  onBlur: function () {
+    clearTimeout(this._searchTimer);
+    this._searchSeq = (this._searchSeq || 0) + 1;
+    console.log('[catSearch.onBlur] 键盘收起，保留搜索结果 showResult=', this.data.showResult,
+      '（点空白处 / 搜索完成 / 清空输入 才收起）');
+  },
+
+  // 点击页面空白处（内容区/状态栏/logo）时收起搜索结果：
+  // 用 bindtap 而非 bindtouchstart——滑动/滚动内容不会触发 tap，
+  // 避免"滑一下搜索框（或列表）就收缩"；只有真正的点击才收起。
   onPageTap: function () {
+    console.log('[catSearch.onPageTap] 点击空白处，收起搜索结果');
     this.setData({ showResult: false, showList: false });
   },
 

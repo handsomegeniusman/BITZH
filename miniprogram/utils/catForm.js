@@ -21,12 +21,14 @@ const pickers = {
   character: ['未知 数据缺失', '亲人可抱', '亲人不可抱 可摸', '薛定谔亲人', '吃东西时可以一直摸', '吃东西时可以摸一下', '怕人 安全距离 1m 以内', '怕人 安全距离 1m 以外'],
 };
 
-/** 自动生成搜索关键词（昵称，由各字段拼成） */
+/** 自动生成搜索关键词（昵称，由各字段拼成）。
+ *  别名 otherName / 曾用名 usedName 也拼进去：搜索"猫哥""黄条子"这类外号
+ *  能命中真名猫（肥仔/发福），相关话题跳转、关系搜索同理。 */
 function nickname(cat) {
   const parts = [
     cat.name, cat.relatedCats, cat.location, cat.classification,
     cat.isSterilization, cat.appearance, cat.gender, cat.status,
-    cat.furColor, cat.character,
+    cat.furColor, cat.character, cat.otherName, cat.usedName,
   ];
   return parts.filter(Boolean).join(' ');
 }
@@ -39,6 +41,8 @@ function nickname(cat) {
 function buildDoc(cat, addPhotoNumber) {
   const doc = {
     name: cat.name,
+    otherName: cat.otherName,       // 别名 / 外号（多个用空格或逗号分隔）
+    usedName: cat.usedName,         // 曾用名（多个用空格或逗号分隔）
     addPhotoNumber: addPhotoNumber,
     nickname: cat.nickname || nickname(cat), // 兜底：确保搜索关键词不为空
     furColor: cat.furColor,
@@ -93,7 +97,7 @@ function initPickerSelected(cat, pickerOptions) {
  */
 function normalizeTextFields(cat) {
   const fields = [
-    'name', 'appearance', 'furColor', 'classification', 'gender', 'status',
+    'name', 'otherName', 'usedName', 'appearance', 'furColor', 'classification', 'gender', 'status',
     'isSterilization', 'sterilizationTime', 'location', 'birthTime', 'character',
     'firstSightingTime', 'firstSightingLocation', 'missingTime', 'deliveryTime',
     'deathTime', 'deathReason', 'namereason', 'moreInformation', 'relationship',
@@ -105,10 +109,53 @@ function normalizeTextFields(cat) {
   return out;
 }
 
+// ============ 话题 → 猫 匹配（catDetail / bookletDetail 共用） ============
+// 别名/曾用名可能是"空格、逗号、斜杠、顿号、竖线、括号…"任意分隔的多段值
+// （如 "肥猪/饭桶"、"猫哥 小奶猫"），而老猫的 nickname 是改版前生成的、不含别名。
+// 所以匹配不能依赖 $in 精确值或 nickname 里的独立词，而要直接对
+// 真实名/别名/曾用名/昵称四个字段做"独立词"正则匹配（不管分隔符是什么）。
+// 边界集：空白（含全角空格）、斜杠/反斜杠、井号/全角井号、逗号分号顿号竖线、
+// 各类括号、波浪线、中圆点、连字符、下划线。保证 "肥猪" 命中 "肥猪/饭桶"、
+// "猫哥 小奶猫"，但不误匹配 "肥猪头"。
+const ALIAS_BOUNDARY = '[\\s/\\\\#＃，,；;、|()\\[\\]{}<>~·\\-_.]';
+function aliasTokenRegex(name) {
+  return '(^|' + ALIAS_BOUNDARY + ')' + guard.escapeRegExp(String(name == null ? '' : name)) + '(' + ALIAS_BOUNDARY + '|$)';
+}
+
+/** 一串"可被叫的名字"（真实名+别名+曾用名+昵称拼串）里是否包含该话题作为独立词 */
+function aliasContains(stack, name) {
+  try {
+    return new RegExp(aliasTokenRegex(name), 'i').test(String(stack == null ? '' : stack));
+  } catch (e) {
+    return false;
+  }
+}
+
+/** 话题数组 → 查询条件：真实名/别名/曾用名/昵称 任一字段含该话题独立词。
+ *  返回 null 表示无条件（调用方按无过滤处理）。 */
+function topicCatFilter(topics) {
+  const list = (topics || []).filter(Boolean);
+  if (!list.length) return null;
+  const ors = [];
+  list.forEach(function (t) {
+    const re = aliasTokenRegex(t);
+    ors.push(
+      { name: { $regex: re, $options: 'i' } },
+      { otherName: { $regex: re, $options: 'i' } },
+      { usedName: { $regex: re, $options: 'i' } },
+      { nickname: { $regex: re, $options: 'i' } }
+    );
+  });
+  return { $or: ors };
+}
+
 module.exports = {
   pickers: pickers,
   nickname: nickname,
   buildDoc: buildDoc,
   initPickerSelected: initPickerSelected,
   normalizeTextFields: normalizeTextFields,
+  aliasTokenRegex: aliasTokenRegex,
+  aliasContains: aliasContains,
+  topicCatFilter: topicCatFilter,
 };

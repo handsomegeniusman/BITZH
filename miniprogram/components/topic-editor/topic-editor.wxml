@@ -21,6 +21,7 @@
         bindconfirm="onConfirm"
         bindblur="onBlur"
         confirm-type="done"
+        cursor-spacing="40"
         placeholder="{{topics.length ? '继续输入' : '输入话题，如：小白 / 猫粮'}}"
       />
       <!-- 显式「添加」按钮：中文输入法的候选词会抢占空格键，

@@ -14,6 +14,7 @@ const cos = require('../../utils/cos.js'); // COS 图片 URL 公共方法
 const pageUtil = require('../../utils/page.js'); // 页面公共方法（未登录弹窗等）
 const trash = require('../../utils/trash.js'); // 删除存档字段兼容读取（回收站预览用）
 const topic = require('../../utils/topic.js'); // 话题解析（兼容历史脏格式）
+const catForm = require('../../utils/catForm.js'); // 话题→猫 匹配（别名/曾用名/绰号健壮匹配）
 
 Page({
   data: {
@@ -27,10 +28,12 @@ Page({
     audit: false,     // 是否开放评论（管理员后台开关）
     currentImageIndex: 0,
     recoverMode: false, // 回收站预览模式：内容来自 Delete 存档，只读，不展示评论区
+    catTopicMap: {},    // 话题 -> 是否猫名（是猫的话胶囊前加 🐱，和 catDetail 一致）
   },
 
   /** 页面加载：从分享链接可直接带 _id 打开；缺 _id 时兜底 */
   async onLoad(options) {
+    console.log('[bookletDetail] onLoad, options =', options);
     if (!options || !options._id) {
       wx.showToast({ title: '参数错误', icon: 'none' });
       setTimeout(() => wx.navigateBack(), 800);
@@ -63,8 +66,10 @@ Page({
 
   /** 加载推文 */
   getPage(_id) {
+    console.log('[bookletDetail] getPage _id =', _id);
     db.findOne('Page', { _id })
       .then((data) => {
+        console.log('[bookletDetail] findOne Page =>', data ? ('找到：' + data.tittle) : 'null（无此推文）');
         if (!data) {
           wx.showToast({ title: '推文不存在或已删除', icon: 'none' });
           return;
@@ -130,16 +135,48 @@ Page({
     this.setData({ imageUrls });
   },
 
-  /** 解析相关标签（topic.parse 兼容 "#肥仔#水晶" / "＃小梅" / "笨笨，小鸭" 等脏格式） */
+  /** 解析相关标签（topic.parse 兼容 "#肥仔#水晶" / "＃小梅" / "笨笨，小鸭" 等脏格式），
+   *  并异步标记哪些话题是猫名（胶囊加 🐱） */
   getRelative() {
-    this.setData({ relativeList: topic.parse(this.data.listData.relative) });
+    const relativeList = topic.parse(this.data.listData.relative);
+    this.setData({ relativeList });
+    this.markCatTopics(relativeList);
   },
 
-  /** 点击相关标签：若对应猫咪存在则打开猫详情，否则按标签搜索推文 */
+  /** 标记话题里哪些是猫名（和 catDetail 一致）：真实名 name / 别名 otherName /
+   *  曾用名 usedName / 昵称 nickname 任一字段含该话题独立词（支持 "肥猪/饭桶"、
+   *  "猫哥 小奶猫" 这类分隔写法）。map 必须按【话题名】做 key——胶囊上显示的是
+   *  话题原文，别名话题（肥猪）要能直接命中发福那只猫。只读查询，失败静默。 */
+  async markCatTopics(list) {
+    const catTopicMap = {};
+    if (!list.length) { this.setData({ catTopicMap }); return; }
+    try {
+      const filter = catForm.topicCatFilter(list);
+      const cats = filter ? await db.find('BITZH', filter, { limit: list.length * 5 }) : [];
+      (cats || []).forEach((c) => {
+        if (!c || !c.name) return;
+        // 该猫所有"可被叫的名字"拼成串：真实名 + 别名 + 曾用名 + 昵称（含关系词/描述词）
+        const stack = [c.name, c.otherName, c.usedName, c.nickname].filter(Boolean).join(' ');
+        list.forEach((t) => { if (!catTopicMap[t] && catForm.aliasContains(stack, t)) catTopicMap[t] = true; });
+      });
+    } catch (err) {
+      console.error('查询话题猫失败', err);
+    }
+    this.setData({ catTopicMap });
+  },
+
+  /** 点击相关标签：若对应猫咪存在则打开猫详情（真实名 / 别名 / 曾用名 / 绰号都能命中），
+   *  否则按标签搜索推文 */
   toRelative(e) {
     const name = e.currentTarget.dataset.name;
-    db.findOne('BITZH', { name })
-      .then((cat) => {
+    if (!name) return;
+    // 一次查询：真实名/别名/曾用名/昵称任一字段含该话题独立词 → 取第一只命中猫
+    const filter = catForm.topicCatFilter([name]);
+    db.find('BITZH', filter, { limit: 5 })
+      .then((cats) => {
+        const cat = (cats || []).find((c) => c && catForm.aliasContains(
+          [c.name, c.otherName, c.usedName, c.nickname].filter(Boolean).join(' '), name
+        ));
         if (cat) {
           wx.navigateTo({ url: '/pages/catDetail/catDetail?_id=' + cat._id });
         } else {

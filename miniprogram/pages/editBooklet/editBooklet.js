@@ -34,10 +34,8 @@ Page({
     imageUrls: [],        // 当前推文的图片地址
     beforeTittle: '',     // 进入页面时的标题（用于判断是否改名）
     oldPhotoNum: 0,       // 进入页面时的照片数（用于清理被删图片）
-    imgField: 'imageUrls', // 图片列表字段名（imgEditor 按此读写）
-    imgTip: '长按拖动排序，单击预览', // 图片区提示文案
-    drag: { active: false, index: -1, offsetX: 0, step: 190 }, // 拖拽状态（step=图宽180+间距10）
-    delModal: { show: false, index: -1, noAsk: false }, // 删除图片确认弹窗
+    imgField: 'imageUrls', // 图片列表字段名（image-sorter 排序后按此写回）
+    imgTip: '长按拖动排序，单击预览', // 图片区提示文案（显示在图片条上方）
     draftImagesAsObjects: false, // 草稿图片写回时用字符串格式（编辑页图片条用 URL 字符串）
     restoreAvailable: false,    // 是否有可恢复的"上次数据"（控制"恢复上次数据"按钮显示）
     recoverMode: false,         // 恢复模式：从 Delete 存档进入，保存=恢复推文，删除=彻底删除存档
@@ -215,6 +213,13 @@ Page({
     draft.markDirty(this);
   },
 
+  /** 点击编辑器外空白处 → 收起话题建议下拉（不挡下方拍摄时间选择器）。
+   *  话题编辑器是自定义组件，内部点击不会冒泡到页面，所以只有点外部才触发，不会太灵敏。 */
+  onPageTap() {
+    const editor = this.selectComponent && this.selectComponent('#topicEditor');
+    if (editor && typeof editor.collapseSuggest === 'function') editor.collapseSuggest();
+  },
+
   /** 选择日期（拍摄时间） */
   bindDateChange(e) {
     setField(this, 'listData.photoTime', e.detail.value); // 动态字段名赋值
@@ -232,34 +237,12 @@ Page({
     media.chooseImages(this, 'imageUrls', left, true, () => draft.markDirty(this));
   },
 
-  // ============ 图片区交互（共享逻辑见 utils/imgEditor.js） ============
-  // 微信事件绑定只传事件对象 e，这里统一薄封装把页面实例 this 一并传入
-  /** 长按开始 / 移动 / 结束（拖拽排序） */
-  onImgTouchStart(e) { imgEditor.touchStart(this, e); },
-  onImgTouchMove(e) { imgEditor.touchMove(this, e); },
-  onImgTouchEnd(e) {
-    imgEditor.touchEnd(this, e);
-    draft.markDirty(this); // 拖拽结束可能改了排序 → 触发自动保存
+  // ============ 图片区（image-sorter 组件） ============
+  /** 图片顺序/增删变化 → 把新数组写回页面字段（草稿自动保存读的是页面数组） */
+  onImgChange(e) {
+    setField(this, this.data.imgField, e.detail.items);
+    draft.markDirty(this); // 图片列表变了 → 触发自动保存
   },
-  /** 单击图片 → 微信原生预览 */
-  onImgTap(e) { imgEditor.tap(this, e); },
-  /** 删除图片：带确认框 + "下次不再询问" */
-  onDelete(e) {
-    imgEditor.onDelete(this, e);
-    draft.markDirty(this); // 点击删除（确认后图片列表会变）→ 触发自动保存
-  },
-  delConfirm(e) {
-    imgEditor.delConfirm(this, e);
-    draft.markDirty(this); // 确认删除 → 图片列表变了
-  },
-  delCancel(e) { imgEditor.delCancel(this, e); },
-  toggleNoAsk(e) { imgEditor.toggleNoAsk(this, e); },
-  /** 设为封面（移到第一位） */
-  onSetCover(e) {
-    imgEditor.setCover(this, e);
-    draft.markDirty(this); // 封面变化 → 顺序变了
-  },
-  noop() {},
 
   /** 点击"修改" */
   confirm() {

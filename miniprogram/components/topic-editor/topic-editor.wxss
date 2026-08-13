@@ -91,14 +91,15 @@
   background: #E63A57;
 }
 
-/* 建议下拉：绝对定位贴在输入区下方 */
+/* 建议下拉：绝对定位贴在输入区上方（向上弹出）。
+   原来向下弹出会盖住下方的"拍摄时间"选择器；向上弹出后，点开日期不再被挡。 */
 .te-suggest {
   position: absolute;
   left: 0;
   right: 0;
-  top: 100%;
+  bottom: 100%;
   z-index: 20;
-  margin-top: 8rpx;
+  margin-bottom: 8rpx;
   background: #fff;
   border: 1px solid #f0e2d2;
   border-radius: 12rpx;

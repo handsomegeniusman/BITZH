@@ -28,8 +28,15 @@ function collection(name) {
  * @returns {Promise<Array>} 结果数组（查不到返回空数组）
  */
 async function find(name, filter, options) {
-  const res = await collection(name).find(filter || {}, options);
-  return (res && res.result) || [];
+  try {
+    const res = await collection(name).find(filter || {}, options);
+    const data = (res && res.result) || [];
+    console.log('[db.find]', name, JSON.stringify(filter).slice(0, 120), '=> 查到', Array.isArray(data) ? data.length : '非数组:' + JSON.stringify(res).slice(0, 120), '条');
+    return data;
+  } catch (e) {
+    console.error('[db.find]', name, JSON.stringify(filter).slice(0, 120), '失败 =>', (e && e.message) || e);
+    throw e;
+  }
 }
 
 /**
@@ -80,8 +87,14 @@ const state = {
 async function getUserId() {
   if (state.userId) return state.userId;
   const app = getApp();
-  const { result } = await app.mpServerless.user.getInfo();
-  state.userId = result.user.userId;
+  try {
+    const { result } = await app.mpServerless.user.getInfo();
+    state.userId = result.user.userId;
+    console.log('[db.getUserId] OK, userId =', state.userId);
+  } catch (e) {
+    console.error('[db.getUserId] 失败 =>', (e && e.message) || e);
+    throw e;
+  }
   return state.userId;
 }
 

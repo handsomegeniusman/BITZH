@@ -1,0 +1,201 @@
+/* components/image-sorter/image-sorter.wxss */
+
+/* 根：禁用长按选中 / iOS 系统菜单 */
+.is-root {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  box-sizing: border-box;
+}
+
+.is-tip {
+  font-size: 22rpx;
+  color: #999;
+  padding: 4rpx 20rpx 0;
+}
+
+.is-wrap {
+  position: relative;
+  padding: 10px 0;
+}
+
+/* 表单校验红框（猫页"未选照片"） */
+.is-invalid {
+  border: 2rpx solid #e64340;
+  border-radius: 8rpx;
+  box-sizing: border-box;
+}
+
+.is-scroll {
+  width: 100%;
+  overflow: hidden;
+}
+
+.is-area {
+  position: relative;
+}
+
+.is-card {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.is-card-inner {
+  width: 100%;
+  height: 100%;
+}
+
+.is-imgbox {
+  position: relative;
+  width: 100%;
+  height: calc(100% - 30px); /* 减去工具行高度 TOOLS_H */
+  background: #f3f3f3;
+  overflow: hidden;
+  border-radius: 8rpx;
+}
+
+.is-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* 拖拽中：放大 1.1 倍 + 阴影（层级最高由 movable-view 内联 z-index 控制） */
+.is-card.is-dragging .is-imgbox {
+  transform: scale(1.1);
+  box-shadow: 0 6rpx 20rpx rgba(0, 0, 0, 0.28);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.is-placeholder {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  text-align: center;
+  color: #bbb;
+  font-size: 22rpx;
+}
+
+/* 封面角标：第一张高亮，拖拽排序后自动跟随 */
+.is-cover {
+  position: absolute;
+  left: 8rpx;
+  top: 8rpx;
+  z-index: 5;
+  padding: 2rpx 12rpx;
+  border-radius: 8rpx;
+  background: rgba(255, 80, 60, 0.9);
+  color: #fff;
+  font-size: 20rpx;
+  line-height: 1.5;
+}
+
+/* 工具行：设封面 + 删除角标，两端对齐 */
+.is-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 30px;
+  padding: 2rpx 6rpx;
+  box-sizing: border-box;
+}
+.is-tool-btn {
+  font-size: 22rpx;
+  color: #888;
+  padding: 0 4rpx;
+}
+.is-tool-on {
+  color: #FF405E;
+}
+.is-del-icon {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  padding: 4rpx;
+}
+
+/* 末尾"+"新增位 */
+.is-add {
+  position: absolute;
+  top: 0;
+}
+.is-addbox {
+  background: #fafafa;
+  border: 2rpx dashed #ccc;
+  box-sizing: border-box;
+}
+
+.is-count {
+  font-size: 22rpx;
+  color: #999;
+  padding: 0 20rpx 10rpx;
+}
+
+/* ============ 删除图片确认弹窗 ============ */
+.del-mask {
+  position: fixed;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.del-modal {
+  width: 560rpx;
+  box-sizing: border-box;
+  padding: 36rpx 32rpx 28rpx;
+  background: #fff;
+  border-radius: 16rpx;
+}
+.del-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  text-align: center;
+  margin-bottom: 24rpx;
+}
+.del-option {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 30rpx;
+}
+.del-check {
+  font-size: 32rpx;
+  color: #ccc;
+  margin-right: 8rpx;
+}
+.del-check.on {
+  color: #FF405E;
+}
+.del-option-text {
+  font-size: 26rpx;
+  color: #666;
+}
+.del-btns {
+  display: flex;
+  justify-content: space-between;
+}
+.del-btn {
+  width: 220rpx;
+  margin: 0;
+  font-size: 28rpx;
+  border-radius: 8rpx;
+}
+.del-btn::after {
+  border: none;
+}
+.del-btn.cancel {
+  background: #f2f2f2;
+  color: #333;
+}
+.del-btn.ok {
+  background: #fa5151;
+  color: #fff;
+}

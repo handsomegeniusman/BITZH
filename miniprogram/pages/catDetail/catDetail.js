@@ -32,7 +32,7 @@ Page({
     height: '300rpx',        // 轮播图高度（展开详情时变高）
     listData: [],            // 该猫相关的推文列表
     multiArray: [['拍摄时间', '发布时间'], ['升序', '降序']],
-    multiIndex: [0, 1],      // 默认按"拍摄时间 + 降序"
+    multiIndex: [1, 0],      // 默认按"发布时间 + 升序"（故事按时间从早到晚讲）
     skipCount: 0,
     relatedTopics: [],       // 相关话题（本猫出现在哪些推文话题里，去重后，含 isCat/count 标记）
     relatedTopicsShow: [],   // 当前展示的相关话题（默认 8 个，展开后为全部）
@@ -46,6 +46,7 @@ Page({
   /** 页面加载：从分享链接可直接带 _id 打开；缺 _id 时兜底 */
   async onLoad(options) {
     this._id = options && options._id;
+    console.log('[catDetail] onLoad, _id =', this._id, ', options =', options);
     if (!this._id) {
       wx.showToast({ title: '参数错误', icon: 'none' });
       setTimeout(() => wx.navigateBack(), 800);
@@ -56,6 +57,7 @@ Page({
     // 加载猫咪信息
     try {
       const raw = await db.findOne('BITZH', { _id: this._id });
+      console.log('[catDetail] findOne BITZH =>', raw ? ('找到：' + raw.name) : 'null（无此猫）');
       if (!raw) {
         wx.showToast({ title: '未找到该猫咪', icon: 'none' });
         setTimeout(() => wx.navigateBack(), 800);
@@ -193,18 +195,36 @@ Page({
           list.push(t);
         });
       });
-      // 一次 $in 查询建"真实猫名"集合：话题里是猫的话题加 🐱 标识（杜绝 N+1 查询）
-      let catSet = {};
+      // 建"猫名"集合：话题里是猫的话题加 🐱 标识 + 记录目标猫 _id（点击可跳那只猫的详情页）。
+      // 真实名 name / 别名 otherName / 曾用名 usedName / 昵称 nickname 任一字段含该话题
+      // 独立词即算命中（支持 "肥猪/饭桶"、"猫哥 小奶猫" 等分隔写法），map 按【话题名】登记，
+      // 别名话题（肥猪）直接命中发福那只猫（bookletDetail 同逻辑）。
+      const catMap = {};
       if (list.length) {
         try {
-          const cats = await db.find('BITZH', { name: { $in: list } }, { limit: list.length });
-          (cats || []).forEach(function (c) { if (c && c.name) catSet[c.name] = true; });
+          const filter = catForm.topicCatFilter(list);
+          const cats = filter ? await db.find('BITZH', filter, { limit: list.length * 5 }) : [];
+          (cats || []).forEach(function (c) {
+            if (!c || !c.name) return;
+            // 该猫所有"可被叫的名字"拼成串：真实名 + 别名 + 曾用名 + 昵称（含关系词/描述词）
+            const stack = [c.name, c.otherName, c.usedName, c.nickname].filter(Boolean).join(' ');
+            list.forEach(function (t) {
+              if (!catMap[t] && catForm.aliasContains(stack, t)) catMap[t] = c;
+            });
+          });
         } catch (e2) {
           console.error('查询猫名集合失败', e2);
         }
       }
-      // 统一转成 { name, isCat, count }，count 供胶囊尾部显示热度
-      const topics = list.map(function (t) { return { name: t, isCat: !!catSet[t], count: countMap[t] || 0 }; });
+      // 统一转成 { name, isCat, count, catId }；count 供胶囊尾部显示热度
+      const topics = list.map(function (t) {
+        const c = catMap[t];
+        return { name: t, isCat: !!c, catId: c && c._id ? c._id : '', count: countMap[t] || 0 };
+      });
+      // 按热度（count）从高到低排，同热度按名称稳定排序：默认展示"最多人聊"的话题在前
+      topics.sort(function (a, b) {
+        return (b.count - a.count) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+      });
       // 新猫咪加载时清空上一次的选择与内联文章（防止串页）
       this.setData({
         relatedTopics: topics,
@@ -229,16 +249,47 @@ Page({
     });
   },
 
-  /** 点相关话题胶囊：多选切换（不跳页），选中后在本页内联展示文章 */
+  /** 点相关话题胶囊：猫名话题（🐱）直接跳到那只猫的详情页（别名也能命中）；
+   *  其余话题多选切换（不跳页），选中后在本页内联展示文章 */
   toggleTopic(e) {
     const name = e.currentTarget.dataset.name;
+    const catId = e.currentTarget.dataset.id;
     if (!name) return;
+    if (catId) {
+      console.log('[catDetail.toggleTopic] 猫名话题 → 跳猫详情页', name, catId);
+      wx.navigateTo({ url: '/pages/catDetail/catDetail?_id=' + catId });
+      return;
+    }
     const sel = (this.data.selectedTopics || []).slice();
     const idx = sel.indexOf(name);
     if (idx >= 0) sel.splice(idx, 1); else sel.push(name);
     const map = {};
     sel.forEach(function (n) { map[n] = true; });
     this.setData({ selectedTopics: sel, topicSelectedMap: map }, () => this.loadTopicArticles());
+  },
+
+  /** 全选：选中所有"非猫名"话题（同时展开显示全部），并加载内联文章。
+   *  猫名话题（🐱）点击是跳详情页，不参与多选，故排除在外，避免选中后无法点掉 */
+  selectAllTopics() {
+    const full = this.data.relatedTopics || [];
+    const selectable = full.filter(function (t) { return !t.isCat; });
+    const map = {};
+    selectable.forEach(function (t) { if (t && t.name) map[t.name] = true; });
+    this.setData({
+      selectedTopics: selectable.map(function (t) { return t.name; }),
+      topicSelectedMap: map,
+      topicsExpanded: true,
+      relatedTopicsShow: full, // 展开显示全部话题（猫名话题仍显示，点击跳详情）
+    }, () => this.loadTopicArticles());
+  },
+
+  /** 取消选择：清空全部选中，收起内联文章 */
+  deselectAllTopics() {
+    this.setData({
+      selectedTopics: [],
+      topicSelectedMap: {},
+      topicArticles: [],
+    });
   },
 
   /** 清空话题筛选，收起内联文章 */
@@ -363,7 +414,8 @@ Page({
     const catName = this.data.cat && this.data.cat.name;
     if (!catName) return;
     const sortKey = this.data.multiIndex[0] === 0 ? 'photoTime' : 'pageTime';
-    const orderBy = this.data.multiIndex[1] === 0 ? -1 : 1;
+    // multiIndex[1]：0=升序、1=降序（与选择器标签一致；此前倒挂已修正）
+    const orderBy = this.data.multiIndex[1] === 0 ? 1 : -1;
     const sortObj = {};
     sortObj[sortKey] = orderBy;
     // 日期主键再加发布时间降序兜底，保证数据库分页取数稳定
@@ -378,7 +430,7 @@ Page({
       this.data.listData
     ).then(list => {
       // 客户端按真实时间归一化后重排（兼容脏 photoTime），并补卡片时间文案
-      list = sort.applySort(list, sortKey, this.data.multiIndex[1] === 0);
+      list = sort.applySort(list, sortKey, this.data.multiIndex[1] === 1);
       sort.decorateTime(list);
       // 补上 _i 供 pageCard 模板的 data-index 使用（瀑布流索引）
       var base = this.data.listData.length;

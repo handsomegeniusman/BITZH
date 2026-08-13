@@ -14,13 +14,14 @@
     <view class="circle" bindtouchstart="onPageTap">
       <image lazy-load='true' bindtap="imageTap" class='avator' src="/pages/images/logo.png" mode='aspectFill'></image>
     </view>
-    <view class="container"> 
+    <view class="container">
       <view class="search">
         <icon type="search" />
-        <input id="input"  type="text" placeholder="输入猫咪名字或位置" bindinput="onInput" bindblur="onBlur" bindfocus="onFocus" confirm-type="search"  />
+        <input id="input"  type="text" placeholder="输入猫咪名字或位置" bindinput="onInput" bindblur="onBlur" bindfocus="onFocus" bindconfirm="onConfirm" confirm-type="search" adjust-position="{{false}}"  />
       </view>
       
-      <scroll-view id="result" class="result" wx:if="{{showResult}}" scroll-y="true" >
+      <!-- 结果下拉框本身也可点：点下拉区空白处收起（卡片行有各自的 bindtap 会先触发跳转，互不影响） -->
+      <scroll-view id="result" class="result" wx:if="{{showResult}}" scroll-y="true" bindtap="onPageTap" >
       <!-- 列表内容 -->
         <view class="list-container" >
           <!-- 每只猫一个条目：猫行（点击进猫详情）+ 猫名下方相关推文（点击进推文详情） -->

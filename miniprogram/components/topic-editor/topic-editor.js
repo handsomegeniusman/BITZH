@@ -66,10 +66,24 @@ Component({
       return true;
     },
 
-    /** 把当前输入生成 chip 并通知页面（「添加」按钮 / 回车 / 失焦 / 页面提交前兜底调用） */
-    flush() {
-      // 输入框仍有残留时收起建议（已生成 chip 的内容无需再建议）
+    /** 页面点击编辑器外空白处时收起建议下拉（由页面 onPageTap 调用）。
+     *  只收建议、不清输入——用户可能只是想去点别的字段，回来还能接着打。 */
+    collapseSuggest() {
       this.setData({ suggestions: [], showSuggest: false, suggestDone: false });
+    },
+
+    /** 把当前输入生成 chip 并通知页面。
+     *  flush()：供「添加」按钮 / 页面提交兜底调用 → 转 chip 并收起建议；
+     *  flushKeepSuggest()：供键盘「完成」/ 失焦（收起键盘）调用 → 转 chip 但保留建议，
+     *    因为"收起键盘"≠"不要建议"，用户收起键盘后往往还要点下面的建议继续加；
+     *    真正收起建议的动作是"点编辑器外空白处"（页面 onPageTap → collapseSuggest）。 */
+    flush() { this.flushCore(true); },
+    flushKeepSuggest() { this.flushCore(false); },
+    flushCore(clearSuggest) {
+      if (clearSuggest) {
+        // 输入框仍有残留时收起建议（已生成 chip 的内容无需再建议）
+        this.setData({ suggestions: [], showSuggest: false, suggestDone: false });
+      }
       const v = String(this.data.input || '').replace(/^[#＃\s　，,；;、|]+/, '').trim();
       if (v) {
         const topics = this.data.topics.slice();
@@ -117,9 +131,9 @@ Component({
       this._suggestTimer = setTimeout(() => this.searchSuggestions(kw), 250);
     },
 
-    /** 键盘"完成"键 → 当前输入转 chip */
+    /** 键盘"完成"键 → 当前输入转 chip，但保留建议下拉（收起键盘≠不要建议） */
     onConfirm() {
-      this.flush();
+      this.flushKeepSuggest();
     },
 
     /** 失焦：非建议交互时把输入转 chip（保证滚动/点发布时不丢词）。
@@ -139,8 +153,10 @@ Component({
       }
       this._picking = false;
       this._pickItem = null;
-      this.flush();
-      this.setData({ suggestions: [], showSuggest: false, suggestDone: false });
+      // 失焦（收起键盘）≠ 不要建议：只把输入转 chip 并保留建议下拉，
+      // 用户收起键盘后往往还要点下面的建议继续加；
+      // 真正收起建议的动作是"点编辑器外空白处"（页面 onPageTap → collapseSuggest）。
+      this.flushKeepSuggest();
     },
 
     // ============ 建议 ============

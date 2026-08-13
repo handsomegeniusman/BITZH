@@ -12,8 +12,9 @@
   <!-- 用户选择排序方式 -->
   <view class="picker">
     <picker mode="multiSelector" bindchange="bindMultiPickerChange" value="{{multiIndex}}" range="{{multiArray}}">
-      <view >
-        {{multiArray[0][multiIndex[0]]}}-{{multiArray[1][multiIndex[1]]}}
+      <view class="picker-inner">
+        <text>{{multiArray[0][multiIndex[0]]}}-{{multiArray[1][multiIndex[1]]}}</text>
+        <text class="picker-arrow">▾</text>
       </view>
     </picker>
   </view>
@@ -34,7 +35,7 @@
   <!-- 猫横条：搜索命中猫（大名 / 绰号 / "X的妈妈或孩子"）时展示，点击直达猫详情 -->
   <view wx:if="{{search && catResults.length}}" class="cat-results">
     <view class="cat-results-title">猫咪</view>
-    <view class="cat-bar" wx:for="{{catResults}}" wx:key="_id" bindtap="toCatDetail" data-_id="{{item._id}}">
+    <view class="cat-bar" wx:for="{{catResults}}" wx:key="_id" bindtap="toCatDetail" bindlongpress="editCatFromSearch" data-_id="{{item._id}}">
       <image
         class="cat-bar-img"
         lazy-load="true"
@@ -54,7 +55,8 @@
   <!-- 搜索空态：无猫也无推文才提示 -->
   <view wx:if="{{search && loaded && !listData.length && !catResults.length}}" class="search-empty">没有找到相关内容，换个关键词试试</view>
 
-  <view wx:if="{{audit}}">
+  <!-- 审核模式（audit=false）下默认不显示小猫书内容；用户搜索时仍显示搜索结果 -->
+  <view wx:if="{{audit || searchMode}}">
     <view class="content" >
       <view class="left">
         <block wx:for="{{leftList}}" wx:key="_id" wx:for-item="item">

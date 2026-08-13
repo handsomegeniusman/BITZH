@@ -1,5 +1,6 @@
 {
   "usingComponents": {
-    "topic-editor": "/components/topic-editor/topic-editor"
+    "topic-editor": "/components/topic-editor/topic-editor",
+    "image-sorter": "/components/image-sorter/image-sorter"
   }
 }

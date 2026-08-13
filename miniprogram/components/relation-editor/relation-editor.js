@@ -35,6 +35,9 @@ Component({
     searchResults: [],
     searching: false,
     searchDone: false,
+    // 键盘高度适配：弹窗整体上浮到键盘上方，收起键盘自动回落（不四处乱晃）
+    keyboardHeight: 0,
+    sheetMaxHeight: '',
     // 填关系弹窗
     showRelation: false,
     editIndex: -1,         // -1 新增；>=0 编辑 list 中某条
@@ -63,14 +66,41 @@ Component({
         commonRelations: relation.COMMON_RELATIONS,
       });
       this.seed(this.data.value);
+      this._initKeyboard();
     },
     detached() {
       clearTimeout(this._searchTimer);
+      this._offKeyboard();
     },
   },
 
   methods: {
     noop() {},
+
+    /** 监听键盘高度：弹窗（搜索/填关系/同步）上浮到键盘上方。
+     *  只根据键盘高度动弹窗的 margin-bottom 和 max-height，收键盘后回落回底部，
+     *  不会"浮到其他位置乱晃"；用 offKeyboardHeightChange 配对清理。 */
+    _initKeyboard() {
+      if (typeof wx.onKeyboardHeightChange !== 'function') return;
+      const self = this;
+      this._onKb = function (res) {
+        const h = Math.max(0, Math.round((res && res.height) || 0));
+        let maxH = '';
+        if (h > 0) {
+          try {
+            maxH = Math.max(0, wx.getWindowInfo().windowHeight - h - 20) + 'px';
+          } catch (e) { maxH = ''; }
+        }
+        self.setData({ keyboardHeight: h, sheetMaxHeight: maxH });
+      };
+      wx.onKeyboardHeightChange(this._onKb);
+    },
+    _offKeyboard() {
+      if (this._onKb && typeof wx.offKeyboardHeightChange === 'function') {
+        wx.offKeyboardHeightChange(this._onKb);
+        this._onKb = null;
+      }
+    },
 
     /** 用页面传入的关系数组初始化卡片列表，并判定哪些目标猫不存在 */
     seed(value) {
@@ -207,6 +237,11 @@ Component({
       }
       if (this.data.list.some(function (x) { return x.name === name; })) {
         wx.showToast({ title: '已在列表中', icon: 'none' });
+        return;
+      }
+      // 搜索已精确命中这只猫 → 直接点选结果即可，暂存没意义（避免建出一张"未找到"卡）
+      if (this.data.searchResults.some(function (r) { return r.name === name; })) {
+        wx.showToast({ title: '「' + name + '」已存在，直接点选上方结果', icon: 'none' });
         return;
       }
       this.setData({

@@ -35,11 +35,16 @@ Page({
 
   /** 页面加载 */
   onLoad(options) {
-    // 先拉推文列表，尽快首屏；审核开关/用户状态/黑名单等后台查询异步更新
-    this.getPage();
+    // 审核模式（audit=false）下不读小猫书数据：等审核开关结果回来再决定是否加载。
+    // 开关开放（true）→ 加载全量瀑布流；开关关闭 → 不读数据，除非用户搜索。
     this.getNotice();
-    db.getAudit().then((audit) => this.setData({ audit }))
-      .catch((err) => console.error('读取审核开关失败', err));
+    db.getAudit().then((audit) => {
+      this.setData({ audit });
+      if (audit) this.getPage(); // 开放发布才默认加载小猫书
+    }).catch((err) => {
+      console.error('读取审核开关失败', err);
+      this.getPage(); // 读失败按开放处理，保证正常能看
+    });
     this.initUser();
     db.isBlacklisted().then((blackNum) => this.setData({ blackNum }))
       .catch((err) => console.error('黑名单检查失败', err));
@@ -49,6 +54,7 @@ Page({
   onShow() {
     if (typeof this.getTabBar === 'function' && this.getTabBar()) {
       this.getTabBar().setData({ selected: 1 });
+      if (typeof this.getTabBar().refreshAudit === 'function') this.getTabBar().refreshAudit();
     }
   },
 
@@ -71,6 +77,9 @@ Page({
 
   /** 分页加载推文：按所选排序规则查询，去重合并；搜索关键词非空时按话题/标题模糊过滤 */
   getPage() {
+    // 审核模式（audit=false）不读小猫书数据：除非用户正在搜索。
+    // 避免关闭发布审核时每次进首页都白读一遍 Page 集合。
+    if (!this.data.audit && !this.data.searchMode) return;
     const orderBy = this.data.multiIndex[1] === 0 ? -1 : 1; // 降序/升序
     // 排序字段：0=拍摄时间 1=发布时间 2=点赞量
     const sortKey = this.data.multiIndex[0] === 2 ? 'good' :
@@ -150,6 +159,13 @@ Page({
   toCatDetail(e) {
     const _id = e.currentTarget.dataset._id;
     wx.navigateTo({ url: '/pages/catDetail/catDetail?_id=' + _id });
+  },
+
+  /** 长按猫横条：管理员可直接进编辑页（和 catDetail 图片长按一致，非管理员静默） */
+  editCatFromSearch(e) {
+    if (!app.globalData.isAdministrator) return;
+    const _id = e.currentTarget.dataset._id;
+    wx.navigateTo({ url: '/pages/editCat/editCat?_id=' + _id });
   },
 
   /** 猫横条缩略图加载失败逐级回退 */

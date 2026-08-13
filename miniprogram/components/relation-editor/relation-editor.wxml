@@ -39,7 +39,9 @@
 
 <!-- ==================== 搜索弹窗 ==================== -->
 <view class="rel-mask" wx:if="{{showSearch}}" catchtouchmove="noop" bindtap="closeSearch">
-  <view class="rel-sheet" catchtap="noop">
+  <!-- 键盘弹出时整块弹窗上浮到键盘上方（keyboardHeight 由 onKeyboardHeightChange 提供），
+       收键盘自动回落到底部；adjust-position 关闭，避免页面滚动造成弹窗乱晃 -->
+  <view class="rel-sheet rel-sheet-search" catchtap="noop" style="margin-bottom: {{keyboardHeight}}px; max-height: {{sheetMaxHeight || '82vh'}}">
     <view class="rel-sheet-title">添加关系</view>
     <view class="rel-search-box">
       <input
@@ -49,6 +51,7 @@
         value="{{keyword}}"
         bindinput="onSearchInput"
         confirm-type="search"
+        adjust-position="{{false}}"
       />
     </view>
     <scroll-view class="rel-search-list" scroll-y="true">
@@ -74,18 +77,23 @@
     </scroll-view>
     <view wx:if="{{searching}}" class="rel-tip">搜索中...</view>
     <view wx:elif="{{searchDone && !searchResults.length}}" class="rel-no-result">
-      <view class="rel-no-result-text">未找到「{{keyword}}」这只猫</view>
-      <button class="rel-keep-btn" bindtap="keepUnmatched">暂存这个名字的关系（日后创建该猫时自动关联）</button>
+      <view class="rel-no-result-text">未找到「{{keyword}}」这只猫，可点下方按钮暂存</view>
     </view>
-    <view class="rel-sheet-btns">
-      <button class="rel-sheet-btn cancel" bindtap="closeSearch">取消</button>
+    <!-- 底部固定区：边界线在「暂存」按钮上方，搜索结果列表滚动到此即止，不会盖住按钮 -->
+    <view class="rel-search-footer">
+      <!-- 暂存按钮：只要搜索框有关键词就一直显示（无论有没有结果）。
+           用户想关联的猫还没创建、搜索只模糊匹配出别的猫时，也能暂存这个名字 -->
+      <button wx:if="{{keyword}}" class="rel-keep-btn" bindtap="keepUnmatched">暂存「{{keyword}}」的关系（日后创建该猫自动关联）</button>
+      <view class="rel-sheet-btns">
+        <button class="rel-sheet-btn cancel" bindtap="closeSearch">取消</button>
+      </view>
     </view>
   </view>
 </view>
 
 <!-- ==================== 填关系弹窗 ==================== -->
 <view class="rel-mask" wx:if="{{showRelation}}" catchtouchmove="noop" bindtap="closeRelation">
-  <view class="rel-sheet" catchtap="noop">
+  <view class="rel-sheet" catchtap="noop" style="margin-bottom: {{keyboardHeight}}px; max-height: {{sheetMaxHeight || '82vh'}}">
     <view class="rel-sheet-title">{{editIndex >= 0 ? '编辑关系' : '添加关系'}}</view>
     <view class="rel-target" wx:if="{{target}}">
       <image
@@ -107,6 +115,7 @@
         placeholder="例如：母亲 / 朋友"
         value="{{relationText}}"
         bindinput="onRelationInput"
+        adjust-position="{{false}}"
       />
     </view>
     <view class="rel-chips">
@@ -128,7 +137,7 @@
 
 <!-- ==================== 同步确认弹窗 ==================== -->
 <view class="rel-mask" wx:if="{{showSync}}" catchtouchmove="noop" bindtap="noop">
-  <view class="rel-sheet" catchtap="noop" wx:if="{{syncInfo}}">
+  <view class="rel-sheet" catchtap="noop" wx:if="{{syncInfo}}" style="margin-bottom: {{keyboardHeight}}px; max-height: {{sheetMaxHeight || '82vh'}}">
     <view class="rel-sheet-title">确认同步</view>
     <view class="rel-sync-summary">
       将保存：<text class="rel-em">{{catName || '当前猫'}}</text> → <text class="rel-em">{{syncInfo.targetName}}</text>（<text class="rel-em">{{syncInfo.relationLabel}}</text>）
@@ -141,6 +150,7 @@
           placeholder="{{syncInfo.candidates.length ? '请选择或输入对方关系' : '特殊关系，请手动输入对方的关系'}}"
           value="{{syncInfo.inverseText}}"
           bindinput="onInverseInput"
+          adjust-position="{{false}}"
         />
       </view>
       <view class="rel-chips" wx:if="{{syncInfo.candidates.length}}">

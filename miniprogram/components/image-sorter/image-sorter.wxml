@@ -1,0 +1,99 @@
+<!-- components/image-sorter/image-sorter.wxml
+     横向滚动图片拖拽排序（原生 movable-area + movable-view）
+     - 短按预览、长按 350ms 拖拽、边缘自动滚动、松手归位
+     - movable-view 始终 disabled，只做定位引擎（x 数据驱动） -->
+<view class="is-root">
+  <view class="is-tip" wx:if="{{tip}}">{{tip}}</view>
+
+  <view class="is-wrap {{invalid ? 'is-invalid' : ''}}">
+    <scroll-view
+      id="isScroll"
+      class="is-scroll"
+      style="height: {{cardH}}px;"
+      scroll-x="{{true}}"
+      scroll-y="{{false}}"
+      show-scrollbar="{{false}}"
+      bounces="{{false}}"
+      scroll-left="{{scrollLeft}}"
+      bindscroll="onScroll"
+    >
+      <movable-area class="is-area" style="width: {{areaW}}px; height: {{areaH}}px;">
+        <!-- 每张图片 -->
+        <movable-view
+          wx:for="{{internalItems}}"
+          wx:key="id"
+          class="is-mv"
+          style="width: {{cardW}}px; height: {{cardH}}px; z-index: {{drag.active && drag.id === item.id ? 99 : 1}};"
+          x="{{item.x}}"
+          y="0"
+          direction="horizontal"
+          out-of-bounds="{{false}}"
+          disabled="{{true}}"
+          animation="{{drag.active && drag.id === item.id ? false : true}}"
+          data-id="{{item.id}}"
+        >
+          <view
+            class="is-card {{(drag.active && drag.id === item.id) || settle.id === item.id ? 'is-dragging' : ''}}"
+            data-id="{{item.id}}"
+            bindtouchstart="onTouchStart"
+            catchtouchmove="onCatchMove"
+            bindtouchend="onTouchEnd"
+            bindtouchcancel="onTouchEnd"
+            catchlongpress="noop"
+            bindtap="onItemTap"
+          >
+            <view class="is-card-inner">
+              <view class="is-imgbox">
+                <image
+                  class="is-img"
+                  src="{{item.src}}"
+                  mode="aspectFill"
+                  lazy-load="{{true}}"
+                  binderror="onImgError"
+                  data-id="{{item.id}}"
+                />
+                <view class="is-placeholder" wx:if="{{item.err}}">图片加载失败</view>
+                <view class="is-cover" wx:if="{{index === 0}}">封面</view>
+              </view>
+              <view class="is-tools" wx:if="{{showTools}}">
+                <text wx:if="{{index > 0}}" class="is-tool-btn" catchtap="onSetCover" data-tool="1" data-id="{{item.id}}">☆ 设封面</text>
+                <text wx:else class="is-tool-btn is-tool-on">★ 封面</text>
+                <image class="is-del-icon" src="/pages/images/delete.jpg" catchtap="onDelete" data-tool="1" data-id="{{item.id}}" mode=""/>
+              </view>
+            </view>
+          </view>
+        </movable-view>
+
+        <!-- 末尾"+"新增位：普通定位视图，不参与拖拽/预览 -->
+        <view
+          wx:if="{{showAdd}}"
+          class="is-add"
+          style="left: {{addX}}px; width: {{cardW}}px; height: {{cardH}}px;"
+          bindtap="onAddTap"
+        >
+          <view class="is-imgbox is-addbox">
+            <image class="is-img" src="/pages/images/addPhoto.png" mode="aspectFit"/>
+          </view>
+          <view class="is-tools"></view>
+        </view>
+      </movable-area>
+    </scroll-view>
+  </view>
+
+  <view class="is-count">已选 {{items.length}} 张</view>
+
+  <!-- 删除图片确认弹窗（勾选"下次不再询问"后直接删，不再弹窗） -->
+  <view class="del-mask" wx:if="{{delModal.show}}" catchtouchmove="noop" bindtap="delCancel">
+    <view class="del-modal" catchtap="noop">
+      <view class="del-title">删除这张图片？</view>
+      <view class="del-option" catchtap="toggleNoAsk">
+        <text class="del-check {{delModal.noAsk ? 'on' : ''}}">{{delModal.noAsk ? '☑' : '☐'}}</text>
+        <text class="del-option-text">下次不再询问</text>
+      </view>
+      <view class="del-btns">
+        <button class="del-btn cancel" bindtap="delCancel">取消</button>
+        <button class="del-btn ok" bindtap="delConfirm">删除</button>
+      </view>
+    </view>
+  </view>
+</view>

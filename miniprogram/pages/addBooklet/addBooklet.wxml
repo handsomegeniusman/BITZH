@@ -1,39 +1,17 @@
 <!--pages/addBooklet/addBooklet.wxml-->
-<view class="img-tip">{{imgTip}}</view>
-<scroll-view class="image-swiper" scroll-x="{{!drag.active}}" scroll-y="false">
-  <view class="image-track" style="width: {{(tempFileList.length + 1) * drag.step}}px">
-    <!-- 每张图片：绝对定位，靠 translateX 排位；长按进入拖拽后跟手、邻居带动画让位 -->
-    <view
-      class="image-item"
-      wx:for="{{tempFileList}}"
-      wx:key="tempFilePath"
-      data-index="{{index}}"
-      style="transform: translateX({{index * drag.step + (index === drag.index ? drag.offsetX : 0)}}px){{index === drag.index && drag.active ? ' scale(1.06)' : ''}}; transition: {{drag.active && index === drag.index ? 'none' : 'transform .2s ease'}}; z-index: {{index === drag.index ? 99 : 1}};{{index === drag.index && drag.active ? ' opacity:.85' : ''}}"
-      bindtouchstart="onImgTouchStart"
-      bindtouchmove="onImgTouchMove"
-      bindtouchend="onImgTouchEnd"
-      bindtouchcancel="onImgTouchEnd"
-      bindtap="onImgTap"
-    >
-      <view class="item-img-box">
-        <image class="item-image" src="{{item.tempFilePath}}" mode="aspectFit"/>
-        <view class="cover-badge" wx:if="{{index === 0}}">封面</view>
-      </view>
-      <view class="item-tools">
-        <text wx:if="{{index > 0}}" class="tool-btn" catchtap="onSetCover" data-tool="1" data-index="{{index}}">☆ 设封面</text>
-        <text wx:else class="tool-btn on">★ 封面</text>
-        <image class="delete-icon" src="/pages/images/delete.jpg" catchtap="onDelete" data-tool="1" data-index="{{index}}" mode=""/>
-      </view>
-    </view>
-    <!-- 末尾"+"新增位：只响应点击，不参与拖拽/预览 -->
-    <view class="image-item add-item" style="transform: translateX({{tempFileList.length * drag.step}}px)" bindtap="getphoto">
-      <view class="item-img-box">
-        <image class="item-image" src="/pages/images/addPhoto.png" mode="aspectFit"/>
-      </view>
-    </view>
-  </view>
-</scroll-view>
-<view class="img-count">已选 {{tempFileList.length}} 张</view>
+<!-- 页面根节点：点击编辑器外空白处收起话题建议下拉（组件内部点击不会冒泡到这里，
+     所以不会"太灵敏"——只有点到编辑器外部才收起） -->
+<view class="page-root" bindtap="onPageTap">
+<!-- 图片区：横向拖拽排序（长按拖拽/单击预览/删除确认/设封面/末尾新增，全部在 image-sorter 组件内） -->
+<image-sorter
+  items="{{tempFileList}}"
+  tip="{{imgTip}}"
+  show-tools="{{true}}"
+  show-add="{{true}}"
+  invalid="{{false}}"
+  bind:change="onImgChange"
+  bind:add="getphoto"
+/>
 
 <view class="head1">
   <text user-select="true">标题名称</text><text class="req-star">*</text>
@@ -61,22 +39,8 @@
 
 <view class="bottom-pad"></view>
 
-<!-- 删除图片确认弹窗（勾选"下次不再询问"后直接删，不再弹窗） -->
-<view class="del-mask" wx:if="{{delModal.show}}" catchtouchmove="noop" bindtap="delCancel">
-  <view class="del-modal" catchtap="noop">
-    <view class="del-title">删除这张图片？</view>
-    <view class="del-option" catchtap="toggleNoAsk">
-      <text class="del-check {{delModal.noAsk ? 'on' : ''}}">{{delModal.noAsk ? '☑' : '☐'}}</text>
-      <text class="del-option-text">下次不再询问</text>
-    </view>
-    <view class="del-btns">
-      <button class="del-btn cancel" bindtap="delCancel">取消</button>
-      <button class="del-btn ok" bindtap="delConfirm">删除</button>
-    </view>
-  </view>
-</view>
-
 <!-- 吸底按钮条：发布 -->
 <view class="bottom-bar">
   <button bindtap="confirm" class="bar-btn reset-margin">发布</button>
+</view>
 </view>

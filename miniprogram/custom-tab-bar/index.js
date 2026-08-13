@@ -6,12 +6,15 @@
 // ============================================================
 const app = getApp();
 const pageUtil = require('../utils/page.js'); // 未登录弹窗（与 index 页发布入口一致）
+const db = require('../utils/db.js'); // 审核开关（audit=false 时隐藏发布加号）
 
 Component({
   data: {
     selected: 0,              // 当前选中 tab（渲染顺序：查猫=0 小猫书=1 关于=2 我的=3）
     color: '#888888',         // 未选中文字色
     selectedColor: '#FF405E', // 选中文字色（主粉）
+    // 审核开关：false（关闭注册/发布）时隐藏中间发布加号；默认 true 先显示，取回真值后校正
+    audit: true,
     // 4 个 tab 的路径清单（WXML 按此渲染，中间加号不占 tab 项）
     list: [
       { pagePath: '/pages/catSearch/catSearch', text: '查猫', index: 0 },
@@ -21,12 +24,32 @@ Component({
     ],
   },
 
+  lifetimes: {
+    attached() {
+      this.refreshAudit();
+    },
+  },
+
   methods: {
+    /** 刷新审核开关：false（未开放注册/发布）时隐藏中间加号，true 时显示 */
+    refreshAudit() {
+      db.getAudit().then((a) => {
+        this.setData({ audit: !!a });
+      }).catch((err) => {
+        console.error('[tabBar] 读取审核开关失败', err);
+        this.setData({ audit: false });
+      });
+    },
     /** 切换 tab（微信要求 tab 间跳转用 switchTab） */
     switchTab(e) {
       const path = e.currentTarget.dataset.path;
       if (!path) return;
-      wx.switchTab({ url: path });
+      console.log('[tabBar] switchTab ->', path);
+      wx.switchTab({
+        url: path,
+        fail: (err) => console.error('[tabBar] switchTab 失败 ->', path, err),
+        complete: (res) => console.log('[tabBar] switchTab complete ->', path, res),
+      });
     },
 
     /** 中间加号：发布新帖（与 index 页 addBooklet 守卫一致：已注册跳转，未注册弹注册） */

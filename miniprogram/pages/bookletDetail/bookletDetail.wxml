@@ -31,7 +31,10 @@
     <!-- 话题：胶囊可点，跳到相关猫咪或话题文章 -->
     <view wx:if="{{relativeList.length}}" class="topic-block">
       <view class="relative-tags">
-        <view class="relative-chip" wx:for="{{relativeList}}" wx:key="*this" bindtap="toRelative" data-name="{{item}}">#{{item}}</view>
+        <view class="relative-chip" wx:for="{{relativeList}}" wx:key="*this" bindtap="toRelative" data-name="{{item}}">
+          <text wx:if="{{catTopicMap[item]}}" class="relative-cat-icon">🐱</text>
+          <text class="relative-chip-text">#{{item}}</text>
+        </view>
       </view>
       <view class="relative-guide">点击话题可查看相关猫咪或文章</view>
     </view>

@@ -12,17 +12,30 @@
   width: 100%;
   max-width: 720px;
   margin: 0 auto;
-  height: 60rpx;
-  line-height: 60rpx;
-  text-align: center;
+  height: 44rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   color: #666;
   font-size: 26rpx;
+}
+/* 排序文字 + 下拉小箭头：flex 水平排列、垂直居中 */
+.picker-inner {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+.picker-arrow {
+  font-size: 24rpx;
+  color: #999;
+  margin-left: 6rpx;
+  line-height: 1;
 }
 
   /* ===================== 搜索框（话题 / 猫名 / 标题） ===================== */
   .search-bar {
     position: relative;
-    margin: 16rpx auto 0;
+    margin: 8rpx auto 0;
     max-width: 672px; /* 720 - 2×24 留白，宽屏下与内容列对齐 */
     display: flex;
     align-items: center;

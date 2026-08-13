@@ -201,8 +201,15 @@ async function searchCats(keyword, exclude) {
     const byName = await db.find('BITZH', { name: { $regex: r, $options: 'i' } }, { limit: 10 });
     push(byName);
     if (results.length < 10) {
-      const byNick = await db.find('BITZH', { nickname: { $regex: r, $options: 'i' } }, { limit: 10 });
-      push(byNick);
+      // 别名/曾用名/昵称一起搜：老猫 nickname 可能不含别名（改版前生成），直接查两个字段才能命中「肥猪→发福」
+      const byAlias = await db.find('BITZH', {
+        $or: [
+          { otherName: { $regex: r, $options: 'i' } },
+          { usedName: { $regex: r, $options: 'i' } },
+          { nickname: { $regex: r, $options: 'i' } },
+        ],
+      }, { limit: 10 });
+      push(byAlias);
     }
   } catch (err) {
     console.error('搜索猫咪失败', err);
@@ -307,28 +314,50 @@ async function collectInheritedRelations(newName, newGender) {
  * 把全库猫的 relatedCats 里指向 oldName 的条目替换成 newName（改名前调用），
  * 保持关系图一致，避免改名后其他猫残留"指向不存在猫"的陈旧引用。
  * 关系词原样保留（A。兄弟 改名为 B 后 → B。兄弟）。昵称同步刷新。
- * @returns {Promise<Number>} 实际改动到的猫数量
+ *
+ * 改名时同时补全反向关系：有些猫（比如当初"暂存"关系时用的就是新名字）的
+ * relatedCats 里已经指向 newName，上面的替换步骤碰不到它们，而被改名猫（现在叫
+ * newName）却缺少对应的反向条目 → 出现"我能关联它、它关联不到我"。
+ * 这里扫描全库找出所有指向 newName 的条目，把反向关系合并进被改名猫自己。
+ * @param {String} oldName   改名前名字
+ * @param {String} newName   改名后名字
+ * @param {String} newGender 被改名猫性别（传给 collectInheritedRelations，备用）
+ * @returns {Promise<Object>} {renamed: 替换了多少只猫的旧引用, inherited: 补了多少条反向关系}
  */
-async function renameCat(oldName, newName) {
-  if (!oldName || !newName || oldName === newName) return 0;
-  let applied = 0;
+async function renameCat(oldName, newName, newGender) {
+  if (!oldName || !newName || oldName === newName) return { renamed: 0, inherited: 0 };
+  let renamedCount = 0;
+  let inheritedCount = 0;
   try {
     const cats = await db.find('BITZH', {});
+    // 1. 替换：把其他猫 relatedCats 里的 oldName → newName
+    let renamedCat = null;
     for (const c of cats) {
-      if (c.name === newName) continue; // 不处理被改名后的猫自己
+      if (c.name === newName) { renamedCat = c; continue; } // 被改名后的猫自己
       const entries = parseRelatedCats(c.relatedCats).map(function (e) {
         if (e.name === oldName) return { name: newName, relation: e.relation };
         return e;
       });
       if (JSON.stringify(entries) !== JSON.stringify(parseRelatedCats(c.relatedCats))) {
         await updateCatRelations(c, entries);
-        applied++;
+        renamedCount++;
+      }
+    }
+    // 2. 补反向：被改名猫（现在是 newName）从那些已经指向 newName 的猫处继承反向关系
+    if (renamedCat) {
+      const inherited = await collectInheritedRelations(newName, newGender);
+      if (inherited.length) {
+        const merged = mergeRelations(renamedCat.relatedCats, inherited);
+        if (merged !== (renamedCat.relatedCats || '')) {
+          await updateCatRelations(renamedCat, parseRelatedCats(merged));
+          inheritedCount = inherited.length;
+        }
       }
     }
   } catch (err) {
     console.error('批量改名相关引用失败', err);
   }
-  return applied;
+  return { renamed: renamedCount, inherited: inheritedCount };
 }
 
 /**

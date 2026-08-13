@@ -40,18 +40,34 @@ Page({
 
   /** 页面加载 */
   async onLoad(options) {
+    console.log('[mydetail] onLoad 开始');
     // 审核开关：是否开放注册
-    this.setData({ audit: await db.getAudit() });
+    try {
+      this.setData({ audit: await db.getAudit() });
+      console.log('[mydetail] getAudit =', this.data.audit);
+    } catch (e) {
+      console.error('[mydetail] getAudit 失败（不影响页面显示）', e);
+    }
     // 支持分享链接直接打开对应分栏（解析并钳制到有效范围）
     if (options && options.currentTab !== undefined) {
       let tab = parseInt(options.currentTab, 10);
       if (isNaN(tab)) tab = 0;
       this.setData({ currentTab: Math.max(0, Math.min(tab, this.data.navbar.length - 1)) });
     }
-    // 获取用户状态（管理员/已注册用户）
-    await this.initUser();
+    // 获取用户状态（管理员/已注册用户）；失败不能阻塞页面加载（否则 switchTab 超时、灰屏）
+    try {
+      await this.initUser();
+      console.log('[mydetail] initUser OK');
+    } catch (e) {
+      console.error('[mydetail] initUser 失败（不影响页面显示）', e);
+    }
     // 黑名单检查
-    this.setData({ blackNum: await db.isBlacklisted() });
+    try {
+      this.setData({ blackNum: await db.isBlacklisted() });
+    } catch (e) {
+      console.error('[mydetail] isBlacklisted 失败（不影响页面显示）', e);
+    }
+    console.log('[mydetail] onLoad 完成');
     // 监听用户资料变化（注册/修改资料后自动刷新头像昵称）
     this._pageDataListener = (updatedUserInfo) => {
       if (updatedUserInfo && updatedUserInfo.avatarUrl) {
@@ -68,9 +84,11 @@ Page({
   /** 每次进入本页（含从其他 tab 切回）都刷新列表：编辑/删除后回来能看到最新状态。
    *  先清空再加载——paginate 是"只追加不删除"的，不清空的话已删除的帖子会一直留在列表里。 */
   onShow() {
+    console.log('[mydetail] onShow 触发');
     // 同步底部自定义 tabBar 选中态（我的=3），置于刷新逻辑之前
     if (typeof this.getTabBar === 'function' && this.getTabBar()) {
       this.getTabBar().setData({ selected: 3 });
+      if (typeof this.getTabBar().refreshAudit === 'function') this.getTabBar().refreshAudit();
     }
     if (!this._initialized) return; // 首次进入由 onLoad 加载过了
     this.setData({ myPosts: [], trashList: [] });

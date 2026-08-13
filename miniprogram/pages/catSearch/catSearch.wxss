@@ -149,9 +149,10 @@
 
 .list {
   /* margin-bottom: 10rpx; */
-  height: 90rpx;
+  /* 高度 90→70：结果卡更紧凑，下面相关推文整体上移，性格和文章不再离很远（头像会略向下溢出，不与文章重叠） */
+  height: 70rpx;
   padding: 10rpx;
-  font-size: 28rpx;  
+  font-size: 28rpx;
   background: #f8f8f8;
   /* border-radius: 10rpx; */
 }
@@ -183,7 +184,8 @@
   box-sizing: border-box;
   position: relative;
   left: 0rpx;
-  top: -120rpx
+  /* -120→-130：随卡变矮把性格再上提，避免被下方上移的文章盖住 */
+  top: -130rpx
 }
 /* 相关推文：猫行下方小字，与猫名/性格左对齐（margin-left 同 28%） */
 .rel-pages {

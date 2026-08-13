@@ -73,6 +73,35 @@
       <text user-select="true">{{cat.furColor}}</text>
     </view>
   </view>
+  <!-- 毛色分类（狸花/橘猫及橘白…）：表单里有但详情页原来没展示，补上 -->
+  <view wx:if="{{cat.classification}}" class="flex-wrp">
+    <view class="detail-label-wrap">
+      <text user-select="true">毛色分类</text>
+    </view>
+    <view class="itemname2">
+      <text user-select="true">{{cat.classification}}</text>
+    </view>
+  </view>
+  <view wx:if="{{showDetail}}">
+    <view wx:if="{{cat.otherName}}" class="flex-wrp">
+      <view class="detail-label-wrap">
+        <text user-select="true">别名</text>
+      </view>
+      <view class="itemname2">
+        <text user-select="true">{{cat.otherName}}</text>
+      </view>
+    </view>
+  </view>
+  <view wx:if="{{showDetail}}">
+    <view wx:if="{{cat.usedName}}" class="flex-wrp">
+      <view class="detail-label-wrap">
+        <text user-select="true">曾用名</text>
+      </view>
+      <view class="itemname2">
+        <text user-select="true">{{cat.usedName}}</text>
+      </view>
+    </view>
+  </view>
   <view wx:if="{{showDetail}}">
     <view wx:if="{{cat.gender}}" class="flex-wrp">
       <view class="detail-label-wrap">
@@ -130,6 +159,16 @@
     </view>
   </view>
   <view wx:if="{{showDetail}}">
+    <view wx:if="{{cat.firstSightingLocation}}" class="flex-wrp">
+      <view class="detail-label-wrap">
+        <text user-select="true">第一次目击地点</text>
+      </view>
+      <view class="itemname2">
+        <text user-select="true">{{cat.firstSightingLocation}}</text>
+      </view>
+    </view>
+  </view>
+  <view wx:if="{{showDetail}}">
     <view wx:if="{{cat.missingTime}}" class="flex-wrp">
       <view class="detail-label-wrap">
         <text user-select="true">失踪时间</text>
@@ -156,6 +195,16 @@
       </view>
       <view class="itemname2">
         <text user-select="true">{{cat.deathTime}}</text>
+      </view>
+    </view>
+  </view>
+  <view wx:if="{{showDetail}}">
+    <view wx:if="{{cat.deathReason}}" class="flex-wrp">
+      <view class="detail-label-wrap">
+        <text user-select="true">离世原因</text>
+      </view>
+      <view class="itemname2">
+        <text user-select="true">{{cat.deathReason}}</text>
       </view>
     </view>
   </view>
@@ -233,9 +282,12 @@
 
 
 <view wx:if="{{listData.length}}">
+  <!-- 排序选择器：胶囊样式 + 「排序」引导 + ▾ 箭头，让用户一眼知道可以点击切换 -->
   <picker mode="multiSelector" bindchange="bindMultiPickerChange" value="{{multiIndex}}" range="{{multiArray}}">
     <view class="detail-picker">
-      {{multiArray[0][multiIndex[0]]}}-{{multiArray[1][multiIndex[1]]}}
+      <text class="detail-picker-label">排序</text>
+      <text class="detail-picker-value">{{multiArray[0][multiIndex[0]]}} {{multiArray[1][multiIndex[1]]}}</text>
+      <text class="detail-picker-arrow">▾</text>
     </view>
   </picker>
 </view>
@@ -245,19 +297,44 @@
      个别猫话题过多 → 默认只显示前 8 个，可展开全部；真实猫名话题前加 🐱 猫头标识 -->
 <view wx:if="{{relatedTopics.length}}" class="topic-section">
   <view class="topic-section-title">相关话题<text wx:if="{{selectedTopics.length}}" class="topic-section-selected">已选 {{selectedTopics.length}} 项</text></view>
-  <view class="topic-tags">
+  <!-- 全选 / 取消选择：一键操作，不用逐个点胶囊 -->
+  <view class="topic-actions">
+    <text class="topic-action-btn" bindtap="selectAllTopics">全选</text>
+    <text class="topic-action-btn" bindtap="deselectAllTopics">取消选择</text>
+  </view>
+  <!-- 相关话题：默认一行横向滚动（前 8 个）；点"展开全部"后所有话题换行展示，可再"收起" -->
+  <scroll-view wx:if="{{!topicsExpanded}}" class="topic-tags" scroll-x="true" enhanced="true" show-scrollbar="false">
+    <view class="topic-tags-inner">
+      <view
+        wx:for="{{relatedTopicsShow}}"
+        wx:key="name"
+        class="topic-chip {{topicSelectedMap[item.name] ? 'topic-chip-selected' : ''}}"
+        bindtap="toggleTopic"
+        data-name="{{item.name}}"
+        data-id="{{item.catId}}"
+      >
+        <text wx:if="{{topicSelectedMap[item.name]}}" class="topic-check">✓</text>
+        <text wx:if="{{item.isCat}}" class="topic-cat-icon">🐱</text>#{{item.name}}
+        <text class="topic-count">{{item.count}}</text>
+      </view>
+    </view>
+  </scroll-view>
+  <!-- 展开后：全部话题换行展示（不再横向滚动） -->
+  <view wx:else class="topic-tags-expanded">
     <view
       wx:for="{{relatedTopicsShow}}"
       wx:key="name"
-      class="topic-chip {{item.isCat ? 'topic-chip-cat' : ''}} {{topicSelectedMap[item.name] ? 'topic-chip-selected' : ''}}"
+      class="topic-chip {{topicSelectedMap[item.name] ? 'topic-chip-selected' : ''}}"
       bindtap="toggleTopic"
       data-name="{{item.name}}"
     >
+      <text wx:if="{{topicSelectedMap[item.name]}}" class="topic-check">✓</text>
       <text wx:if="{{item.isCat}}" class="topic-cat-icon">🐱</text>#{{item.name}}
       <text class="topic-count">{{item.count}}</text>
     </view>
   </view>
-  <view wx:if="{{relatedTopics.length > 8}}" class="topic-toggle" bindtap="toggleTopics">{{topicsExpanded ? '收起' : '展开全部（' + relatedTopics.length + '）'}}</view>
+  <!-- 展开/收起切换：话题数不超过 8 个时不需要 -->
+  <view wx:if="{{relatedTopics.length > 8}}" class="topic-toggle" bindtap="toggleTopics">{{topicsExpanded ? '收起' : '展开全部'}}</view>
 </view>
 
 <!-- 选中话题的文章：内联展示在详情页，不跳转。多选 = 多个话题的文章合并展示 -->

@@ -18,6 +18,10 @@
                 <text class="feature-title">帖子回收站</text>
                 <button bindtap="managePageTrash" class="feature-button">被删除的帖子（可恢复）</button>
             </view>
+            <view class="feature-card">
+                <text class="feature-title">内容安全</text>
+                <button bindtap="manageReview" class="feature-button">举报 / 申诉 / 复核</button>
+            </view>
         </view>
     </view>
 </view>

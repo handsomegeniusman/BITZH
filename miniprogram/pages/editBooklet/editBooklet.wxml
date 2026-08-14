@@ -41,6 +41,9 @@
 </picker>
 <view class="field-tip">不能选未来日期 · 留空则默认今天</view>
 
+<!-- 封锁 / 解封帖子：仅管理员可用，软下架（取证留存，可在复核中心恢复），区别于下方删除 -->
+<button wx:if="{{isAdmin && !recoverMode}}" class="block-cat-btn" bindtap="toggleBlock">{{listData.hidden ? '解封帖子' : '封锁帖子'}}</button>
+
 <!-- 删除推文 / 彻底删除存档：严肃操作，放在内容末尾，需滚动到底部才会出现，避免吸底误触 -->
 <button class="delete-cat-btn" bindtap="deletePage">{{recoverMode ? '彻底删除存档' : '删除推文'}}</button>
 

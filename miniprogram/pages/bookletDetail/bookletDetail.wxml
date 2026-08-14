@@ -22,7 +22,8 @@
   <!-- 正文卡片 -->
   <view class="content-card">
     <view class="head">
-      <text user-select="true">{{listData.tittle}}</text>
+      <text class="head-title" user-select="true">{{listData.tittle}}</text>
+      <text wx:if="{{!recoverMode}}" class="report-link" bindtap="reportPage">举报</text>
     </view>
     <!-- 拍摄时间：放在标题正下方，不滑动也能看到 -->
     <view wx:if="{{listData.photoTime}}" class="photoTime">拍摄于 {{listData.photoTime}}</view>

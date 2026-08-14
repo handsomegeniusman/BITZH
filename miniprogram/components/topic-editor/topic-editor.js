@@ -214,7 +214,7 @@ Component({
         (cats || []).forEach(function (c) {
           if (c && c.name && String(c.name) !== catName) results.push(String(c.name));
         });
-        (pages || []).forEach(function (p) {
+        db.filterHidden(pages).forEach(function (p) {
           topic.parse(p && p.relative).forEach(function (t) { if (t !== catName) results.push(t); });
         });
       } catch (err) {

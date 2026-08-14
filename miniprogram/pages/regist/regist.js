@@ -8,6 +8,7 @@ const app = getApp();
 const db = require('../../utils/db.js'); // 公共数据库方法
 const cos = require('../../utils/cos.js'); // COS 图片上传/删除/路径公共方法
 const guard = require('../../utils/guard.js'); // 前端保险工具（文件名清洗/限频/限长）
+const secCheck = require('../../utils/secCheck.js'); // 内容安全审核（昵称，写库前拦截）
 
 // 默认头像（微信官方默认头像）
 const defaultAvatarUrl = 'https://mmbiz.qpic.cn/mmbiz/icTdbqWNOwNRna42FI242Lcia07jQodd2FJGIYQfG0LAJGFxM4FbnQP6yfMxBgJ0F3YRqJCJ1aPAK2dQagdusBZg/0';
@@ -145,6 +146,12 @@ Page({
           }
           // 校验/查重都通过后才限频（防连点）：失败路径不占限频窗口
           if (!guard.throttle('regist_submit', 1500)) return;
+          // 内容安全审核昵称（写库前拦截，自带 loading；注册/改资料共用）
+          const _passed = await secCheck.guardBeforePublish(nickName, 1);
+          if (!_passed) {
+            guard.resetThrottle('regist_submit'); // 拦截：改完可立即重提
+            return;
+          }
           this._submitting = true;
           try {
             if (app.globalData.isFeeder) {

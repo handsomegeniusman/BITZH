@@ -242,6 +242,73 @@ function resetAuditCache() {
   state.audit = null;
 }
 
+// ---------- 封禁/解封/软删除（内容安全，取证留存） ----------
+
+/**
+ * 封禁用户：加入黑名单 + 软删除其全部推文/评论（打标志，不物理删，供监管抽查取证）。
+ * @param {String} userId 被禁用户 openid
+ * @param {String} reason 封禁原因（可选，写入 BlackNum 供申诉时查证）
+ */
+async function banUser(userId, reason) {
+  const now = new Date();
+  // 1) 黑名单（幂等：已存在则跳过，避免重复插入）
+  const exist = await findOne('BlackNum', { id: userId });
+  if (!exist) {
+    await insertOne('BlackNum', { id: userId, time: now, reason: reason || '' });
+  }
+  // 2) 软删推文
+  await updateMany('Page', { authorId: userId }, { $set: { hidden: true, hiddenBy: 'ban', hiddenTime: now } });
+  // 3) 软删评论
+  await updateMany('Comment', { authorId: userId }, { $set: { deleted: true, deletedBy: 'ban', deletedTime: now } });
+}
+
+/**
+ * 解封用户：移出黑名单 + 恢复其内容可见。
+ * @param {String} userId 被解封用户 openid
+ */
+async function unbanUser(userId) {
+  const recs = await find('BlackNum', { id: userId });
+  for (let i = 0; i < recs.length; i++) {
+    if (recs[i]._id) await deleteOne('BlackNum', { _id: recs[i]._id });
+  }
+  await updateMany('Page', { authorId: userId }, { $set: { hidden: false } });
+  await updateMany('Comment', { authorId: userId }, { $set: { deleted: false } });
+}
+
+/**
+ * 软删除单条评论（替代物理 deleteOne，取证留存）。
+ * @param {String|Number} myCommentId 评论 myCommentId
+ * @param {String} operator 操作者（管理员名/作者本人），写入 deletedBy 备查
+ */
+function softDeleteComment(myCommentId, operator) {
+  return updateOne('Comment', { myCommentId: myCommentId }, {
+    $set: { deleted: true, deletedBy: operator || '', deletedTime: new Date() },
+  });
+}
+
+/**
+ * 软删除单条推文（替代物理 deleteOne，取证留存）。
+ * @param {String} _id Page 记录 _id
+ * @param {String} operator 操作者，写入 hiddenBy 备查
+ */
+function softDeletePage(_id, operator) {
+  return updateOne('Page', { _id: _id }, {
+    $set: { hidden: true, hiddenBy: operator || '', hiddenTime: new Date() },
+  });
+}
+
+/**
+ * 过滤掉被软删除（hidden）的推文。封禁用户的内容打 hidden 标志，
+ * 前端展示层统一过滤（取证留存在库中，不物理删除）。
+ * @param {Array} list 推文列表
+ * @returns {Array} 不含 hidden 项的列表
+ */
+function filterHidden(list) {
+  return (Array.isArray(list) ? list : []).filter(function (item) {
+    return item && !item.hidden;
+  });
+}
+
 module.exports = {
   state: state,
   // 统一增删改查
@@ -259,4 +326,10 @@ module.exports = {
   paginate: paginate,
   resetUserState: resetUserState,
   resetAuditCache: resetAuditCache,
+  // 封禁/解封/软删除
+  banUser: banUser,
+  unbanUser: unbanUser,
+  softDeleteComment: softDeleteComment,
+  softDeletePage: softDeletePage,
+  filterHidden: filterHidden,
 };

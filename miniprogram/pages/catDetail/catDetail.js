@@ -185,7 +185,7 @@ Page({
       const seen = {};
       const list = [];
       const countMap = {};
-      (pages || []).forEach(function (p) {
+      db.filterHidden(pages).forEach(function (p) {
         // topic.parse 对单篇去重；countMap 按"篇数"计数（同篇多标签只算一次）
         topic.parse(p.relative).forEach(function (t) {
           if (t === catName) return;          // 排除猫名自身
@@ -320,6 +320,7 @@ Page({
         $or: ors,
       };
       let list = await db.find('Page', filter, { sort: { pageTime: -1 }, limit: 30 });
+      list = db.filterHidden(list); // 过滤被封禁用户下架的推文（软删除留存）
       // 与主列表一致：客户端按真实时间归一化重排（兼容脏 photoTime），并补卡片时间文案
       list = sort.applySort(list, 'photoTime', true);
       sort.decorateTime(list);
@@ -429,6 +430,7 @@ Page({
       { sort: sortObj, limit: 20 },
       this.data.listData
     ).then(list => {
+      list = db.filterHidden(list); // 过滤被封禁用户下架的推文（软删除留存）
       // 客户端按真实时间归一化后重排（兼容脏 photoTime），并补卡片时间文案
       list = sort.applySort(list, sortKey, this.data.multiIndex[1] === 1);
       sort.decorateTime(list);

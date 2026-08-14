@@ -18,7 +18,12 @@
     "pages/mydetail/mydetail",
     "pages/regist/regist",
     "pages/someBooklet/someBooklet",
-    "pages/所有/所有"
+    "pages/所有/所有",
+
+    "pages/report/report",
+    "pages/appeal/appeal",
+    "pages/banned/banned",
+    "pages/reviewCenter/reviewCenter"
   ],
   "window": {
     "backgroundTextStyle": "light",

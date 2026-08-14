@@ -21,3 +21,9 @@ miniprogram/miniprogram_npm/
 Thumbs.db
 Desktop.ini
 tags
+
+# 6) 云函数部署压缩包（本地打包产物，源码以 cloudfunctions/*/ 目录为准）
+cloudfunctions/*.zip
+
+# 7) 微信开发者工具诊断临时文件
+miniprogram/.diag_tmp.js

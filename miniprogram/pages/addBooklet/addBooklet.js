@@ -8,6 +8,7 @@ const app = getApp();
 const db = require('../../utils/db.js'); // 公共数据库方法
 const cos = require('../../utils/cos.js'); // COS 图片上传/路径公共方法
 const guard = require('../../utils/guard.js'); // 前端保险工具（文件名清洗/限频/限长）
+const secCheck = require('../../utils/secCheck.js'); // 内容安全审核（写库前拦截）
 const media = require('../../utils/media.js'); // 选图（相册/拍摄）公共方法
 const pageUtil = require('../../utils/page.js');
 const { setField } = pageUtil; // 动态字段名的 setData（避免编译报错）
@@ -166,6 +167,14 @@ Page({
         this._submitting = false;
         guard.resetThrottle('addBooklet_submit'); // 失败：改完标题可立即重提
         wx.showToast({ icon: 'error', title: '标题已存在' });
+        return;
+      }
+      // 内容安全审核（写库前拦截，自带 loading）
+      const _content = [this.data.listData.tittle, this.data.listData.main, this.data.listData.relative].filter(Boolean).join(' ');
+      const _passed = await secCheck.guardBeforePublish(_content, 3);
+      if (!_passed) {
+        this._submitting = false;
+        guard.resetThrottle('addBooklet_submit'); // 拦截：改完可立即重提
         return;
       }
       wx.showLoading({ title: '上传中...', mask: true });

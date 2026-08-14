@@ -1,0 +1,56 @@
+<view class="root">
+  <view class="quick-ban">
+    <input class="quick-ban-input" placeholder="输入用户ID(openid)" value="{{banId}}" bindinput="onBanIdInput" />
+    <button class="btn small danger quick-ban-btn" size="mini" bindtap="banById">封禁</button>
+    <button class="btn small success quick-ban-btn" size="mini" bindtap="unbanById">解封</button>
+  </view>
+
+  <view class="tabs">
+    <view class="tab {{tab===0 ? 'active' : ''}}" data-tab="0" bindtap="switchTab">待复核</view>
+    <view class="tab {{tab===1 ? 'active' : ''}}" data-tab="1" bindtap="switchTab">举报</view>
+    <view class="tab {{tab===2 ? 'active' : ''}}" data-tab="2" bindtap="switchTab">申诉</view>
+  </view>
+
+  <!-- 待复核内容 -->
+  <block wx:if="{{tab === 0}}">
+    <view class="empty" wx:if="{{!reviews.length}}">暂无待复核内容</view>
+    <view class="card" wx:for="{{reviews}}" wx:key="_id">
+      <view class="meta">{{item.categoryLabel || '疑似内容'}}{{item.sceneLabel ? ' · ' + item.sceneLabel : ''}} · {{item.timeText}}</view>
+      <view class="content">{{item.content}}</view>
+      <view class="author">作者：{{item.authorName || item.authorId}}</view>
+      <view class="actions">
+        <button class="btn small danger" size="mini" data-id="{{item._id}}" data-authorid="{{item.authorId}}" bindtap="banReview">封禁作者</button>
+        <button class="btn small" size="mini" data-id="{{item._id}}" bindtap="ignoreReview">标记处理</button>
+      </view>
+    </view>
+  </block>
+
+  <!-- 举报 -->
+  <block wx:if="{{tab === 1}}">
+    <view class="empty" wx:if="{{!reports.length}}">暂无待处理举报</view>
+    <view class="card" wx:for="{{reports}}" wx:key="_id">
+      <view class="meta">{{item.targetType === 'comment' ? '评论' : '推文'}} · {{item.timeText}}</view>
+      <view class="reason">理由：{{item.reason}}</view>
+      <view class="content">{{item.content}}</view>
+      <view class="author">目标ID：{{item.targetId}} · 作者ID：{{item.targetAuthorId}}</view>
+      <view class="actions">
+        <button class="btn small success" size="mini" data-id="{{item._id}}" data-type="{{item.targetType}}" data-targetid="{{item.targetId}}" bindtap="restoreReport">恢复内容</button>
+        <button class="btn small danger" size="mini" data-id="{{item._id}}" data-authorid="{{item.targetAuthorId}}" bindtap="banReport">封禁作者</button>
+        <button class="btn small" size="mini" data-id="{{item._id}}" bindtap="ignoreReport">忽略</button>
+      </view>
+    </view>
+  </block>
+
+  <!-- 申诉 -->
+  <block wx:if="{{tab === 2}}">
+    <view class="empty" wx:if="{{!appeals.length}}">暂无待处理申诉</view>
+    <view class="card" wx:for="{{appeals}}" wx:key="_id">
+      <view class="content">{{item.detail}}</view>
+      <view class="author">用户ID：{{item.userId}} · 联系方式：{{item.contact || '无'}} · {{item.timeText}}</view>
+      <view class="actions">
+        <button class="btn small" size="mini" data-id="{{item._id}}" data-userid="{{item.userId}}" bindtap="unbanAppeal">解封</button>
+        <button class="btn small danger" size="mini" data-id="{{item._id}}" bindtap="rejectAppeal">驳回</button>
+      </view>
+    </view>
+  </block>
+</view>

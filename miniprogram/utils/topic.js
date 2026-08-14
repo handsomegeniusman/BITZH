@@ -73,7 +73,8 @@ function tokenRegex(name) {
 
 /**
  * 生成多个关键词的模糊匹配过滤条件（搜索框用）。
- * 每个词按"包含"匹配（match 尽量多），词间 $and；匹配对象是 relative 或 tittle。
+ * 每个词按"包含"匹配（match 尽量多），词间 $and；匹配对象是 relative（话题）、
+ * tittle（标题）、author（用户名）、authorId（用户ID）。
  * 注意：这是**搜索**语义（允许子串误命中），与 catDetail 关联用的
  * tokenRegex（独立话题精确匹配）不同，两者不要混用。
  * @param {Array} tokens 关键词数组
@@ -87,6 +88,8 @@ function tagFilter(tokens) {
     return { $or: [
       { relative: { $regex: re, $options: 'i' } },
       { tittle: { $regex: re, $options: 'i' } },
+      { author: { $regex: re, $options: 'i' } },
+      { authorId: { $regex: re, $options: 'i' } },
     ] };
   });
   return { $and: conds };

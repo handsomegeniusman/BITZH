@@ -1,0 +1,7 @@
+{
+  "name": "secCheck",
+  "version": "1.0.0",
+  "description": "内容安全审核云函数（本地敏感词库 + 微信 msgSecCheck + 企业微信推送）",
+  "main": "index.js",
+  "dependencies": {}
+}

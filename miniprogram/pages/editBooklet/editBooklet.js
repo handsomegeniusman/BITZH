@@ -8,11 +8,13 @@ const app = getApp();
 const db = require('../../utils/db.js'); // 公共数据库方法
 const cos = require('../../utils/cos.js'); // COS 图片上传/删除/路径公共方法
 const guard = require('../../utils/guard.js'); // 前端保险工具（文件名清洗/限频/限长）
+const secCheck = require('../../utils/secCheck.js'); // 内容安全审核（写库前拦截）
 const media = require('../../utils/media.js'); // 选图（相册/拍摄）公共方法
 const { setField } = require('../../utils/page.js'); // 动态字段名的 setData（避免编译报错）
 const imgEditor = require('../../utils/imgEditor.js'); // 图片区交互（长按拖拽/单击预览/删除确认）
 const draft = require('../../utils/draft.js'); // 编辑草稿自动保存/恢复（断网、卡退时找回内容）
 const trash = require('../../utils/trash.js'); // 回收站存档字段兼容读取（恢复模式用）
+const moderate = require('../../utils/moderate.js'); // 内容安全执行器（封锁/解封帖子，走云函数）
 
 // ============================================================
 // 帖子存档/恢复：每次"修改"前把旧数据存档到 Pagechange 集合，
@@ -41,12 +43,13 @@ Page({
     recoverMode: false,         // 恢复模式：从 Delete 存档进入，保存=恢复推文，删除=彻底删除存档
     formErrors: {},              // 必填校验错误 {tittle: true}（未填时输入框变红）
     todayStr: '',                // 今天的日期（YYYY-MM-DD），用于拍摄时间 picker 的 end 上限
+    isAdmin: false,              // 当前用户是否为管理员（控制「封锁/解封帖子」按钮显示）
   },
 
   /** 页面加载：读取推文内容，并做权限检查；缺 _id 时兜底 */
   async onLoad(options) {
     await db.initUserState();
-    this.setData({ todayStr: guard.todayString() }); // 拍摄时间 picker 的"今天"上限
+    this.setData({ todayStr: guard.todayString(), isAdmin: app.globalData.isAdministrator }); // 拍摄时间 picker 的"今天"上限
     if (!options || !options._id) {
       wx.showToast({ title: '参数错误', icon: 'none' });
       setTimeout(() => wx.navigateBack(), 800);
@@ -245,7 +248,7 @@ Page({
   },
 
   /** 点击"修改" */
-  confirm() {
+  async confirm() {
     // 权限与 onLoad 保持一致：管理员或作者本人可操作
     if (!this.isEditor()) {
       wx.showToast({ title: '无权编辑', icon: 'none' });
@@ -282,6 +285,13 @@ Page({
     // 5) 标题会用作图片文件名，先清洗危险字符（已限长 30）
     const tittle = guard.sanitizeFileName(data.tittle, 30);
     this.setData({ 'listData.tittle': tittle });
+    // 内容安全审核（写库前拦截，自带 loading）
+    const _content = [tittle, data.main, data.relative].filter(Boolean).join(' ');
+    const _passed = await secCheck.guardBeforePublish(_content, 3);
+    if (!_passed) {
+      guard.resetThrottle('editBooklet_submit'); // 拦截：改完可立即重提
+      return;
+    }
     this._submitting = true;
     wx.showLoading({ title: this._recoverMode ? '恢复中...' : '更新中...', mask: true });
     // 恢复模式：不做"编辑前快照"，直接重建 Page（恢复推文）+ 删除存档
@@ -546,6 +556,52 @@ Page({
     }
     draft.markDirty(this); // 恢复的内容也要继续自动保存
     wx.showToast({ title: '已恢复上次数据（提交后生效）', icon: 'none' });
+  },
+
+  /** 封锁 / 解封帖子（仅管理员）：软下架（hidden=true）或恢复可见。
+   *  走 moderate 云函数（hiddenBy='admin'），取证留存、不物理删，区别于「删除推文」。
+   *  仅在管理员从首页搜索到帖子长按进入时展示；恢复模式下无此操作。 */
+  async toggleBlock() {
+    if (!app.globalData.isAdministrator) {
+      wx.showToast({ title: '无权操作', icon: 'none' });
+      return;
+    }
+    if (this._blocking) return; // 防止异步流程中重复点击
+    const _id = this.data.listData._id;
+    const isHidden = !!this.data.listData.hidden;
+    const confirmed = await new Promise((resolve) => {
+      wx.showModal({
+        title: isHidden ? '解封帖子' : '封锁帖子',
+        content: isHidden
+          ? '将恢复该帖子，重新对所有人可见。'
+          : '将下架该帖子（软删除，取证留存，可在复核中心恢复）。',
+        confirmColor: isHidden ? '#07C160' : '#fa5151',
+        success: (r) => resolve(!!r.confirm),
+        fail: () => resolve(false),
+      });
+    });
+    if (!confirmed) return;
+    this._blocking = true;
+    wx.showLoading({ title: isHidden ? '解封中...' : '封锁中...', mask: true });
+    try {
+      const r = isHidden
+        ? await moderate.restore('page', _id)
+        : await moderate.hide('page', _id);
+      this._blocking = false;
+      wx.hideLoading();
+      if (r && r.ok === false) { // 云函数兜底返回 {ok:false}（不抛错），需显式判失败
+        console.error('[editBooklet] 封锁/解封帖子失败', r.msg);
+        wx.showToast({ icon: 'error', title: '操作失败' });
+        return;
+      }
+      wx.showToast({ icon: 'success', title: isHidden ? '已解封' : '已封锁' });
+      setTimeout(() => wx.reLaunch({ url: '/pages/index/index' }), 600);
+    } catch (err) {
+      this._blocking = false;
+      wx.hideLoading();
+      console.error('[editBooklet] 封锁/解封帖子失败', err);
+      wx.showToast({ icon: 'error', title: '操作失败' });
+    }
   },
 
   /** 删除推文（删除前把整条推文存档到 Delete 集合，含照片快照；不真删 COS 原图） */

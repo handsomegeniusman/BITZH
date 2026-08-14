@@ -81,8 +81,9 @@ Page({
     }
     // 用户状态 / 黑名单 / 公告 在后台异步处理，不阻塞首屏
     db.initUserState().catch(function (err) { console.error('初始化用户状态失败', err); });
-    db.isBlacklisted().then(function (blackNum) { this.setData({ blackNum: blackNum }); }.bind(this))
-      .catch(function (err) { console.error('黑名单检查失败', err); });
+    db.isBlacklisted().then(function (blackNum) {
+      if (blackNum) wx.reLaunch({ url: '/pages/banned/banned' }); // 黑名单用户禁止访问任何页面
+    }.bind(this)).catch(function (err) { console.error('黑名单检查失败', err); });
     this.getNotice();
   },
 
@@ -126,6 +127,11 @@ Page({
   },
   closePopup() {
     this.setData({ showPopup: false, blackNum: false });
+  },
+
+  /** 黑名单弹窗兜底：去申诉页（正常情况下黑名单用户会被 reLaunch 到 banned 页） */
+  goAppeal() {
+    wx.navigateTo({ url: '/pages/appeal/appeal' });
   },
 
   /** 管理员长按猫咪可进入编辑页 */
@@ -215,7 +221,7 @@ Page({
                 { relative: { $regex: topic.tokenRegex(cat.name), $options: 'i' } },
                 { sort: { pageTime: -1 }, limit: 3 })
                 .then(pages => {
-                  catCache[key] = (pages || []).map(p => ({ _id: p._id, tittle: p.tittle }));
+                  catCache[key] = db.filterHidden(pages).map(p => ({ _id: p._id, tittle: p.tittle }));
                   cat._relPages = catCache[key];
                 })
                 .catch(() => { catCache[key] = []; cat._relPages = []; })

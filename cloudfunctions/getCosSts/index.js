@@ -28,9 +28,9 @@ const COSSTS = require('qcloud-cos-sts');
 // 从环境变量读永久密钥（绝不要硬编码进云函数代码并提交到仓库）
 const SECRET_ID = process.env.COS_SECRET_ID;
 const SECRET_KEY = process.env.COS_SECRET_KEY;
-const APPID = process.env.COS_APPID || '1318479541';
-const BUCKET = process.env.COS_BUCKET || 'bitzh-1318479541';
-const REGION = process.env.COS_REGION || 'ap-guangzhou';
+const APPID = process.env.COS_APPID || '';
+const BUCKET = process.env.COS_BUCKET || '';
+const REGION = process.env.COS_REGION || '';
 
 // 最小权限策略：仅 main/images/ 目录（猫咪照片/推文图/头像都在这下面）
 const POLICY = {
@@ -55,32 +55,32 @@ const POLICY = {
   }],
 };
 
-module.exports.handler = function (event, context, callback) {
+module.exports = async function (ctx) {
+  // MPServerless 云函数：客户端参数在 ctx.args，返回值成为 res.result（不能用 callback）
   if (!SECRET_ID || !SECRET_KEY) {
-    callback(new Error('未配置环境变量 COS_SECRET_ID / COS_SECRET_KEY'));
-    return;
+    throw new Error('未配置环境变量 COS_SECRET_ID / COS_SECRET_KEY');
   }
-  COSSTS.getCredential({
-    secretId: SECRET_ID,
-    secretKey: SECRET_KEY,
-    durationSeconds: 1800, // 30 分钟
-    policy: POLICY,
-  }, function (err, credential) {
-    if (err) {
-      callback(err);
-      return;
-    }
-    const c = (credential && credential.credentials) || credential;
-    if (!c || !c.tmpSecretId || !c.tmpSecretKey || !c.sessionToken) {
-      callback(new Error('STS 返回数据不完整'));
-      return;
-    }
-    // 返回结构与 utils/cosSts.js 期望一致
-    callback(null, {
-      secretId: c.tmpSecretId,
-      secretKey: c.tmpSecretKey,
-      sessionToken: c.sessionToken,
-      expiration: c.expiration,
+  const credential = await new Promise(function (resolve, reject) {
+    COSSTS.getCredential({
+      secretId: SECRET_ID,
+      secretKey: SECRET_KEY,
+      durationSeconds: 1800, // 30 分钟
+      policy: POLICY,
+    }, function (err, credential) {
+      if (err) reject(err); else resolve(credential);
     });
   });
+  const c = (credential && credential.credentials) || credential;
+  if (!c || !c.tmpSecretId || !c.tmpSecretKey || !c.sessionToken) {
+    throw new Error('STS 返回数据不完整');
+  }
+  // expiration 在 qcloud-cos-sts 返回的外层对象上，不在 credentials 里（前端 cosSts.js 用它算续期）
+  const expiration = (credential && credential.expiration) || c.expiration;
+  // 返回结构与 utils/cosSts.js 期望一致
+  return {
+    secretId: c.tmpSecretId,
+    secretKey: c.tmpSecretKey,
+    sessionToken: c.sessionToken,
+    expiration: expiration,
+  };
 };

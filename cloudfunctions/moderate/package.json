@@ -1,0 +1,7 @@
+{
+  "name": "moderate",
+  "version": "1.0.0",
+  "description": "内容安全执行器云函数（封禁/解封/下架/恢复，服务端写库）",
+  "main": "index.js",
+  "dependencies": {}
+}

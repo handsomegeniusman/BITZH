@@ -67,11 +67,26 @@
   box-sizing: border-box;
 }
 .head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
   font-size: 20px;
   font-weight: 700;
   color: #1a1a1a;
   line-height: 1.5;
   letter-spacing: 0.5px;
+}
+.head-title {
+  flex: 1;
+  min-width: 0;
+}
+.report-link {
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 400;
+  color: #999;
+  padding: 4rpx 8rpx;
 }
 .main {
   margin-top: 16px;

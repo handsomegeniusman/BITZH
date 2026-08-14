@@ -1,0 +1,11 @@
+<view class="banned-root">
+  <view class="icon">🚫</view>
+  <view class="title">您已被限制访问</view>
+  <view class="desc" wx:if="{{reason}}">封禁原因：{{reason}}</view>
+  <view class="desc">如认为属于误封，请通过以下方式申诉：</view>
+
+  <view class="email" bindtap="copyEmail">{{email}}</view>
+
+  <button class="btn" bindtap="goAppeal">提交申诉</button>
+  <view class="hint">管理员核实后会尽快处理，请耐心等待。</view>
+</view>

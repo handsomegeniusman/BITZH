@@ -58,6 +58,10 @@ module.exports = {
   // 请在你自己的数据库里插入一条记录后，把 _id 填到这里
   administratorRecordId: '你的Administrator记录_id',
 
+  // 管理员联系邮箱（封禁页/申诉页/举报页展示，作为兜底客服入口；
+  // 需与云函数 secCheck 的环境变量 ADMIN_EMAIL 保持一致）
+  adminEmail: '你的管理员邮箱',
+
   // 广告位 ID（微信公众平台 -> 流量主 -> 广告位管理）
   adUnitIds: {
     video: '你的激励视频广告位ID',     // 关于页/看广告赚猫粮

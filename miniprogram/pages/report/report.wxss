@@ -1,0 +1,70 @@
+.root {
+  padding: 24rpx;
+  box-sizing: border-box;
+}
+
+.card {
+  background: #fff;
+  border-radius: 16rpx;
+  padding: 24rpx;
+  margin-bottom: 24rpx;
+}
+
+.label {
+  font-size: 28rpx;
+  color: #333;
+  font-weight: bold;
+  margin-bottom: 12rpx;
+}
+
+.hint {
+  font-size: 24rpx;
+  color: #999;
+  font-weight: normal;
+}
+
+.content {
+  font-size: 26rpx;
+  color: #666;
+  line-height: 1.6;
+  word-break: break-all;
+}
+
+.reason-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+}
+
+.reason-tag {
+  font-size: 24rpx;
+  color: #FF405E;
+  background: #FFF0F3;
+  padding: 8rpx 20rpx;
+  border-radius: 28rpx;
+}
+
+.textarea {
+  width: 100%;
+  height: 200rpx;
+  font-size: 26rpx;
+  line-height: 1.6;
+  box-sizing: border-box;
+}
+
+.tip {
+  font-size: 24rpx;
+  color: #999;
+  margin: 8rpx 4rpx 24rpx;
+}
+
+.btn {
+  background: #FF405E;
+  color: #fff;
+  border-radius: 44rpx;
+}
+
+.btn[disabled] {
+  opacity: 0.6;
+  color: #fff;
+}

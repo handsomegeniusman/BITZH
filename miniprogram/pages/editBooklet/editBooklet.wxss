@@ -196,6 +196,17 @@
   border-radius: 20rpx;
 }
 
+/* 封锁 / 解封帖子（仅管理员）：与删除同级的严肃按钮，用橙黄区别于红色删除 */
+.block-cat-btn {
+  display: block;
+  width: 80%;
+  margin: 40rpx auto 0;
+  font-size: 30rpx;
+  background: #FF9500;
+  color: #fff;
+  border-radius: 20rpx;
+}
+
 /* ===================== 表单 ===================== */
 .edit-input {
   display: block;

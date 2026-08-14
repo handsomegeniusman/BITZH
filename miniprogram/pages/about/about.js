@@ -31,9 +31,9 @@ Page({
       console.error('[about] initUserState 失败（不影响页面显示）', e);
     }
     try {
-      const blackNum = await db.isBlacklisted(); // 黑名单用户显示"请离开"弹窗
+      const blackNum = await db.isBlacklisted(); // 黑名单用户禁止访问任何页面，直接清退
       console.log('[about] isBlacklisted =', blackNum);
-      this.setData({ blackNum });
+      if (blackNum) wx.reLaunch({ url: '/pages/banned/banned' });
     } catch (e) {
       console.error('[about] isBlacklisted 失败（不影响页面显示）', e);
     }
@@ -95,6 +95,11 @@ Page({
   },
   closePopup() {
     this.setData({ blackNum: false });
+  },
+
+  /** 黑名单弹窗兜底：去申诉页（正常情况下黑名单用户会被 reLaunch 到 banned 页） */
+  goAppeal() {
+    wx.navigateTo({ url: '/pages/appeal/appeal' });
   },
 
   // ============ 复制联系方式（about 页内容，按需求保留） ============

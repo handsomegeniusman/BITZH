@@ -4,15 +4,18 @@
           然后用 <template is="模板名" data="{{...}}"/> 引用
 -->
 
-<!-- 黑名单弹窗：index / catSearch / about / mydetail 共用 -->
+<!-- 黑名单弹窗：index / catSearch / about / mydetail 共用。
+     不可关闭、无背景点击关闭，只留「去申诉」出口（误封申诉通道必须有）。
+     正常情况下黑名单用户会被各 tab 页 reLaunch 到 banned 全屏页，此弹窗为兜底。 -->
 <template name="blackNumPopup">
-  <view class="popup-background" id="popup-background" bindtap="hidePopup"></view>
+  <view class="popup-background" id="popup-background"></view>
   <view class="popup" animation="{{popupAnimation}}">
-    <text class="title1">请离开</text>
+    <text class="title1">无法访问</text>
     <view>
-      <text class="notice_content" decode="{{true}}">&emsp;&emsp;此小程序不欢迎你！&emsp;&emsp;</text>
+      <text class="notice_content" decode="{{true}}">&emsp;&emsp;你已被禁止访问此小程序。&emsp;&emsp;</text>
     </view>
-    <button class="close-button" bindtap="closePopup">关闭</button>
+    <view class="notice_content">如认为属于误封，可提交申诉。</view>
+    <button class="close-button" bindtap="goAppeal">去申诉</button>
   </view>
 </template>
 

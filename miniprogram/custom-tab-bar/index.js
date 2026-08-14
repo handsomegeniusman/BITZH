@@ -13,8 +13,8 @@ Component({
     selected: 0,              // 当前选中 tab（渲染顺序：查猫=0 小猫书=1 关于=2 我的=3）
     color: '#888888',         // 未选中文字色
     selectedColor: '#FF405E', // 选中文字色（主粉）
-    // 审核开关：false（关闭注册/发布）时隐藏中间发布加号；默认 true 先显示，取回真值后校正
-    audit: true,
+    // 审核开关：false（关闭注册/发布）时隐藏中间发布加号；默认 false 先隐藏，取回真值后若为 true 再显示
+    audit: false,
     // 4 个 tab 的路径清单（WXML 按此渲染，中间加号不占 tab 项）
     list: [
       { pagePath: '/pages/catSearch/catSearch', text: '查猫', index: 0 },

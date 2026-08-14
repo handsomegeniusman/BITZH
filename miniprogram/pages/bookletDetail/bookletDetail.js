@@ -10,6 +10,7 @@
 const app = getApp();
 const db = require('../../utils/db.js'); // 公共数据库方法
 const guard = require('../../utils/guard.js'); // 前端保险工具（限频/限长）
+const secCheck = require('../../utils/secCheck.js'); // 内容安全审核（评论，写库前拦截）
 const cos = require('../../utils/cos.js'); // COS 图片 URL 公共方法
 const pageUtil = require('../../utils/page.js'); // 页面公共方法（未登录弹窗等）
 const trash = require('../../utils/trash.js'); // 删除存档字段兼容读取（回收站预览用）
@@ -72,6 +73,11 @@ Page({
         console.log('[bookletDetail] findOne Page =>', data ? ('找到：' + data.tittle) : 'null（无此推文）');
         if (!data) {
           wx.showToast({ title: '推文不存在或已删除', icon: 'none' });
+          return;
+        }
+        // 被封禁用户下架的推文：非管理员不可查看（软删除留存，不物理删）
+        if (data.hidden && !app.globalData.isAdministrator) {
+          wx.showToast({ title: '内容已下架', icon: 'none' });
           return;
         }
         this.setData({ listData: data });
@@ -195,9 +201,11 @@ Page({
     if (commendId == null) return;
     db.find('Comment', { commendId })
       .then((list) => {
+        // 软删除的评论不展示（保留在库中供取证）
+        const visible = (list || []).filter((c) => !c.deleted);
         this.setData({
-          Comment: list,
-          showComment: list.length === 0,
+          Comment: visible,
+          showComment: visible.length === 0,
         });
       })
       .catch(err => { console.error(err); wx.showToast({ icon: 'none', title: '加载评论失败' }); });
@@ -209,7 +217,7 @@ Page({
   },
 
   /** 发表评论 */
-  addComment() {
+  async addComment() {
     if (app.globalData.isFeeder) {
       const content = (this.data.comment || '').trim();
       if (!content) {
@@ -222,6 +230,12 @@ Page({
         return;
       }
       if (!guard.throttle('addComment', 2000) || !guard.rateLimit('addComment', 60000, 30)) return;
+      // 内容安全审核评论（写库前拦截，自带 loading）
+      const _passed = await secCheck.guardBeforePublish(content, 2);
+      if (!_passed) {
+        guard.resetThrottle('addComment'); // 拦截：改完可立即重提
+        return;
+      }
       const myCommentId = Math.floor(Math.random() * 1000000000000);
       const formattedTime = new Date().toISOString().slice(0, 16).replace('T', ' ');
       const userInfo = app.globalData.userInfo || {};
@@ -247,20 +261,42 @@ Page({
     }
   },
 
-  /** 长按评论：弹出"修改/删除"菜单 */
+  /** 长按评论：弹出"修改/删除/举报"菜单 */
   choseComment(e) {
     const authorId = e.currentTarget.dataset.authorid;
     const myCommentId = e.currentTarget.dataset.mycommentid;
     const main = e.currentTarget.dataset.main;
     wx.showActionSheet({
-      itemList: ['修改评论', '删除评论'],
+      itemList: ['修改评论', '删除评论', '举报'],
       success: (res) => {
         if (res.tapIndex === 0) {
           this.modifyComment(authorId, myCommentId, main);
         } else if (res.tapIndex === 1) {
           this.deleteComment(authorId, myCommentId);
+        } else if (res.tapIndex === 2) {
+          this.reportComment(authorId, myCommentId, main);
         }
       },
+    });
+  },
+
+  /** 举报评论：跳举报页（带目标类型/ID/内容快照/作者） */
+  reportComment(authorId, myCommentId, main) {
+    wx.navigateTo({
+      url: '/pages/report/report?type=comment&targetId=' + myCommentId +
+        '&content=' + encodeURIComponent(String(main || '').slice(0, 200)) +
+        '&targetAuthorId=' + (authorId || ''),
+    });
+  },
+
+  /** 举报推文：跳举报页 */
+  reportPage() {
+    const data = this.data.listData || {};
+    const content = ((data.tittle || '') + ' ' + (data.main || '')).slice(0, 200);
+    wx.navigateTo({
+      url: '/pages/report/report?type=page&targetId=' + (data._id || '') +
+        '&content=' + encodeURIComponent(content) +
+        '&targetAuthorId=' + (data.authorId || ''),
     });
   },
 
@@ -280,7 +316,8 @@ Page({
       content: '确定删除吗？',
       success: (res) => {
         if (res.confirm) {
-          db.deleteOne('Comment', { myCommentId })
+          // 软删除（不物理删，取证留存）
+          db.softDeleteComment(myCommentId, app.globalData.isAdministrator ? '管理员' : '作者本人')
             .then(() => {
               this.getComment();
               wx.showToast({ icon: 'success', title: '删除成功' });
@@ -312,8 +349,14 @@ Page({
       cancelText: '取消',
       editable: true,
       confirmColor: '#FF405E',
-      success: (res) => {
+      success: async (res) => {
         if (res.confirm) {
+          // 内容安全审核修改后的评论（写库前拦截，自带 loading）
+          const _passed = await secCheck.guardBeforePublish(res.content, 2);
+          if (!_passed) {
+            guard.resetThrottle('modComment'); // 拦截：改完可立即重提
+            return;
+          }
           db.updateOne(
             'Comment',
             { myCommentId },

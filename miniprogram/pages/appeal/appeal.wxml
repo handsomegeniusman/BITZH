@@ -1,0 +1,20 @@
+<view class="root">
+  <view class="card">
+    <view class="label">申诉说明 <text class="hint">（必填，500字以内）</text></view>
+    <textarea class="textarea" maxlength="500" placeholder="请说明被误封的情况，便于管理员核实" bindinput="onDetailInput" value="{{detail}}" />
+  </view>
+
+  <view class="card">
+    <view class="label">联系方式 <text class="hint">（选填，手机/邮箱）</text></view>
+    <input class="input" maxlength="50" placeholder="便于管理员联系你（如 138xxxx / xxx@qq.com）" bindinput="onContactInput" value="{{contact}}" />
+  </view>
+
+  <view class="card">
+    <view class="label">管理员邮箱</view>
+    <view class="email" bindtap="copyEmail">{{email}}</view>
+  </view>
+
+  <view class="tip">提交后管理员会尽快核实处理，请留意飞书/邮箱回复。</view>
+
+  <button class="btn" bindtap="submit" disabled="{{submitting}}">提交申诉</button>
+</view>

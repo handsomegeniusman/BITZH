@@ -46,8 +46,9 @@ Page({
       this.getPage(); // 读失败按开放处理，保证正常能看
     });
     this.initUser();
-    db.isBlacklisted().then((blackNum) => this.setData({ blackNum }))
-      .catch((err) => console.error('黑名单检查失败', err));
+    db.isBlacklisted().then((blackNum) => {
+      if (blackNum) wx.reLaunch({ url: '/pages/banned/banned' }); // 黑名单用户禁止访问任何页面
+    }).catch((err) => console.error('黑名单检查失败', err));
   },
 
   /** 页面显示：同步底部自定义 tabBar 选中态（小猫书=1） */
@@ -95,6 +96,7 @@ Page({
     const filter = tokens.length ? topic.tagFilter(tokens) : {};
     db.paginate('Page', filter, { sort: sortObj, limit: 20 }, this.data.listData)
       .then(list => {
+        list = db.filterHidden(list); // 过滤被封禁用户下架的推文（软删除留存）
         // 客户端按真实时间归一化后重排（兼容脏 photoTime），并补卡片时间文案
         list = sort.applySort(list, sortKey, this.data.multiIndex[1] === 0);
         sort.decorateTime(list);
@@ -197,6 +199,11 @@ Page({
   },
   hidePopup() {
     this.setData({ showPopup: false });
+  },
+
+  /** 黑名单弹窗兜底：去申诉页（正常情况下黑名单用户会被 reLaunch 到 banned 页） */
+  goAppeal() {
+    wx.navigateTo({ url: '/pages/appeal/appeal' });
   },
 
   /** 点击推文进入详情页 */

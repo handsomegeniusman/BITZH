@@ -59,4 +59,9 @@ Page({
   managePageTrash() {
     wx.navigateTo({ url: '/pages/pageTrash/pageTrash' });
   },
+
+  /** 内容安全复核中心（举报 / 申诉 / 待复核内容，含下架、封禁、解封） */
+  manageReview() {
+    wx.navigateTo({ url: '/pages/reviewCenter/reviewCenter' });
+  },
 });

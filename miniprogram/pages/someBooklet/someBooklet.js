@@ -72,6 +72,7 @@ Page({
     if (sortKey !== 'pageTime') sortObj.pageTime = -1;
     db.paginate('Page', filter, { sort: sortObj, limit: 20 }, this.data.listData)
       .then(list => {
+        list = db.filterHidden(list); // 过滤被封禁用户下架的推文（软删除留存）
         // 客户端按真实时间归一化后重排（兼容脏 photoTime），并补卡片时间文案
         list = sort.applySort(list, sortKey, this.data.multiIndex[1] === 0);
         sort.decorateTime(list);

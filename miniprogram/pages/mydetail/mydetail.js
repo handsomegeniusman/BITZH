@@ -63,7 +63,11 @@ Page({
     }
     // 黑名单检查
     try {
-      this.setData({ blackNum: await db.isBlacklisted() });
+      const blackNum = await db.isBlacklisted();
+      if (blackNum) {
+        wx.reLaunch({ url: '/pages/banned/banned' }); // 黑名单用户禁止访问任何页面
+        return;
+      }
     } catch (e) {
       console.error('[mydetail] isBlacklisted 失败（不影响页面显示）', e);
     }
@@ -143,7 +147,7 @@ Page({
     if (!userId) return;
     db.paginate('Page', { authorId: userId }, { sort: { pageTime: -1 }, limit: 10 }, this.data.myPosts)
       .then(list => this.setData({
-        myPosts: list.map(p => Object.assign({}, p, {
+        myPosts: db.filterHidden(list).map(p => Object.assign({}, p, {
           picUrl: this.data.urlPage + p.tittle + '0.jpg', // 首图（列表大图）
           meta: (p.photoTime || '') + ' · ' + (p.photoNum || 0) + ' 张',
         })),
@@ -218,6 +222,11 @@ Page({
   /** 关闭黑名单弹窗（按钮回调） */
   closePopup() {
     this.setData({ blackNum: false });
+  },
+
+  /** 黑名单弹窗兜底：去申诉页（正常情况下黑名单用户会被 reLaunch 到 banned 页） */
+  goAppeal() {
+    wx.navigateTo({ url: '/pages/appeal/appeal' });
   },
 
   /** 转发给好友/群 */

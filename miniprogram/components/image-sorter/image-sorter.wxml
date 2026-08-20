@@ -2,7 +2,7 @@
      横向滚动图片拖拽排序（原生 movable-area + movable-view）
      - 短按预览、长按 350ms 拖拽、边缘自动滚动、松手归位
      - movable-view 始终 disabled，只做定位引擎（x 数据驱动） -->
-<view class="is-root">
+<view class="is-root {{compact ? 'is-compact' : ''}}">
   <view class="is-tip" wx:if="{{tip}}">{{tip}}</view>
 
   <view class="is-wrap {{invalid ? 'is-invalid' : ''}}">
@@ -80,7 +80,7 @@
     </scroll-view>
   </view>
 
-  <view class="is-count">已选 {{items.length}} 张</view>
+  <view class="is-count" wx:if="{{!compact}}">已选 {{items.length}} 张</view>
 
   <!-- 删除图片确认弹窗（勾选"下次不再询问"后直接删，不再弹窗） -->
   <view class="del-mask" wx:if="{{delModal.show}}" catchtouchmove="noop" bindtap="delCancel">

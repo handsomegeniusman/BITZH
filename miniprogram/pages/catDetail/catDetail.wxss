@@ -263,13 +263,12 @@ page {
   display: inline-block;
   box-sizing: border-box;
   position: relative;
-  left: 479rpx;
-  top: -90rpx;
+  top: -90rpx; /* 原 left:479rpx 会把占位撑到屏幕外，已移除 */
 }
 
-/* 状态标签后的空白占位：向右留出 300px 间距 */
+/* 状态标签后的空白占位（原 600rpx 右外边距会把整行撑出屏幕，已移除） */
 .status-spacer {
-  margin-right: 600rpx;
+  margin-right: 0;
 }
 
 /* 详情信息项：内容在垂直方向排列（标签在上、内容在下） */
@@ -435,14 +434,15 @@ page {
 .topic-cat-icon {
   margin-right: 4rpx;
 }
-/* 展开/收起按钮：粉色小字可点。
+/* 展开/收起按钮：粉色小字可点，右对齐（话题区右下角）。
    与标签行/横向滚动条拉开间距 + 加大点击热区，避免在标签上左右滑动时误触「展开全部/收起」 */
 .topic-toggle {
-  display: inline-block;
+  display: block;
   margin-top: 20rpx;
-  padding: 12rpx 24rpx 12rpx 0;
+  padding: 12rpx 0;
   font-size: 26rpx;
   color: #FF405E;
+  text-align: right;
 }
 /* 标题行右侧"已选 N 项"提示 */
 .topic-section-title {

@@ -84,6 +84,7 @@ Component({
     showTools: { type: Boolean, value: true }, // 显示"设封面/删除"工具行
     showAdd: { type: Boolean, value: true },   // 显示末尾"+"新增位
     invalid: { type: Boolean, value: false },  // 表单校验红框（猫页"未选照片"）
+    compact: { type: Boolean, value: false },  // 压缩模式：图片缩成窄缩略图条（内容编辑器聚焦时给建议列表腾位；默认关，猫页不受影响）
   },
 
   data: {
@@ -98,7 +99,7 @@ Component({
   },
 
   observers: {
-    'items, size, gap, showAdd': function () {
+    'items, size, gap, showAdd, compact': function () {
       this.measure();
       this.syncItems();
     },
@@ -127,13 +128,17 @@ Component({
     measure() {
       const info = (typeof wx.getWindowInfo === 'function') ? wx.getWindowInfo() : wx.getSystemInfoSync();
       const rpx = (info.windowWidth || 375) / 750;
-      const itemPx = Math.max(40, Math.round(this.data.size * rpx));
+      // compact（内容编辑器聚焦时）：图片缩成窄缩略图条、隐藏工具行 → 卡片变小、轨道变矮，
+      // 为可滚动的建议列表腾出上方空间；默认关（猫页/非聚焦时不受影响）
+      const compact = !!this.data.compact;
+      const rawPx = Math.max(40, Math.round(this.data.size * rpx));
+      const itemPx = compact ? 56 : rawPx; // 压缩态更窄的缩略图条，给下方建议列表多留空间
       const gapPx = Math.round(this.data.gap * rpx);
       this._rpx = rpx;
       this._itemPx = itemPx;
       this._gapPx = gapPx;
       this._step = itemPx + gapPx;
-      this._cardH = itemPx + TOOLS_H;
+      this._cardH = itemPx + (compact ? 0 : TOOLS_H);
       this.setData({
         itemPx,
         cardW: itemPx,

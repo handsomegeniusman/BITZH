@@ -180,8 +180,11 @@ Page({
   },
 
   // ============ 搜索：大名 / 绰号（关键词）/ 关系词 ============
-  onInput: function (e) {
-    const name = e.detail.value;
+  /** 输入统一处理入口：value 为当前输入框文本。
+   *  不依赖事件对象取值（iOS 上输入框已有内容时再次聚焦，focus 事件的 detail.value 可能为空），
+   *  且内容与上次搜索一致时直接复用缓存结果，不重新查询服务器。 */
+  _handleInput: function (value) {
+    const name = value;
     // 输入为空时隐藏搜索结果
     if (name.length <= 0) {
       clearTimeout(this._searchTimer);
@@ -193,6 +196,15 @@ Page({
       clearTimeout(this._searchTimer);
       this.setData({ showResult: false, showList: false });
       wx.showToast({ title: '搜索关键词过长', icon: 'none' });
+      return;
+    }
+    // 内容没变：直接恢复上次搜索结果，不重复查询服务器。
+    // 覆盖"跳详情页回来 / 点空白处收起 / 按搜索完成键"后再次点击搜索框的场景——
+    // 键盘弹出即恢复列表，无需重新等待网络查询。
+    if (name.trim() === this._lastQuery) {
+      if (this.data.resultList.length > 0) {
+        this.setData({ showResult: true, showList: true });
+      }
       return;
     }
     // 防抖：停止输入 300ms 后才真正查询，避免每次按键都打数据库
@@ -231,6 +243,7 @@ Page({
         // 全部相关推文就绪后一次性渲染（单只猫的查询失败不阻塞整个列表）
         Promise.all(tasks).then(() => {
           if (seq !== this._searchSeq) return;
+          this._lastQuery = String(name).trim(); // 记录本次成功搜索的关键词，再次聚焦时直接复用
           this.setData({
             resultList: result,
             showResult: result.length > 0,
@@ -240,6 +253,12 @@ Page({
         });
       }).catch(err => { console.error(err); wx.showToast({ icon: 'none', title: '搜索失败，请重试' }); });
     }, 300);
+  },
+
+  // 输入事件：实时记录输入框当前值（供再次聚焦复用），并触发搜索逻辑
+  onInput: function (e) {
+    this._searchValue = e.detail.value;
+    this._handleInput(e.detail.value);
   },
 
   // 点击搜索结果，跳转到猫咪详情
@@ -255,10 +274,15 @@ Page({
     wx.navigateTo({ url: '/pages/bookletDetail/bookletDetail?_id=' + id });
   },
 
-  // 输入框聚焦时触发（与 onInput 行为一致，兼容 wxml 绑定）
+  // 输入框聚焦时触发：
+  // 优先用自跟踪的输入值（_searchValue），避免 iOS 上 focus 事件的 detail.value 为空
+  // 导致"再点搜索框无反应"；内容与上次一致时直接恢复列表（走 _handleInput 的缓存分支），不重新查询。
   onFocus: function (e) {
     console.log('[catSearch.onFocus] 输入框聚焦, value=', e.detail && e.detail.value);
-    this.onInput(e);
+    const val = this._searchValue != null && this._searchValue !== ''
+      ? this._searchValue
+      : ((e.detail && e.detail.value) || '');
+    this._handleInput(val);
   },
 
   // 键盘"搜索/完成"键：明确结束搜索 → 收起搜索结果

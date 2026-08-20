@@ -170,9 +170,8 @@
 .cat-isSterilization{
   color: #575757;
   margin-left: 52%;
-  width: 50%;
+  width: 48%; /* 52% + 48% = 100%，去掉 left:104rpx 偏移，避免撑出屏幕横向滚动 */
   position: relative;
-  left: 104rpx; 
   top: -125rpx
 }
 .cat-character{

@@ -24,6 +24,9 @@ Page({
     imgTip: '长按拖动排序，单击预览', // 图片区提示文案（显示在图片条上方）
     draftImagesAsObjects: true, // 草稿图片写回时用对象格式 {tempFilePath}（新增页图片条用对象）
     formErrors: {},              // 必填校验错误 {tittle: true}（未填时输入框变红）
+    contentFocused: false,      // 图片区是否压缩（标题或正文任一聚焦即 true，见 syncContentFocused）
+    titleFocus: false,          // 标题输入是否聚焦（与 editorFocus 独立跟踪，防"切输入框"时失焦/聚焦顺序不定导致布局误还原）
+    editorFocus: false,         // 正文编辑器是否聚焦（同上）
     todayStr: '',                // 今天的日期（YYYY-MM-DD），用于拍摄时间 picker 的 end 上限
   },
 
@@ -84,17 +87,68 @@ Page({
     draft.markDirty(this); // 内容变了 → 触发自动保存
   },
 
-  /** 话题编辑器变更 → 写回 relative（规范串 "#话题 #话题"），并标记草稿已变 */
-  onTopicChange(e) {
-    setField(this, 'listData.relative', e.detail.value);
+  /** 内容编辑器变更（正文 + 话题合并）→ 写回 main 与 relative
+   *  （relative 为规范串 "#话题 #话题"），并标记草稿已变 */
+  onContentChange(e) {
+    setField(this, 'listData.main', e.detail.main);
+    setField(this, 'listData.relative', e.detail.relative);
     draft.markDirty(this);
   },
 
-  /** 点击编辑器外空白处 → 收起话题建议下拉（不挡下方拍摄时间选择器）。
-   *  话题编辑器是自定义组件，内部点击不会冒泡到页面，所以只有点外部才触发，不会太灵敏。 */
-  onPageTap() {
-    const editor = this.selectComponent && this.selectComponent('#topicEditor');
+  /** 空白点击吞掉：标题行 title-row 用 catchtap 拦截，防止点标题冒泡到 onPageTap */
+  noop() {},
+
+  /** 标题聚焦：压缩图片区（标题也是输入行）；收起正文的话题建议，避免盖在拍摄时间上 */
+  onTitleFocus() {
+    const editor = this.selectComponent && this.selectComponent('#contentEditor');
     if (editor && typeof editor.collapseSuggest === 'function') editor.collapseSuggest();
+    this.setData({ titleFocus: true });
+    this.syncContentFocused();
+  },
+
+  /** 标题失焦：看正文是否仍聚焦，都不聚焦才还原图片区 */
+  onTitleBlur() {
+    this.setData({ titleFocus: false });
+    this.syncContentFocused();
+  },
+
+  /** 正文聚焦：压缩图片区 */
+  onEditorFocus() {
+    this.setData({ editorFocus: true });
+    this.syncContentFocused();
+  },
+
+  /** 正文失焦：看标题是否仍聚焦，都不聚焦才还原图片区。
+   *  标题/正文两个独立聚焦标记推导 contentFocused，解决「从正文切到标题」时
+   *  失焦与聚焦事件的先后顺序在不同平台不固定、把布局误还原成展开的问题。 */
+  onEditorBlur() {
+    this.setData({ editorFocus: false });
+    this.syncContentFocused();
+  },
+
+  /** 根据标题/正文聚焦标记推导图片区是否压缩（任一聚焦即压缩，都失焦才还原）。
+   *  加 60ms 防抖：从标题切到正文（或反向）时失焦/聚焦事件先后顺序各平台不定，
+   *  不防抖会在"blur 先到"的瞬间误判成"都失焦"→ 图片闪一下展开又缩回。 */
+  syncContentFocused() {
+    const self = this;
+    clearTimeout(this._focusSyncTimer);
+    this._focusSyncTimer = setTimeout(function () {
+      const focused = !!(self.data.titleFocus || self.data.editorFocus);
+      if (focused !== self.data.contentFocused) self.setData({ contentFocused: focused });
+    }, 60);
+  },
+
+  /** 点击输入区外部（图片区/拍摄时间/空白处等）→ 收起建议 + 收回聚焦还原图片区。
+   *  内容编辑器内部（根节点 catchtap）与标题行（title-row catchtap）的点击不会冒泡到这里，
+   *  所以只有点到输入区外才触发，不会太灵敏。 */
+  onPageTap() {
+    const editor = this.selectComponent && this.selectComponent('#contentEditor');
+    if (editor) {
+      if (typeof editor.collapseSuggest === 'function') editor.collapseSuggest();
+      if (typeof editor.cancelBtnTap === 'function') editor.cancelBtnTap();
+      if (typeof editor.blurMain === 'function') editor.blurMain();
+    }
+    this.setData({ titleFocus: false, editorFocus: false, contentFocused: false });
   },
 
   /** 选择日期 */
@@ -134,8 +188,8 @@ Page({
       wx.showToast({ title: '请填写带 * 的必填项', icon: 'none' });
       return; // 校验失败不消耗限频，改完可立即重提
     }
-    // 2) 话题输入框里未按回车/空格的残留文字 → 兜底转 chip（同步写回 relative）
-    const editor = this.selectComponent && this.selectComponent('#topicEditor');
+    // 2) 正文末尾未按回车/空格的残留 #话题 → 兜底转 chip（同步写回 relative）
+    const editor = this.selectComponent && this.selectComponent('#contentEditor');
     if (editor && typeof editor.flush === 'function') editor.flush();
     // 3) 内容限长（防止超长内容刷库）
     if (guard.tooLong(data.tittle, 30)) {

@@ -3,12 +3,14 @@
      所以不会"太灵敏"——只有点到编辑器外部才收起） -->
 <view class="page-root" bindtap="onPageTap">
 <view wx:if="{{recoverMode}}" class="recover-tip">回收站恢复模式：修改内容后点「恢复推文」即恢复；或点「彻底删除存档」放弃恢复</view>
-<!-- 图片区：横向拖拽排序（长按拖拽/单击预览/删除确认/设封面/末尾新增，全部在 image-sorter 组件内） -->
+<!-- 图片区：横向拖拽排序（长按拖拽/单击预览/删除确认/设封面/末尾新增，全部在 image-sorter 组件内）。
+     聚焦标题/正文（contentFocused）时图片压缩成窄缩略图条，为可滚动的建议列表腾位；失焦/点外部还原 -->
 <image-sorter
   items="{{imageUrls}}"
-  tip="{{imgTip}}"
-  show-tools="{{true}}"
-  show-add="{{true}}"
+  tip="{{contentFocused ? '' : imgTip}}"
+  show-tools="{{!contentFocused}}"
+  show-add="{{!contentFocused}}"
+  compact="{{contentFocused}}"
   invalid="{{false}}"
   bind:change="onImgChange"
   bind:add="getphoto"
@@ -17,29 +19,37 @@
 <!-- 恢复上次数据：进入页面时已预检过是否有修改存档（Pagechange），有才显示此按钮 -->
 <button wx:if="{{restoreAvailable}}" class="restore-btn" bindtap="restoreLast">恢复上次数据</button>
 
-<view class="head1">
-  <text user-select="true">标题名称</text><text class="req-star">*</text>
-</view>
-<input data-key='tittle' bindinput="inputText" class="edit-input {{formErrors.tittle ? 'input-error' : ''}}" value="{{listData.tittle}}"/>
-<view class="field-error" wx:if="{{formErrors.tittle}}">标题为必填项，请填写</view>
-<view class="head1">
-  <text user-select="true">内容</text>
-</view>
-<textarea data-key='main' bindinput="inputText" class="edit-input-main"	value="{{listData.main}}" maxlength="2000" auto-height="true"></textarea>
-<view class="head1">
-  <text user-select="true">话题</text>
-</view>
-<topic-editor id="topicEditor" value="{{listData.relative || ''}}" bind:change="onTopicChange"></topic-editor>
-<view class="head1">
-  <text user-select="true">拍摄时间</text>
-</view>
-<picker mode="date" data-key='photoTime' bindchange="bindDateChange" value="{{listData.photoTime || todayStr}}" start="2015-01-01" end="{{todayStr}}">
-  <view class="edit-input picker-field">
-    <text class="picker-value {{listData.photoTime ? '' : 'picker-empty'}}">{{listData.photoTime || '拍摄于哪天？（选填）'}}</text>
-    <text class="picker-arrow">▾</text>
+<!-- 小红书式白卡片：标题 + 正文 + 拍摄时间三个输入区收进一张圆角白卡。
+     聚焦任一行（标题/正文/点#话题）图片区都压缩，点外部还原。
+     title-row 用 catchtap 拦截，防止点标题冒泡到页面 onPageTap 把布局/键盘收走 -->
+<view class="form-card {{contentFocused ? 'is-compact' : ''}}">
+  <view class="title-row {{formErrors.tittle ? 'divider-error' : ''}}" catchtap="noop">
+    <input data-key='tittle' bindinput="inputText" bindfocus="onTitleFocus" bindblur="onTitleBlur" class="title-input" value="{{listData.tittle}}" placeholder="添加标题"/>
   </view>
-</picker>
-<view class="field-tip">不能选未来日期 · 留空则默认今天</view>
+  <view class="field-error" wx:if="{{formErrors.tittle}}">标题为必填项，请填写</view>
+
+  <content-editor
+    id="contentEditor"
+    main="{{listData.main || ''}}"
+    relative="{{listData.relative || ''}}"
+    maxlength="2000"
+    placeholder="添加正文或话题"
+    bind:change="onContentChange"
+    bind:editorfocus="onEditorFocus"
+    bind:editorblur="onEditorBlur"
+  ></content-editor>
+
+  <view class="pt-row">
+    <text class="pt-label">拍摄时间</text>
+    <picker mode="date" data-key='photoTime' bindchange="bindDateChange" value="{{listData.photoTime || todayStr}}" start="2015-01-01" end="{{todayStr}}">
+      <view class="pt-value-wrap">
+        <text class="pt-value {{listData.photoTime ? '' : 'pt-empty'}}">{{listData.photoTime || '选填'}}</text>
+        <text class="pt-arrow">▾</text>
+      </view>
+    </picker>
+  </view>
+  <view class="field-tip">不能选未来日期 · 留空则默认今天</view>
+</view>
 
 <!-- 封锁 / 解封帖子：仅管理员可用，软下架（取证留存，可在复核中心恢复），区别于下方删除 -->
 <button wx:if="{{isAdmin && !recoverMode}}" class="block-cat-btn" bindtap="toggleBlock">{{listData.hidden ? '解封帖子' : '封锁帖子'}}</button>

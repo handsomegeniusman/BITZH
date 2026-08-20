@@ -19,6 +19,12 @@
   padding: 10px 0;
 }
 
+/* 压缩模式（内容编辑器聚焦时）：收紧图片条上下留白，让缩窄的缩略图条紧贴标题框，
+   避免图片缩小后与下方白卡片之间留出一大块空白 */
+.is-root.is-compact .is-wrap {
+  padding: 4px 0;
+}
+
 /* 表单校验红框（猫页"未选照片"） */
 .is-invalid {
   border: 2rpx solid #e64340;
@@ -132,6 +138,19 @@
   font-size: 22rpx;
   color: #999;
   padding: 0 20rpx 10rpx;
+}
+
+/* 压缩/还原切换（聚焦标题/正文时图片区缩小）平滑过渡：宽高 0.28s 渐变。
+   拖拽只动 transform（movable-view x），不碰宽高，故不干扰拖拽跟手；
+   拖拽中的放大态仍在 .is-card.is-dragging .is-imgbox 覆盖 transform 过渡。 */
+.is-mv,
+.is-card,
+.is-card-inner,
+.is-imgbox,
+.is-img,
+.is-scroll,
+.is-area {
+  transition: width 0.28s ease, height 0.28s ease;
 }
 
 /* ============ 删除图片确认弹窗 ============ */

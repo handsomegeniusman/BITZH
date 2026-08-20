@@ -1,6 +1,6 @@
 {
   "usingComponents": {
-    "topic-editor": "/components/topic-editor/topic-editor",
+    "content-editor": "/components/content-editor/content-editor",
     "image-sorter": "/components/image-sorter/image-sorter"
   }
 }

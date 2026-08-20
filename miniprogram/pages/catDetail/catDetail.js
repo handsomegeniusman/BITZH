@@ -32,7 +32,7 @@ Page({
     height: '300rpx',        // 轮播图高度（展开详情时变高）
     listData: [],            // 该猫相关的推文列表
     multiArray: [['拍摄时间', '发布时间'], ['升序', '降序']],
-    multiIndex: [1, 0],      // 默认按"发布时间 + 升序"（故事按时间从早到晚讲）
+    multiIndex: [1, 1],      // 默认按"发布时间 + 降序"（最新发布的推文在前）
     skipCount: 0,
     relatedTopics: [],       // 相关话题（本猫出现在哪些推文话题里，去重后，含 isCat/count 标记）
     relatedTopicsShow: [],   // 当前展示的相关话题（默认 8 个，展开后为全部）

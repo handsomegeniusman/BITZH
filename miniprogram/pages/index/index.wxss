@@ -7,11 +7,12 @@
   padding-bottom: calc(120rpx + env(safe-area-inset-bottom)); /* 底部自定义 tabBar 占位 */
 }
 
-/* 排序选择器：普通流内布局（不再绝对定位），宽屏限宽居中不错位 */
+/* 排序选择器：普通流内布局（不再绝对定位），宽屏限宽居中不错位；
+   位于搜索框/猫横条下方，顶部留 12rpx 间距与上方内容隔开 */
 .picker {
   width: 100%;
   max-width: 720px;
-  margin: 0 auto;
+  margin: 12rpx auto 0;
   height: 44rpx;
   display: flex;
   align-items: center;

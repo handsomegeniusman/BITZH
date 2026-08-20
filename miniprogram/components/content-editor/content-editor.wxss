@@ -1,0 +1,174 @@
+/* ============================================================
+   内容编辑器（正文 + 话题合并）样式
+   - 正文 textarea：与表单其他字段一致的下划线样式
+   - #话题 按钮 + 胶囊：#FF405E 粉色（沿用旧 topic-editor 视觉）
+   - 建议下拉：绝对定位贴在正文下方（向下弹出，占用图片压缩腾出的空间），可滚动
+   - 键盘上方工具栏：正文聚焦时显示，左「话题」右「完成」，替代正文里的 #话题 按钮
+============================================================ */
+.ce-wrap {
+  padding: 20rpx 0 0; /* 左右留白由页面白卡片提供，这里只留上下 */
+  background: transparent;
+}
+
+.ce-box {
+  position: relative; /* 建议下拉定位基准 */
+}
+
+/* 正文 textarea 相对定位容器：建议下拉据此定位在正文下方（文章最后一个字下方） */
+.ce-textarea-wrap {
+  position: relative;
+}
+
+/* 正文 textarea：小红书式——无下划线、可输入区更高 */
+.ce-textarea {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 200rpx;
+  font-size: 31rpx;
+  color: #333333;
+  line-height: 1.6;
+  padding: 8rpx 0;
+  margin-bottom: 8rpx;
+  background: none;
+  border: none;
+}
+
+.ce-placeholder {
+  color: #bbb;
+}
+
+/* #话题 小按钮：粉色描边小胶囊（正文聚焦时隐藏，见 wxml wx:if="{{!showToolbar}}"） */
+.ce-toolbar {
+  display: flex;
+  align-items: center;
+  margin-top: 20rpx;
+}
+.ce-topic-btn {
+  flex-shrink: 0;
+  padding: 8rpx 20rpx;
+  font-size: 26rpx;
+  color: #FF405E;
+  background: #fff0f3;
+  border: 1rpx solid #ffd6de;
+  border-radius: 999rpx;
+  line-height: 1.5;
+}
+.ce-topic-btn:active {
+  background: #ffe0e6;
+}
+
+/* 话题胶囊区 */
+.ce-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 16rpx;
+}
+.ce-chip {
+  display: inline-flex;
+  align-items: center;
+  margin: 4rpx 12rpx 4rpx 0;
+  padding: 4rpx 6rpx 4rpx 20rpx;
+  background: #FF405E;
+  color: #fff;
+  font-size: 26rpx;
+  border-radius: 999rpx;
+  line-height: 1.7;
+}
+.ce-chip-text {
+  max-width: 240rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ce-chip-del {
+  width: 40rpx;
+  text-align: center;
+  font-size: 30rpx;
+  color: #fff;
+  opacity: 0.85;
+}
+.ce-chip-del:active {
+  opacity: 1;
+}
+
+/* 建议下拉：绝对定位在正文【下方】（向下弹出），高度由 JS 按
+   「窗口高 - 键盘高 - 正文底部」动态钳制（行内 style），保证底边不越过键盘 */
+.ce-suggest {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  z-index: 20;
+  margin-top: 8rpx;
+  background: #fff;
+  border: 1px solid #f0e2d2;
+  border-radius: 12rpx;
+  box-shadow: 0 8rpx 24rpx rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+}
+/* 建议列表滚动区：高度由行内 suggestMaxH 提供，内部滚动 */
+.ce-suggest-scroll {
+  width: 100%;
+  box-sizing: border-box;
+}
+.ce-suggest-item {
+  display: flex;
+  align-items: center;
+  padding: 18rpx 24rpx;
+  border-bottom: 1rpx solid #f7f1e8;
+}
+.ce-suggest-item:last-child {
+  border-bottom: none;
+}
+.ce-suggest-item:active {
+  background: #fff7ee;
+}
+/* 猫名标识：🐱 猫头 emoji（与其他页面话题一致），标明"这是猫名" */
+.ce-suggest-cat {
+  margin-right: 10rpx;
+  font-size: 28rpx;
+  flex-shrink: 0;
+}
+.ce-suggest-name {
+  flex: 1;
+  font-size: 28rpx;
+  color: #222;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ce-suggest-empty {
+  padding: 24rpx;
+  text-align: center;
+  font-size: 24rpx;
+  color: #999;
+}
+
+/* 键盘上方工具栏：正文聚焦时显示，固定在键盘顶边（bottom=kbH 行内），
+   左「话题」右「完成」，替代正文里的 #话题 按钮 */
+.ce-kb-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 96rpx;
+  padding: 0 40rpx;
+  box-sizing: border-box;
+  background: #fff;
+  border-top: 1rpx solid #f0e2d2;
+}
+.ce-kb-topic {
+  font-size: 28rpx;
+  color: #FF405E;
+  padding: 12rpx 8rpx;
+}
+.ce-kb-done {
+  font-size: 28rpx;
+  color: #333;
+  padding: 12rpx 8rpx;
+}

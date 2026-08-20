@@ -280,18 +280,6 @@
   </view>
 </view>
 
-
-<view wx:if="{{listData.length}}">
-  <!-- 排序选择器：胶囊样式 + 「排序」引导 + ▾ 箭头，让用户一眼知道可以点击切换 -->
-  <picker mode="multiSelector" bindchange="bindMultiPickerChange" value="{{multiIndex}}" range="{{multiArray}}">
-    <view class="detail-picker">
-      <text class="detail-picker-label">排序</text>
-      <text class="detail-picker-value">{{multiArray[0][multiIndex[0]]}} {{multiArray[1][multiIndex[1]]}}</text>
-      <text class="detail-picker-arrow">▾</text>
-    </view>
-  </picker>
-</view>
-
 <!-- 相关话题：聚合本猫出现在哪些推文话题里，带热度计数（有多少篇同标题文章）。
      点胶囊多选，选中后在本页内联展示这些话题的文章（不跳页）。
      个别猫话题过多 → 默认只显示前 8 个，可展开全部；真实猫名话题前加 🐱 猫头标识 -->
@@ -335,6 +323,17 @@
   </view>
   <!-- 展开/收起切换：话题数不超过 8 个时不需要 -->
   <view wx:if="{{relatedTopics.length > 8}}" class="topic-toggle" bindtap="toggleTopics">{{topicsExpanded ? '收起' : '展开全部'}}</view>
+</view>
+
+<!-- 排序选择器：胶囊样式 + 「排序」引导 + ▾ 箭头，让用户一眼知道可以点击切换（位于"展开全部"下方、推文列表上方） -->
+<view wx:if="{{listData.length}}">
+  <picker mode="multiSelector" bindchange="bindMultiPickerChange" value="{{multiIndex}}" range="{{multiArray}}">
+    <view class="detail-picker">
+      <text class="detail-picker-label">排序</text>
+      <text class="detail-picker-value">{{multiArray[0][multiIndex[0]]}} {{multiArray[1][multiIndex[1]]}}</text>
+      <text class="detail-picker-arrow">▾</text>
+    </view>
+  </picker>
 </view>
 
 <!-- 选中话题的文章：内联展示在详情页，不跳转。多选 = 多个话题的文章合并展示 -->

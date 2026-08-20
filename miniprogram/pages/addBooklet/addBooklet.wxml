@@ -2,40 +2,50 @@
 <!-- 页面根节点：点击编辑器外空白处收起话题建议下拉（组件内部点击不会冒泡到这里，
      所以不会"太灵敏"——只有点到编辑器外部才收起） -->
 <view class="page-root" bindtap="onPageTap">
-<!-- 图片区：横向拖拽排序（长按拖拽/单击预览/删除确认/设封面/末尾新增，全部在 image-sorter 组件内） -->
+<!-- 图片区：横向拖拽排序（长按拖拽/单击预览/删除确认/设封面/末尾新增，全部在 image-sorter 组件内）。
+     聚焦标题/正文（contentFocused）时图片压缩成窄缩略图条，为可滚动的建议列表腾位；失焦/点外部还原 -->
 <image-sorter
   items="{{tempFileList}}"
-  tip="{{imgTip}}"
-  show-tools="{{true}}"
-  show-add="{{true}}"
+  tip="{{contentFocused ? '' : imgTip}}"
+  show-tools="{{!contentFocused}}"
+  show-add="{{!contentFocused}}"
+  compact="{{contentFocused}}"
   invalid="{{false}}"
   bind:change="onImgChange"
   bind:add="getphoto"
 />
 
-<view class="head1">
-  <text user-select="true">标题名称</text><text class="req-star">*</text>
-</view>
-<input data-key='tittle' bindinput="inputText" class="edit-input {{formErrors.tittle ? 'input-error' : ''}}" value="{{listData.tittle}}" placeholder="填写标题" />
-<view class="field-error" wx:if="{{formErrors.tittle}}">标题为必填项，请填写</view>
-<view class="head1">
-  <text user-select="true">内容</text>
-</view>
-<textarea data-key='main' bindinput="inputText" maxlength="2000" class="edit-input-main" value="{{listData.main}}" placeholder="添加正文" 	auto-height="true"></textarea>
-<view class="head1">
-  <text user-select="true">话题</text>
-</view>
-<topic-editor id="topicEditor" value="{{listData.relative || ''}}" bind:change="onTopicChange"></topic-editor>
-<view class="head1">
-  <text user-select="true">拍摄时间</text>
-</view>
-<picker mode="date" data-key='photoTime' bindchange="bindDateChange" value="{{listData.photoTime || todayStr}}" start="2015-01-01" end="{{todayStr}}">
-  <view class="edit-input picker-field">
-    <text class="picker-value {{listData.photoTime ? '' : 'picker-empty'}}">{{listData.photoTime || '拍摄于哪天？（选填）'}}</text>
-    <text class="picker-arrow">▾</text>
+<!-- 小红书式白卡片：标题 + 正文 + 拍摄时间三个输入区收进一张圆角白卡。
+     聚焦任一行（标题/正文/点#话题）图片区都压缩，点外部还原。
+     title-row 用 catchtap 拦截，防止点标题冒泡到页面 onPageTap 把布局/键盘收走 -->
+<view class="form-card {{contentFocused ? 'is-compact' : ''}}">
+  <view class="title-row {{formErrors.tittle ? 'divider-error' : ''}}" catchtap="noop">
+    <input data-key='tittle' bindinput="inputText" bindfocus="onTitleFocus" bindblur="onTitleBlur" class="title-input" value="{{listData.tittle}}" placeholder="添加标题"/>
   </view>
-</picker>
-<view class="field-tip">已默认今天 · 点击可修改 · 不能选未来日期</view>
+  <view class="field-error" wx:if="{{formErrors.tittle}}">标题为必填项，请填写</view>
+
+  <content-editor
+    id="contentEditor"
+    main="{{listData.main || ''}}"
+    relative="{{listData.relative || ''}}"
+    maxlength="2000"
+    placeholder="添加正文或话题"
+    bind:change="onContentChange"
+    bind:editorfocus="onEditorFocus"
+    bind:editorblur="onEditorBlur"
+  ></content-editor>
+
+  <view class="pt-row">
+    <text class="pt-label">拍摄时间</text>
+    <picker mode="date" data-key='photoTime' bindchange="bindDateChange" value="{{listData.photoTime || todayStr}}" start="2015-01-01" end="{{todayStr}}">
+      <view class="pt-value-wrap">
+        <text class="pt-value {{listData.photoTime ? '' : 'pt-empty'}}">{{listData.photoTime || '选填'}}</text>
+        <text class="pt-arrow">▾</text>
+      </view>
+    </picker>
+  </view>
+  <view class="field-tip">不能选未来日期 · 留空则默认今天</view>
+</view>
 
 <view class="bottom-pad"></view>
 

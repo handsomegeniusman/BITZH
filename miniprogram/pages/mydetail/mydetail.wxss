@@ -56,7 +56,7 @@
   width: 606rpx;
   height: 130rpx;
   display: block;
-  box-sizing: border-box；
+  box-sizing: border-box;
 }
 .user-info {
   display: flex;

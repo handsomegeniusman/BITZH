@@ -17,6 +17,10 @@ page {
   --color-line: #eee;              /* 分割线 */
   --page-max-width: 720px;         /* 宽屏内容列最大宽度 */
   background-color: var(--color-bg);
+  /* iOS 真机横向滚动修复：任何子元素哪怕只溢出 1rpx，页面都会被横向拖动。
+     全局锁定页面宽度、禁用横向滚动（不影响 scroll-view / 横向滚动容器内部滚动）。 */
+  width: 100%;
+  overflow-x: hidden;
 }
 
 /* ============ 全局弹窗（黑名单"请离开" / 公告）============

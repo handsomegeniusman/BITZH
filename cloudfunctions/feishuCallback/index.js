@@ -133,14 +133,19 @@ function parseContentText(raw) {
   return '';
 }
 
-/** 从推送原文解析 openid（「用户ID：」「被举报人ID：」或「封禁/解封 <openid>」） */
+// 用户标识匹配：微信 openid（o 开头）或本空间用户 ID（Mongo ObjectId，24 位 hex）。
+// 本项目 getInfo().userId 返回的是空间用户 ID（形如 64fa07d6a09a9bd68b13a8a0，非 openid），
+// 飞书命令带 ID 必须两种都认，否则「封禁 <24位ID>」无法解析。
+const ID_PAT = '(?:o[A-Za-z0-9_-]{10,}|[0-9a-fA-F]{24})';
+
+/** 从推送原文解析 openid（「用户ID：」「被举报人ID：」或「封禁/解封 <id>」） */
 function extractOpenid(text) {
   const s = String(text || '');
   const patterns = [
     /用户ID[：:]\s*(\S+)/,
     /被举报人ID[：:]\s*(\S+)/,
-    /封禁\s+(o[A-Za-z0-9_-]{10,})/,
-    /解封\s+(o[A-Za-z0-9_-]{10,})/,
+    new RegExp('封禁\\s+(' + ID_PAT + ')'),
+    new RegExp('解封\\s+(' + ID_PAT + ')'),
   ];
   for (let i = 0; i < patterns.length; i++) {
     const m = s.match(patterns[i]);
@@ -235,6 +240,13 @@ function resolveAction(cmd, context, parentText) {
       const userId = cmd.userId || extractOpenid(parentText);
       return userId ? { action: 'unban', userId: userId } : { error: '❌ 未能解析出用户ID' };
     }
+    if (obj === 'reporter') {
+      // 「解封举报人」：解除举报人的黑名单（内容保持隐藏，与「解封用户」语义一致）
+      const reporterId = cmd.userId || extractReporterId(parentText);
+      return reporterId
+        ? { action: 'unblacklist', userId: reporterId }
+        : { error: '❌ 未能解析出举报人ID（仅举报推送可回复「解封举报人」）' };
+    }
     const t = extractTarget(parentText);
     if (!t.id) {
       return context === 'appeal'
@@ -255,16 +267,17 @@ function resolveAction(cmd, context, parentText) {
  */
 function parseCommand(content) {
   const c = String(content || '').trim();
-  let m = c.match(/^封禁\s+(o[A-Za-z0-9_-]{10,})$/);
+  let m = c.match(new RegExp('^封禁\\s+(' + ID_PAT + ')$'));
   if (m) return { verb: 'ban', object: 'user', userId: m[1] };
-  m = c.match(/^解封\s+(o[A-Za-z0-9_-]{10,})$/);
+  m = c.match(new RegExp('^解封\\s+(' + ID_PAT + ')$'));
   if (m) return { verb: 'unban', object: 'user', userId: m[1] };
-  m = c.match(/^拉黑用户\s+(o[A-Za-z0-9_-]{10,})$/);
+  m = c.match(new RegExp('^拉黑用户\\s+(' + ID_PAT + ')$'));
   if (m) return { verb: 'reject', object: 'user', userId: m[1] };
-  m = c.match(/^全部解封\s+(o[A-Za-z0-9_-]{10,})$/);
+  m = c.match(new RegExp('^全部解封\\s+(' + ID_PAT + ')$'));
   if (m) return { verb: 'unban', object: 'all', userId: m[1] };
   if (c === '封禁用户') return { verb: 'ban', object: 'user' };
   if (c === '封禁举报人') return { verb: 'ban', object: 'reporter' };
+  if (c === '解封举报人') return { verb: 'unban', object: 'reporter' };
   if (c === '封禁帖子') return { verb: 'ban', object: 'post' };
   if (c === '解封用户') return { verb: 'unban', object: 'user' };
   if (c === '解封帖子') return { verb: 'unban', object: 'post' };
@@ -491,7 +504,7 @@ module.exports = async function (ctx) {
   const cmd = parseCommand(text);
   if (!cmd) {
     console.log('[feishuCallback] 未识别:', text);
-    await respond(message, '⚠️ 未识别：「' + text + '」（来自 ' + fromUser + '）\n可用：封禁 / 封禁帖子 / 封禁用户 / 封禁举报人 / 解封 / 解封帖子 / 解封用户 / 拉黑用户');
+    await respond(message, '⚠️ 未识别：「' + text + '」（来自 ' + fromUser + '）\n可用：封禁 / 封禁帖子 / 封禁用户 / 封禁举报人 / 解封 / 解封帖子 / 解封用户 / 解封举报人 / 全部解封 / 拉黑用户');
     return { code: 0 };
   }
 

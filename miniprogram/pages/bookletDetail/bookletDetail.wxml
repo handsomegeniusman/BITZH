@@ -64,7 +64,7 @@
       <view class="empty-comment-text">还没有评论，来抢沙发吧～</view>
     </view>
 
-    <view class="comment" wx:for="{{Comment}}" wx:key="myCommentId" bindlongpress="choseComment" data-mycommentid="{{item.myCommentId}}" data-authorid="{{item.authorId}}" data-main="{{item.main}}">
+    <view class="comment" wx:for="{{Comment}}" wx:key="myCommentId" bindlongpress="choseComment" data-mycommentid="{{item.myCommentId}}" data-authorid="{{item.authorId}}" data-author="{{item.author}}" data-main="{{item.main}}">
       <view class="comment-img">
         <image lazy-load='true' class='avator' mode='aspectFill' src="{{item.authorImg}}" bindtap="showAuthorImg" data-authorimg="{{item.authorImg}}"></image>
       </view>

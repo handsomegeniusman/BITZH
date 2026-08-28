@@ -328,6 +328,11 @@ Page({
   },
 
   giveGood(e) {
+    // 2026-08-28 点赞也是写库操作：必须已注册（Feeder）才能点赞，游客引导去注册
+    if (!app.globalData.isFeeder) {
+      pageUtil.promptRegister(app.globalData.userId);
+      return;
+    }
     const _id = e.currentTarget.dataset._id;
     const index = e.currentTarget.dataset.index;
     // 本地即时 +1（乐观更新 UI）

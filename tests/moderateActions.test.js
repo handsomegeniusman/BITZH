@@ -17,7 +17,10 @@ function mockDb(spec) {
   Object.keys(spec || {}).forEach(function (k) { colls[k] = spec[k]; });
   return {
     collection: function (name) {
-      return colls[name] || { find: async function () { return { result: [] }; } };
+      return colls[name] || {
+        find: async function () { return { result: [] }; },
+        updateMany: updateResult(0),
+      };
     },
   };
 }
@@ -90,6 +93,41 @@ function updateOne() {
   ctx = { args: { action: 'xxxxx' }, mpserverless: { db: mockDb({}) } };
   r = await mod(ctx);
   check('未知 action → ok:false', { ok: r.ok }, { ok: false });
+
+  // 联动清待办（2026-08-28）：封禁用户后，该用户相关的待复核/举报/申诉应被标记为已处理，
+  // 让复核中心不再残留已被管理员处理过的旧待办。
+  console.log('[联动清待办]');
+  const cascadeCalls = [];
+  const spyDb = {
+    collection: function (name) {
+      return {
+        find: async function () { return { result: [] }; },
+        insertOne: async function () { return {}; },
+        deleteOne: async function () { return {}; },
+        updateMany: async function (filter) {
+          cascadeCalls.push({ name: name, filter: filter });
+          return { modifiedCount: 1 };
+        },
+      };
+    },
+  };
+  r = await mod({ args: { action: 'ban', userId: 'u9' }, mpserverless: { db: spyDb } });
+  const markTargets = cascadeCalls.filter(function (c) {
+    return ['Review', 'Report', 'Appeal'].indexOf(c.name) >= 0;
+  });
+  const firstFilter = function (name) {
+    return JSON.stringify(markTargets.filter(function (c) { return c.name === name; })[0].filter);
+  };
+  check('联动: 待复核/举报/申诉共 4 处被联动标记', markTargets.length, 4);
+  check('联动: 待复核按 authorId + type=review',
+    firstFilter('Review'), JSON.stringify({ status: 'pending', authorId: 'u9', type: 'review' }));
+  check('联动: 举报按 targetAuthorId（被举报人是该用户）',
+    firstFilter('Report'), JSON.stringify({ status: 'pending', targetAuthorId: 'u9' }));
+  check('联动: 举报按 reporterId（该用户发起的举报）',
+    JSON.stringify(markTargets.filter(function (c) { return c.name === 'Report'; })[1].filter),
+    JSON.stringify({ status: 'pending', reporterId: 'u9' }));
+  check('联动: 申诉按 userId',
+    firstFilter('Appeal'), JSON.stringify({ status: 'pending', userId: 'u9' }));
 
   console.log('\n结果: ' + pass + ' 通过 / ' + fail + ' 失败');
   process.exit(fail ? 1 : 0);

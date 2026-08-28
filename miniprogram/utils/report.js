@@ -42,6 +42,24 @@ async function submitReport(p) {
   const targetId = String(p.targetId || '');
   const targetType = p.targetType === 'page' ? 'page' : 'comment';
 
+  // 2026-08-28 举报人必须是已注册用户（Feeder 集合有资料）：未注册账号/游客不得举报，
+  // 防止「完全不存在的人」成功举报。昵称一并取到，用于飞书推送展示。
+  let feeder = null;
+  try { feeder = await db.findOne('Feeder', { userId: userId }); } catch (e) { feeder = null; }
+  if (!userId || !feeder) {
+    return { ok: false, reason: 'not_feeder' };
+  }
+  const reporterName = (feeder && feeder.nickName) || '';
+
+  // 被举报人昵称：详情页已传（推文 data.author / 评论 author）优先；兜底查 Feeder
+  let targetName = String(p.targetAuthorName || '');
+  if (!targetName && p.targetAuthorId) {
+    try {
+      const t = await db.findOne('Feeder', { userId: p.targetAuthorId });
+      targetName = (t && t.nickName) || '';
+    } catch (e) { /* 查询失败则昵称为空，不阻断举报 */ }
+  }
+
   // 同一用户对同一目标 5 分钟内限举报 1 次（写库前校验，防刷举报）
   const recent = await db.find('Report', { reporterId: userId, targetId: targetId, targetType: targetType }, { limit: 20 });
   const now = Date.now();
@@ -76,12 +94,14 @@ async function submitReport(p) {
         : (td.ok ? '状态：未达阈值（暂未下架）' : '状态：⚠️ 自动下架失败，请人工在复核中心处理');
       // 帖子已自动下架 → 「封禁」只能是封用户；未下架 → 「封禁帖子」用于下架内容
       const menu = takenDown
-        ? '封禁 = 封禁该帖子\n· 封禁用户 = 封禁该用户\n· 封禁举报人 = 封禁举报人（恶意举报）\n· 解封 = 解封该帖子（恢复）\n· 解封用户 = 解除黑名单\n· 全部解封 = 解除黑名单 + 恢复全部内容\n· 拉黑用户 = 永久拉黑该用户'
-        : '封禁 = 封禁该帖子（下架）\n· 封禁用户 = 封禁该用户\n· 封禁举报人 = 封禁举报人（恶意举报）\n· 解封用户 = 解除黑名单\n· 全部解封 = 解除黑名单 + 恢复全部内容\n· 拉黑用户 = 永久拉黑该用户';
+        ? '封禁 = 封禁该帖子\n· 封禁用户 = 封禁该用户\n· 封禁举报人 = 封禁举报人（恶意举报）\n· 解封 = 解封该帖子（恢复）\n· 解封用户 = 解除黑名单\n· 解封举报人 = 解封举报人\n· 全部解封 = 解除黑名单 + 恢复全部内容\n· 拉黑用户 = 永久拉黑该用户'
+        : '封禁 = 封禁该帖子（下架）\n· 封禁用户 = 封禁该用户\n· 封禁举报人 = 封禁举报人（恶意举报）\n· 解封用户 = 解除黑名单\n· 解封举报人 = 解封举报人\n· 全部解封 = 解除黑名单 + 恢复全部内容\n· 拉黑用户 = 永久拉黑该用户';
       const text = '【举报】' + typeLabel +
         '\n被举报内容：' + String(p.content || '').slice(0, 120) +
         '\n被举报人ID：' + (p.targetAuthorId || '') +
+        '\n被举报人昵称：' + (targetName || '（未注册）') +
         '\n举报人ID：' + userId +
+        '\n举报人昵称：' + (reporterName || '') +
         '\n理由：' + reason +
         '\n目标ID：' + targetId +
         '\n' + stateLine +

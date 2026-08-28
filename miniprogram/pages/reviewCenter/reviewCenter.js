@@ -25,7 +25,7 @@ function fmtTime(t) {
 
 Page({
   data: {
-    tab: 0, // 0=待复核 1=举报 2=申诉
+    tab: 1, // 0=待复核 1=举报 2=申诉
     reviews: [],
     reports: [],
     appeals: [],

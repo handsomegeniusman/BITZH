@@ -113,6 +113,7 @@ async function ban(db, userId, reason) {
     { hidden: true, hiddenBy: 'ban', hiddenTime: now });
   const comments = await batchUpdateAll(db, 'Comment', { authorId: id },
     { deleted: true, deletedBy: 'ban', deletedTime: now });
+  await cascadeHandled(db, { userId: id }); // 联动关闭该用户相关的待复核/举报/申诉
   return { ok: true, action: 'ban', userId: id, pages: pages, comments: comments };
 }
 
@@ -126,6 +127,7 @@ async function unban(db, userId) {
   }
   const pages = await batchUpdateAll(db, 'Page', { authorId: id }, { hidden: false });
   const comments = await batchUpdateAll(db, 'Comment', { authorId: id }, { deleted: false });
+  await cascadeHandled(db, { userId: id }); // 联动关闭该用户相关的待复核/举报/申诉
   return { ok: true, action: 'unban', userId: id, pages: pages, comments: comments };
 }
 
@@ -138,6 +140,7 @@ async function unblacklist(db, userId) {
   for (let i = 0; i < recs.length; i++) {
     if (recs[i]._id) await col(db, 'BlackNum').deleteOne({ _id: recs[i]._id });
   }
+  await cascadeHandled(db, { userId: id }); // 联动关闭该用户相关的待复核/举报/申诉
   return { ok: true, action: 'unblacklist', userId: id };
 }
 
@@ -154,6 +157,7 @@ async function hide(db, targetType, targetId) {
     await col(db, 'Page').updateOne({ _id: tid },
       { $set: { hidden: true, hiddenBy: 'admin', hiddenTime: now } });
   }
+  await cascadeHandled(db, { targetType: type, targetId: tid }); // 联动关闭该内容的举报待办
   return { ok: true, action: 'hide', targetType: type, targetId: tid };
 }
 
@@ -170,6 +174,15 @@ async function takedown(db, targetType, targetId, reporterId) {
   const type = targetType === 'page' ? 'page' : 'comment';
   const tid = String(targetId || '').trim();
   if (!tid) return { ok: false, msg: '缺 targetId' };
+
+  // 2026-08-28 举报人必须是已注册用户（Feeder 集合有资料），杜绝未注册账号/伪造 ID 举报。
+  // 查不到资料一律拒绝（不下架、不计数）；查询失败也保守拒绝（宁可不下架，不让无效举报计数）。
+  const rid = String(reporterId || '').trim();
+  let feeders = [];
+  try { feeders = toList(await col(db, 'Feeder').find({ userId: rid })); } catch (e) { feeders = []; }
+  if (!rid || !feeders.length) {
+    return { ok: false, code: 'NOT_FEEDER', msg: '举报人未注册，不能举报（请先注册）' };
+  }
 
   let count = 0;
   try {
@@ -218,7 +231,45 @@ async function restore(db, targetType, targetId) {
   } else {
     await col(db, 'Page').updateOne({ _id: tid }, { $set: { hidden: false } });
   }
+  await cascadeHandled(db, { targetType: type, targetId: tid }); // 联动关闭该内容的举报待办
   return { ok: true, action: 'restore', targetType: type, targetId: tid };
+}
+
+/** 把某集合中满足条件的 pending 待办标记为已处理（单项失败不阻断其它集合，best-effort） */
+async function markHandledWhere(db, name, filter) {
+  try {
+    await col(db, name).updateMany(Object.assign({ status: 'pending' }, filter), {
+      $set: { status: 'handled', handledBy: 'moderate', handledTime: new Date() },
+    });
+  } catch (e) {
+    console.warn('[moderate] 联动标记 ' + name + ' 失败（不影响主操作）', e && e.message);
+  }
+}
+
+/** 联动清「复核中心」待办（2026-08-28）：
+ *  用户在飞书被封禁/解封、内容被下架/恢复后，把与之相关的
+ *  「待复核 Review(type=review) / 举报 Report / 申诉 Appeal」pending 记录
+ *  全部标记为已处理，避免复核中心残留已被管理员处理过的旧待办。
+ *  如：管理员在飞书回「封禁用户」后，该用户的举报/待复核/申诉不会再出现在复核中心。
+ *  @param info { userId?, targetType?, targetId? } */
+async function cascadeHandled(db, info) {
+  const id = info && info.userId;
+  const tid = info && info.targetId;
+  if (id) {
+    // 待复核：该作者内容被判定疑似的内容关闭
+    await markHandledWhere(db, 'Review', { authorId: id, type: 'review' });
+    // 举报：被举报人 = 该用户的内容，以及该用户发起的举报，全部关闭
+    await markHandledWhere(db, 'Report', { targetAuthorId: id });
+    await markHandledWhere(db, 'Report', { reporterId: id });
+    // 申诉：该用户的申诉关闭（已通过飞书处理）
+    await markHandledWhere(db, 'Appeal', { userId: id });
+  }
+  if (tid) {
+    // 举报：目标内容被下架/恢复 → 该内容相关举报关闭（带 targetType 防推文/评论 ID 串扰）
+    const filter = { targetId: tid };
+    if (info.targetType) filter.targetType = info.targetType;
+    await markHandledWhere(db, 'Report', filter);
+  }
 }
 
 /** 永久拉黑：先封禁（幂等，软删内容 + 拉黑），再标记 permanent，之后不再受理申诉 */

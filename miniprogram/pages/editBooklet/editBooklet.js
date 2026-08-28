@@ -435,6 +435,17 @@ Page({
     // 5) 标题会用作图片文件名，先清洗危险字符（已限长 30）
     const tittle = guard.sanitizeFileName(data.tittle, 30);
     this.setData({ 'listData.tittle': tittle });
+    // 6) 2026-08-28 改名撞已有标题 → 硬拦截：推文图片按「标题+序号」命名，
+    //    同名推文会共享 COS 图片 key，互相覆盖（数据损坏）。只在真正改名时查重，
+    //    标题未变（历史遗留同名）不拦，避免无法编辑。
+    if (tittle !== this.data.beforeTittle) {
+      const sameTitle = await db.findOne('Page', { tittle: tittle, _id: { $ne: data._id } });
+      if (sameTitle) {
+        guard.resetThrottle('editBooklet_submit'); // 拦截：改完标题可立即重提
+        wx.showToast({ icon: 'none', title: '已存在同名推文，请修改标题' });
+        return;
+      }
+    }
     // 内容安全审核（写库前拦截，自带 loading）
     const _content = [tittle, data.main, data.relative].filter(Boolean).join(' ');
     const _passed = await secCheck.guardBeforePublish(_content, 3);

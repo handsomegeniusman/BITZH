@@ -29,7 +29,7 @@ Page({
   },
 
   /** 页面加载：从分享链接可直接带 name / isName 打开；缺 name 时兜底 */
-  onLoad(options) {
+  async onLoad(options) {
     guard.ensureNotBanned();
     if (!options || !options.name) {
       wx.showToast({ title: '参数错误', icon: 'none' });
@@ -37,7 +37,7 @@ Page({
       return;
     }
     // 确保 isFeeder / userId 已初始化（分享链接直接打开 this page 时可能未加载）
-    db.initUserState().catch(function (err) { console.error('初始化用户状态失败', err); });
+    try { await db.initUserState(); } catch (err) { console.error('初始化用户状态失败', err); }
     // sanitizedName 用于图片 src（COS key 只含安全字符），name 保留原文用于 DB 查询
     var sanitizedName = guard.sanitizeFileName(options.name || '', 20);
     this.setData({
@@ -101,6 +101,11 @@ Page({
    *  每次点击本地即时 +1，防抖 1.5 秒内无新点击后一次性 $inc 提交数据库，
    *  避免连点时持续打 DB。页面离开时也会兜底提交，不丢赞。 */
   giveGood(e) {
+    // 2026-08-28 点赞也是写库操作：必须已注册（Feeder）才能点赞，游客引导去注册
+    if (!app.globalData.isFeeder) {
+      pageUtil.promptRegister(app.globalData.userId);
+      return;
+    }
     const _id = e.currentTarget.dataset._id;
     const index = e.currentTarget.dataset.index;
     // 本地即时 +1（乐观更新 UI）

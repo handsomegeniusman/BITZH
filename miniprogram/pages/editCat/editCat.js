@@ -222,7 +222,7 @@ Page({
   },
 
   /** 点击"确定提交" */
-  upload() {
+  async upload() {
     if (this._submitting) return; // 防止异步流程中重复提交
     // 必填校验（仿 editBooklet）：名字 + 至少一张照片
     const errs = this.validateRequired();
@@ -235,6 +235,22 @@ Page({
     // 清洗猫名（会用作图片文件名），sanitize 已限长 20
     const name = guard.sanitizeFileName(this.data.cat.name || '', 20);
     this.setData({ 'cat.name': name });
+    // 2026-08-28 改名撞已有猫咪 → 硬拦截：猫咪照片按「名字+序号」命名，
+    //    同名猫咪会共享 COS 图片 key，互相覆盖（数据损坏）。只在真正改名时查重，
+    //    名字未变不拦。onNameBlur 的"重名提示"只是提醒，这里提交前硬拦。
+    if (this.data.beforeName && this.data.beforeName !== name) {
+      try {
+        const dup = await db.find('BITZH', { name: name });
+        const other = (dup || []).find((d) => String(d._id) !== String(this.data.cat._id));
+        if (other) {
+          wx.showToast({ icon: 'none', title: '已存在同名猫咪，请修改名字' });
+          return;
+        }
+      } catch (err) {
+        console.error('改名重名检查失败', err);
+        // 查询失败不硬拦（低概率冲突，宁可放行也不误拦）
+      }
+    }
     // 有尚未处理的"上次数据"差异字段 → 先逐项确认用旧的还是保留本次
     const pending = this.pendingRestoreKeys();
     if (pending.length) {

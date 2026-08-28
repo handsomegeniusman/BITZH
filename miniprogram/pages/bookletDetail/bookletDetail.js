@@ -292,6 +292,7 @@ Page({
     const authorId = e.currentTarget.dataset.authorid;
     const myCommentId = e.currentTarget.dataset.mycommentid;
     const main = e.currentTarget.dataset.main;
+    const authorName = e.currentTarget.dataset.author || '';
     wx.showActionSheet({
       itemList: ['修改评论', '删除评论', '举报'],
       success: (res) => {
@@ -300,18 +301,19 @@ Page({
         } else if (res.tapIndex === 1) {
           this.deleteComment(authorId, myCommentId);
         } else if (res.tapIndex === 2) {
-          this.reportComment(authorId, myCommentId, main);
+          this.reportComment(authorId, myCommentId, main, authorName);
         }
       },
     });
   },
 
   /** 举报评论：跳举报页（带目标类型/ID/内容快照/作者） */
-  reportComment(authorId, myCommentId, main) {
+  reportComment(authorId, myCommentId, main, authorName) {
     wx.navigateTo({
       url: '/pages/report/report?type=comment&targetId=' + myCommentId +
         '&content=' + encodeURIComponent(String(main || '').slice(0, 200)) +
-        '&targetAuthorId=' + (authorId || ''),
+        '&targetAuthorId=' + (authorId || '') +
+        '&targetAuthorName=' + encodeURIComponent(authorName || ''),
     });
   },
 
@@ -322,7 +324,8 @@ Page({
     wx.navigateTo({
       url: '/pages/report/report?type=page&targetId=' + (data._id || '') +
         '&content=' + encodeURIComponent(content) +
-        '&targetAuthorId=' + (data.authorId || ''),
+        '&targetAuthorId=' + (data.authorId || '') +
+        '&targetAuthorName=' + encodeURIComponent(data.author || ''),
     });
   },
 

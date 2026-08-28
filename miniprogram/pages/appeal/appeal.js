@@ -93,7 +93,10 @@ Page({
 
       // 通知管理员（复用 secCheck 云函数 notify 模式；失败不影响申诉入库）
       try {
+        // 2026-08-28 飞书推送附昵称：管理员一眼认出是谁（与举报/审核推送对齐）
+        const nick = (app.globalData.userInfo && app.globalData.userInfo.nickName) || '';
         const text = '【申诉】用户申请解封' +
+          '\n用户昵称：' + (nick || '（未填写）') +
           '\n用户ID：' + this.data.userId +
           '\n联系方式：' + (String(this.data.contact || '').trim() || '无') +
           '\n说明：' + detail.slice(0, 200) +

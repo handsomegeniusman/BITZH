@@ -79,6 +79,19 @@ function check(name, actual, expected) {
     ['封禁举报人',
       { verb: 'ban', object: 'reporter' },
       { action: 'ban', userId: 'aabbccddeeff001122334455', reason: '举报人滥用举报被封禁' }],
+    ['解封举报人',
+      { verb: 'unban', object: 'reporter' },
+      { action: 'unblacklist', userId: 'aabbccddeeff001122334455' }],
+    // 本空间用户 ID 是 24 位 hex（非 openid），带 ID 命令必须能解析
+    ['封禁 64fa07d6a09a9bd68b13a8a0',
+      { verb: 'ban', object: 'user', userId: '64fa07d6a09a9bd68b13a8a0' },
+      { action: 'ban', userId: '64fa07d6a09a9bd68b13a8a0' }],
+    ['解封 64fa07d6a09a9bd68b13a8a0',
+      { verb: 'unban', object: 'user', userId: '64fa07d6a09a9bd68b13a8a0' },
+      { action: 'unblacklist', userId: '64fa07d6a09a9bd68b13a8a0' }],
+    ['拉黑用户 64fa07d6a09a9bd68b13a8a0',
+      { verb: 'reject', object: 'user', userId: '64fa07d6a09a9bd68b13a8a0' },
+      { action: 'reject', userId: '64fa07d6a09a9bd68b13a8a0', reason: '永久拉黑' }],
     // 私聊旧用法：封禁 <openid> / 解封 <openid> / 拉黑用户 <openid>
     ['封禁 oAbCdEfGhIjKlMnOpQrS1',
       { verb: 'ban', object: 'user', userId: 'oAbCdEfGhIjKlMnOpQrS1' },
@@ -139,6 +152,9 @@ function check(name, actual, expected) {
   check('申诉: 封禁举报人 → 无举报人信息报错',
     cb.resolveAction(cb.parseCommand('封禁举报人'), 'appeal', appealText),
     { error: '❌ 未能解析出举报人ID（仅举报推送可回复「封禁举报人」）' });
+  check('申诉: 解封举报人 → 无举报人信息报错',
+    cb.resolveAction(cb.parseCommand('解封举报人'), 'appeal', appealText),
+    { error: '❌ 未能解析出举报人ID（仅举报推送可回复「解封举报人」）' });
 
   // ============================================================
   // 场景三：URL 验证（飞书保存「事件订阅请求地址」时先发这个）

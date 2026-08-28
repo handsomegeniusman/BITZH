@@ -151,6 +151,21 @@ function requireAdmin() {
   return false;
 }
 
+// ---------- 6.6 黑名单统一拦截 ----------
+// 当前用户若在黑名单 → reLaunch 到「已被拉黑」页。
+// 任意页面 onLoad 开头调一次即可（申诉页 appeal、拉黑页 banned 除外——黑名单用户必须能申诉）。
+// 返回 Promise<boolean>：true=已在黑名单（已触发跳转）；false=放行。查询失败时放行，不阻塞页面。
+function ensureNotBanned() {
+  const db = require('./db.js');
+  return db.isBlacklisted().then(function (banned) {
+    if (banned) wx.reLaunch({ url: '/pages/banned/banned' });
+    return banned;
+  }).catch(function (e) {
+    console.error('[guard] 黑名单检查失败，放行', e);
+    return false;
+  });
+}
+
 // ---------- 7. 今天的日期（YYYY-MM-DD） ----------
 // 用于推文"拍摄时间"等字段为空时补默认值，保证排序字段不缺值。
 function todayString() {
@@ -159,6 +174,30 @@ function todayString() {
   const day = d.getDate();
   const pad = (n) => (n < 10 ? '0' + n : '' + n);
   return d.getFullYear() + '-' + pad(m) + '-' + pad(day);
+}
+
+// ---------- 7.6 名称禁用词（昵称防仿冒/防误导） ----------
+// 昵称不能含「官方」「北理珠关爱部」等仿冒/误导性词汇，防止普通用户冒充官方账号。
+// 说明：
+//   - 词表在此统一维护（按需增删）；服务端 secCheck（scene=1 昵称）另有一份同名拦截，
+//     前端是"保险层"，恶意逆向仍可绕过，服务端才是安全边界。
+//   - 注意"误伤"边界：社团成员若合法使用"关爱部/北理珠"做昵称（如"关爱部-小明"）会被拦，
+//     若确有这种正当需求，请改用"仅整段相同才拦"或直接移除对应词条。
+const FORBIDDEN_NAME_WORDS = [
+  '官方', '北理珠关爱部', '关爱部', '北理珠', '北理流浪猫', '管理员', '客服', '运营',
+];
+// 命中返回第一个禁词（用于提示），未命中返回空串
+function forbiddenName(value) {
+  if (typeof value !== 'string') return '';
+  // 轻量归一：全角 ASCII→半角 + 转小写（防"ＡＤＭＩＮ"这类绕过；昵称已过 sanitizeFileName 无空白）
+  const s = value.replace(/[！-～]/g, function (ch) {
+    return String.fromCharCode(ch.charCodeAt(0) - 0xFEE0);
+  }).toLowerCase();
+  for (let i = 0; i < FORBIDDEN_NAME_WORDS.length; i++) {
+    const w = FORBIDDEN_NAME_WORDS[i].toLowerCase();
+    if (s.indexOf(w) >= 0) return FORBIDDEN_NAME_WORDS[i];
+  }
+  return '';
 }
 
 // ---------- 7.5 日期钳制（拍摄时间等） ----------
@@ -184,6 +223,8 @@ module.exports = {
   resetThrottle: resetThrottle,
   rateLimit: rateLimit,
   requireAdmin: requireAdmin,
+  ensureNotBanned: ensureNotBanned,
   todayString: todayString,
   clampDate: clampDate,
+  forbiddenName: forbiddenName,
 };

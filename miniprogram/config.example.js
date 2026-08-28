@@ -58,6 +58,10 @@ module.exports = {
   // 请在你自己的数据库里插入一条记录后，把 _id 填到这里
   administratorRecordId: '你的Administrator记录_id',
 
+  // 联系方式记录 _id（about 页手机号/邮箱）：
+  // 与审核开关不是同一条记录，另插一条记录存 phone / email 字段后把 _id 填到这里
+  contactRecordId: '你的联系方式记录_id',
+
   // 管理员联系邮箱（封禁页/申诉页/举报页展示，作为兜底客服入口；
   // 需与云函数 secCheck 的环境变量 ADMIN_EMAIL 保持一致）
   adminEmail: '你的管理员邮箱',

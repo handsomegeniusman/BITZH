@@ -25,6 +25,12 @@
   padding: 4px 0;
 }
 
+/* 压缩态工具行不渲染（showTools=false），cardH = itemPx（不再加 TOOLS_H 30px），
+   图片框必须填满整卡 → 高度补成 100%，否则仍按 calc(100% - 30px) 只剩 ~140rpx 图 + 30px 空位（F1） */
+.is-root.is-compact .is-imgbox {
+  height: 100%;
+}
+
 /* 表单校验红框（猫页"未选照片"） */
 .is-invalid {
   border: 2rpx solid #e64340;
@@ -140,8 +146,9 @@
   padding: 0 20rpx 10rpx;
 }
 
-/* 压缩/还原切换（聚焦标题/正文时图片区缩小）平滑过渡：宽高 0.28s 渐变。
-   拖拽只动 transform（movable-view x），不碰宽高，故不干扰拖拽跟手；
+/* 压缩/还原切换（聚焦标题/正文时图片区缩小）平滑过渡：宽高 0.3s ease-out。
+   与页面白卡片 margin-top 的过渡同长同缓动（F2.1），聚焦时"缩图 + 去间隙"同步完成、
+   失焦时同步还原。拖拽只动 transform（movable-view x），不碰宽高，故不干扰拖拽跟手；
    拖拽中的放大态仍在 .is-card.is-dragging .is-imgbox 覆盖 transform 过渡。 */
 .is-mv,
 .is-card,
@@ -150,7 +157,7 @@
 .is-img,
 .is-scroll,
 .is-area {
-  transition: width 0.28s ease, height 0.28s ease;
+  transition: width 0.3s ease-out, height 0.3s ease-out;
 }
 
 /* ============ 删除图片确认弹窗 ============ */

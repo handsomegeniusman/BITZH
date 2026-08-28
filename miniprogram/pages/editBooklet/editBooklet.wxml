@@ -3,6 +3,8 @@
      所以不会"太灵敏"——只有点到编辑器外部才收起） -->
 <view class="page-root" bindtap="onPageTap">
 <view wx:if="{{recoverMode}}" class="recover-tip">回收站恢复模式：修改内容后点「恢复推文」即恢复；或点「彻底删除存档」放弃恢复</view>
+<!-- 官方推文编辑记录：编辑人 / 编辑时间（仅管理员在编辑页可见，改一次更新一次） -->
+<view wx:if="{{isAdmin && listData.editBy}}" class="editor-meta">编辑人：{{listData.editBy}} · 编辑时间：{{editTimeText}}</view>
 <!-- 图片区：横向拖拽排序（长按拖拽/单击预览/删除确认/设封面/末尾新增，全部在 image-sorter 组件内）。
      聚焦标题/正文（contentFocused）时图片压缩成窄缩略图条，为可滚动的建议列表腾位；失焦/点外部还原 -->
 <image-sorter
@@ -14,6 +16,7 @@
   invalid="{{false}}"
   bind:change="onImgChange"
   bind:add="getphoto"
+  bind:modalchange="onSorterModal"
 />
 
 <!-- 恢复上次数据：进入页面时已预检过是否有修改存档（Pagechange），有才显示此按钮 -->
@@ -24,7 +27,7 @@
      title-row 用 catchtap 拦截，防止点标题冒泡到页面 onPageTap 把布局/键盘收走 -->
 <view class="form-card {{contentFocused ? 'is-compact' : ''}}">
   <view class="title-row {{formErrors.tittle ? 'divider-error' : ''}}" catchtap="noop">
-    <input data-key='tittle' bindinput="inputText" bindfocus="onTitleFocus" bindblur="onTitleBlur" class="title-input" value="{{listData.tittle}}" placeholder="添加标题"/>
+    <input data-key='tittle' bindinput="inputText" show-confirm-bar="{{false}}" adjust-position="{{false}}" bindfocus="onTitleFocus" bindblur="onTitleBlur" class="title-input" value="{{listData.tittle}}" placeholder="添加标题" disabled="{{sorterModalOpen}}"/>
   </view>
   <view class="field-error" wx:if="{{formErrors.tittle}}">标题为必填项，请填写</view>
 
@@ -34,6 +37,7 @@
     relative="{{listData.relative || ''}}"
     maxlength="2000"
     placeholder="添加正文或话题"
+    disabled="{{sorterModalOpen}}"
     bind:change="onContentChange"
     bind:editorfocus="onEditorFocus"
     bind:editorblur="onEditorBlur"
@@ -48,7 +52,7 @@
       </view>
     </picker>
   </view>
-  <view class="field-tip">不能选未来日期 · 留空则默认今天</view>
+  <view class="field-tip">上传图片自动识别拍摄时间 · 可手动修改（旧照片请勾选原图）</view>
 </view>
 
 <!-- 封锁 / 解封帖子：仅管理员可用，软下架（取证留存，可在复核中心恢复），区别于下方删除 -->
@@ -63,4 +67,11 @@
 <view class="bottom-bar">
   <button bindtap="confirm" class="bar-btn reset-margin">{{recoverMode ? '恢复推文' : '修改'}}</button>
 </view>
+
+<!-- 跟随键盘的「完成」栏：正文聚焦时编辑器自带"话题/完成"栏，这里 disabled 避免叠两层；
+     标题聚焦等其它键盘场景由本栏提供「完成」收起 -->
+<kb-done-bar disabled="{{editorFocus}}"/>
+
+<!-- 隐私授权弹窗（相册/相机/聊天记录选图前按需弹出，含原生 agreePrivacyAuthorization 按钮） -->
+<privacy-popup id="privacyPopup" desc="需要你的授权，才能从相册、相机或聊天记录中选择图片。是否同意？"/>
 </view>

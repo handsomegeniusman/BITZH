@@ -35,6 +35,8 @@ function mapTrashItem(r) {
   const photoKeys = (Array.isArray(data.photoKeys) && data.photoKeys.length) ? data.photoKeys
     : (Array.isArray(r.photoKeys) && r.photoKeys.length) ? r.photoKeys : [];
   const photoUrls = [];
+  // 官方推文：包内 logo 首张展示（不上传、未存档），其后是存档里的自有图
+  if (pick(r, 'officialLogo')) photoUrls.push(cos.BUNDLED_LOGO);
   if (photoArchive && photoKeys.length) {
     photoKeys.forEach((key) => {
       photoUrls.push(cos.archiveUrl(photoArchive, key));
@@ -88,6 +90,13 @@ async function restoreTrashItem(rec) {
     good: data.good || 0,
     pageTime: data.pageTime || new Date(),
   };
+  // 官方推文：恢复时原样保留 official 标记与编辑人/编辑时间（logo 为包内资源，无需存档）
+  if (data.official || data.officialLogo) {
+    doc.official = true;
+    doc.officialLogo = !!data.officialLogo;
+    if (data.editBy) doc.editBy = data.editBy;
+    if (data.editTime) doc.editTime = data.editTime;
+  }
   await db.insertOne('Page', doc);
   await db.deleteOne(DELETE_COLLECTION, { _id: rec._id });
   return { ok: true };

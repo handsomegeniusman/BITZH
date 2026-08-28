@@ -8,6 +8,7 @@
 const app = getApp();
 const db = require('../../utils/db.js'); // 公共数据库方法
 const pageUtil = require('../../utils/page.js'); // 页面公共方法（缩略图回退）
+const guard = require('../../utils/guard.js'); // 前端保险工具（黑名单拦截）
 
 Page({
   data: {
@@ -18,6 +19,7 @@ Page({
 
   /** 页面加载：记录分类并加载猫咪 */
   onLoad(options) {
+    guard.ensureNotBanned();
     this.setData({ classification: options.classification || '' });
     this.loadMoreCat();
   },

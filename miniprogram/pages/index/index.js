@@ -10,6 +10,17 @@ const pageUtil = require('../../utils/page.js'); // 页面公共方法（长按�
 const topic = require('../../utils/topic.js'); // 话题模糊匹配（搜索框用）
 const sort = require('../../utils/sort.js'); // 排序健壮化 + 卡片时间（客户端归一化脏日期）
 const catSearch = require('../../utils/catSearch.js'); // 猫搜索（大名/绰号/关系词）
+const guard = require('../../utils/guard.js'); // 前端保险工具（正则转义等）
+
+/** 时间格式化（Date → "YYYY-MM-DD HH:mm"），脏值返回空串（与 userManage 一致） */
+function fmtTime(t) {
+  if (!t) return '';
+  const d = new Date(t);
+  if (isNaN(d.getTime())) return '';
+  const p = (n) => (n < 10 ? '0' + n : '' + n);
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
+    ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+}
 
 Page({
   data: {
@@ -30,6 +41,9 @@ Page({
     search: '',            // 搜索框关键词（话题 / 猫名 / 标题）
     searchMode: false,     // 是否处于搜索态（搜索时卡片显示时间、展示猫横条）
     catResults: [],        // 搜索命中的猫（猫横条，点击直达猫详情）
+    userResults: [],       // 搜索命中的用户（仅管理员展示，点击进用户管理）
+    defaultAvatar: 'https://mmbiz.qpic.cn/mmbiz/icTdbqWNOwNRna42FI242Lcia07jQodd2FJGIYQfG0LAJGFxM4FbnQP6yfMxBgJ0F3YRqJCJ1aPAK2dQagdusBZg/0', // 用户头像占位
+    isAdministrator: false, // 当前用户是否为管理员（决定是否显示用户搜索入口）
     loaded: false,         // 首屏查询是否完成（用于搜索空态提示）
   },
 
@@ -66,6 +80,7 @@ Page({
       userId: app.globalData.userId,
       isFeeder: app.globalData.isFeeder,
       userInfo: app.globalData.userInfo,
+      isAdministrator: app.globalData.isAdministrator,
     });
   },
 
@@ -125,18 +140,20 @@ Page({
     this.setData({ search: value, searchMode: !!value });
     clearTimeout(this._searchTimer);
     if (!value) {
-      // 清空搜索 → 立即恢复全量瀑布流、隐藏猫横条
+      // 清空搜索 → 立即恢复全量瀑布流、隐藏猫横条/用户入口
       this._searchCatSeq = (this._searchCatSeq || 0) + 1;
-      this.setData({ catResults: [], listData: [], leftList: [], rightList: [], skipCount: 0, loaded: false }, () => {
+      this._searchUserSeq = (this._searchUserSeq || 0) + 1;
+      this.setData({ catResults: [], userResults: [], listData: [], leftList: [], rightList: [], skipCount: 0, loaded: false }, () => {
         this.getPage();
       });
       return;
     }
     this._searchTimer = setTimeout(() => {
-      // 关键词变化 → 重置列表从头查（保持当前排序），并搜猫
+      // 关键词变化 → 重置列表从头查（保持当前排序），并搜猫/搜用户
       this.setData({ listData: [], leftList: [], rightList: [], skipCount: 0, loaded: false }, () => {
         this.getPage();
         this.searchCats(value);
+        this.searchUsers(value);
       });
     }, 300);
   },
@@ -157,6 +174,76 @@ Page({
       .catch(err => console.error('搜索猫咪失败', err));
   },
 
+  /** 搜用户（仅管理员）：昵称模糊 + 用户ID精确，命中则展示用户入口 + 他的帖子（过期 seq 丢弃） */
+  searchUsers(keyword) {
+    // 非管理员不展示用户搜索入口
+    if (!app.globalData.isAdministrator) return;
+    this._searchUserSeq = (this._searchUserSeq || 0) + 1;
+    const seq = this._searchUserSeq;
+    const re = guard.escapeRegExp(keyword);
+    Promise.all([
+      db.find('Feeder', { userId: keyword }, { limit: 3 }),
+      db.find('Feeder', { nickName: { $regex: re, $options: 'i' } }, { limit: 5 }),
+    ]).then(([byId, byName]) => {
+      if (seq !== this._searchUserSeq) return; // 输入又变了，丢弃过期响应
+      // 按 _id 去重合并
+      const map = {};
+      (byId || []).concat(byName || []).forEach((u) => {
+        if (u && u._id && !map[u._id]) map[u._id] = u;
+      });
+      const users = Object.keys(map).map((k) => map[k]);
+      // 批量查这些用户发过的帖子（含已下架的，标注 hidden），供用户横条下方直接展示
+      const ids = users.map((u) => u.userId).filter(Boolean);
+      if (!ids.length) {
+        this.setData({ userResults: [] });
+        return;
+      }
+      db.find('Page', { authorId: { $in: ids } }, { sort: { pageTime: -1 }, limit: 30 })
+        .then((posts) => {
+          if (seq !== this._searchUserSeq) return; // 输入又变了，丢弃过期响应
+          const byAuthor = {};
+          (posts || []).forEach((p) => {
+            if (!p || !p.authorId) return;
+            (byAuthor[p.authorId] = byAuthor[p.authorId] || []).push(p);
+          });
+          users.forEach((u) => {
+            const list = byAuthor[u.userId] || [];
+            u.posts = list.slice(0, 5).map((p) => ({
+              _id: p._id,
+              tittle: p.tittle || '（无标题）',
+              timeText: fmtTime(p.pageTime || p.photoTime),
+              hidden: !!p.hidden,
+            }));
+            u.postsLoaded = true; // 帖子已查好，点击进管理页可直接展开
+          });
+          this.setData({ userResults: users });
+        })
+        .catch((err) => {
+          console.error('搜索用户帖子失败', err);
+          if (seq === this._searchUserSeq) this.setData({ userResults: users });
+        });
+    }).catch((err) => {
+      console.error('搜索用户失败', err);
+      if (seq === this._searchUserSeq) this.setData({ userResults: [] });
+    });
+  },
+
+  /** 点击用户横条 → 进用户管理页（带 userId + 已搜好的用户数据，免重复搜索，跳转更快） */
+  toUserManage(e) {
+    const userId = e.currentTarget.dataset.userid;
+    const index = e.currentTarget.dataset.index;
+    // 把 index 已搜到的用户数据（含帖子）暂存，userManage 打开后直接展示
+    const user = this.data.userResults[index];
+    if (user && user.userId) app.globalData.userManageSeed = user;
+    wx.navigateTo({ url: '/pages/userManage/userManage?userId=' + encodeURIComponent(userId) });
+  },
+
+  /** 点击用户帖子 → 跳转推文详情页看原文 */
+  toPostDetail(e) {
+    const _id = e.currentTarget.dataset.id;
+    wx.navigateTo({ url: '/pages/bookletDetail/bookletDetail?_id=' + _id });
+  },
+
   /** 点击猫横条 → 猫详情 */
   toCatDetail(e) {
     const _id = e.currentTarget.dataset._id;
@@ -175,11 +262,19 @@ Page({
     pageUtil.onImgError(this, e);
   },
 
+  /** 用户横条头像加载失败 → 回退微信默认头像 */
+  onUserImgError(e) {
+    const index = e.currentTarget.dataset.index;
+    if (index === undefined) return;
+    setField(this, 'userResults[' + index + '].avatarUrl', this.data.defaultAvatar);
+  },
+
   /** 清空搜索 → 恢复全量瀑布流 */
   onSearchClear() {
     clearTimeout(this._searchTimer);
     this._searchCatSeq = (this._searchCatSeq || 0) + 1;
-    this.setData({ search: '', searchMode: false, catResults: [], listData: [], leftList: [], rightList: [], skipCount: 0, loaded: false }, () => {
+    this._searchUserSeq = (this._searchUserSeq || 0) + 1;
+    this.setData({ search: '', searchMode: false, catResults: [], userResults: [], listData: [], leftList: [], rightList: [], skipCount: 0, loaded: false }, () => {
       this.getPage();
     });
   },

@@ -68,14 +68,12 @@ page {
   display: flex;
   flex-direction: row;
   align-items: center;
-  margin-bottom: 20rpx;
-  margin-top: -20rpx;
+  margin-top: 16rpx; /* 紧贴大名下方（原 -20rpx 负边距 hack 已移除） */
 }
 .status-item {
   display: inline-block;
   width: 120rpx;
   height: 50rpx;
-  margin-left: -5rpx;
   text-align: center;
   line-height: 50rpx;
   font-size: 26rpx;
@@ -225,20 +223,10 @@ page {
   font-size: 30rpx;
 }
 
-/* 猫咪名字下方的横条容器：固定宽高 */
-.parent-view {
-  width: 750rpx;
-  height: 104rpx;
-  display: block;
-  box-sizing: border-box;
-}
-
-/* 猫咪名字栏：在全局 .itemname1 基础上叠加的固定宽高与盒模型 */
-.itemname-box {
-  width: 298rpx;
-  height: 113rpx;
-  display: flex;
-  box-sizing: content-box;
+/* 名字 + 状态胶囊区（原 parent-view/itemname-box/name-spacer 固定宽高 + 负边距
+   会把名字区换行溢出、把状态行挤出怪异空隙，已整体重构为自然流布局） */
+.cat-head {
+  margin: 24rpx 40rpx 0;
 }
 
 /* 详情信息（毛色/性别/绝育时间/外貌等）左侧的标签栏：固定宽度、不压缩 */
@@ -248,27 +236,11 @@ page {
   width: 350rpx;
 }
 
-/* 猫咪大号名字：固定宽高 */
+/* 猫咪大号名字：叠在全局 .cat-card（45rpx 加粗）上，去掉固定宽高，超长自动换行 */
 .cat-detail-name {
-  width: 426rpx;
-  height: 58rpx;
   display: block;
-  box-sizing: border-box;
-}
-
-/* 名字右侧的占位空白（用于撑开右侧区域） */
-.name-spacer {
-  width: 222rpx;
-  height: 187rpx;
-  display: inline-block;
-  box-sizing: border-box;
-  position: relative;
-  top: -90rpx; /* 原 left:479rpx 会把占位撑到屏幕外，已移除 */
-}
-
-/* 状态标签后的空白占位（原 600rpx 右外边距会把整行撑出屏幕，已移除） */
-.status-spacer {
-  margin-right: 0;
+  line-height: 1.4;
+  word-break: break-all;
 }
 
 /* 详情信息项：内容在垂直方向排列（标签在上、内容在下） */

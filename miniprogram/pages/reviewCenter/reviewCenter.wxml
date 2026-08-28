@@ -1,6 +1,6 @@
 <view class="root">
   <view class="quick-ban">
-    <input class="quick-ban-input" placeholder="输入用户ID(openid)" value="{{banId}}" bindinput="onBanIdInput" />
+    <input class="quick-ban-input" placeholder="输入用户ID(openid)" value="{{banId}}" bindinput="onBanIdInput" show-confirm-bar="{{false}}" />
     <button class="btn small danger quick-ban-btn" size="mini" bindtap="banById">封禁</button>
     <button class="btn small success quick-ban-btn" size="mini" bindtap="unbanById">解封</button>
   </view>
@@ -53,4 +53,7 @@
       </view>
     </view>
   </block>
+
+<!-- 跟随键盘的「完成」栏：键盘弹起时提供一键收起（部分输入法没有收起键） -->
+<kb-done-bar/>
 </view>

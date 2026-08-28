@@ -1,7 +1,7 @@
 // ============================================================
 // pages/report/report.js —— 举报页
 // 【作用】用户举报违规推文/评论：填写理由 → 写入 Report 集合 + 推飞书通知管理员。
-//         同一用户对同一目标 24h 内限举报 1 次（utils/report.js 内校验）。
+//         同一用户对同一目标 5 分钟内限举报 1 次（utils/report.js 内校验）。
 // ============================================================
 const report = require('../../utils/report.js'); // 举报公共逻辑（写库 + 通知）
 const guard = require('../../utils/guard.js'); // 前端保险工具（限长）
@@ -18,6 +18,7 @@ Page({
   },
 
   onLoad(options) {
+    guard.ensureNotBanned();
     const type = options.type === 'comment' ? 'comment' : 'page';
     this.setData({
       type: type,
@@ -63,7 +64,7 @@ Page({
       wx.showToast({ title: '举报已提交', icon: 'success' });
       setTimeout(() => wx.navigateBack(), 800);
     } else if (r.reason === 'duplicate') {
-      wx.showToast({ title: '24小时内已举报过该内容', icon: 'none' });
+      wx.showToast({ title: '5分钟内已举报过该内容', icon: 'none' });
     } else if (r.reason === 'too_long') {
       wx.showToast({ title: '理由过长（200字以内）', icon: 'none' });
     } else {

@@ -9,12 +9,16 @@ const db = require('../../utils/db.js'); // 公共数据库方法
 const cos = require('../../utils/cos.js'); // COS 图片上传/删除/路径公共方法
 const guard = require('../../utils/guard.js'); // 前端保险工具（文件名清洗/限频/限长）
 const secCheck = require('../../utils/secCheck.js'); // 内容安全审核（写库前拦截）
-const media = require('../../utils/media.js'); // 选图（相册/拍摄）公共方法
+const media = require('../../utils/media.js'); // 选图（相册/拍摄/聊天）公共方法
+const photoTime = require('../../utils/photoTime.js'); // 上传图片自动识别拍摄时间（EXIF→文件名→修改时间）
+const privacy = require('../../utils/privacy.js'); // 隐私授权通用拦截（选图/聊天记录选图前按需弹合规授权弹窗）
 const { setField } = require('../../utils/page.js'); // 动态字段名的 setData（避免编译报错）
 const imgEditor = require('../../utils/imgEditor.js'); // 图片区交互（长按拖拽/单击预览/删除确认）
 const draft = require('../../utils/draft.js'); // 编辑草稿自动保存/恢复（断网、卡退时找回内容）
+const kbHeight = require('../../utils/kbHeight.js'); // 可靠键盘高度管理器（收起感知 + resetSoon 延迟清零）
 const trash = require('../../utils/trash.js'); // 回收站存档字段兼容读取（恢复模式用）
 const moderate = require('../../utils/moderate.js'); // 内容安全执行器（封锁/解封帖子，走云函数）
+const { formatTime } = require('../../utils/util.js'); // 时间格式化（编辑时间展示）
 
 // ============================================================
 // 帖子存档/恢复：每次"修改"前把旧数据存档到 Pagechange 集合，
@@ -27,6 +31,7 @@ const DELETE_COLLECTION = 'Delete';     // 删除存档集合（删除推文前�
 const RESTORE_FIELDS = [
   'tittle', 'main', 'photoTime', 'relative',
   'author', 'authorId', 'authorImg', 'commendId', 'good', 'pageTime', 'photoNum',
+  'official', 'officialLogo', 'editBy', 'editTime', // 官方推文标记与编辑记录（存档/恢复原样保留）
 ];
 
 Page({
@@ -44,15 +49,24 @@ Page({
     contentFocused: false,      // 图片区是否压缩（标题或正文任一聚焦即 true，见 syncContentFocused）
     titleFocus: false,          // 标题输入是否聚焦（与 editorFocus 独立跟踪，防"切输入框"时失焦/聚焦顺序不定导致布局误还原）
     editorFocus: false,         // 正文编辑器是否聚焦（同上）
+    sorterModalOpen: false,     // image-sorter 删除确认弹窗是否打开（打开时禁用标题/正文输入，杜绝 iOS 点穿弹键盘）
     formErrors: {},              // 必填校验错误 {tittle: true}（未填时输入框变红）
     todayStr: '',                // 今天的日期（YYYY-MM-DD），用于拍摄时间 picker 的 end 上限
     isAdmin: false,              // 当前用户是否为管理员（控制「封锁/解封帖子」按钮显示）
+    editTimeText: '',            // 官方推文编辑时间的展示文本（YYYY-MM-DD HH:mm），仅管理员编辑页可见
   },
 
   /** 页面加载：读取推文内容，并做权限检查；缺 _id 时兜底 */
   async onLoad(options) {
+    guard.ensureNotBanned();
     await db.initUserState();
     this.setData({ todayStr: guard.todayString(), isAdmin: app.globalData.isAdministrator }); // 拍摄时间 picker 的"今天"上限
+    // 拍摄时间自动识别：逐图日期缓存（不挂图片对象，草稿只存 tempFilePath）+ 覆盖规则标记。
+    // 放在 onLoad 顶部：正常编辑 / 恢复模式 / 参数错误提前 return 各分支都先初始化到位。
+    // 注意：编辑页已有 photoTime 是历史真实日期（非今天），canOverwrite 天然返回 false 不会覆盖。
+    this._photoTimes = {};           // {path: {date, source}} 已识别结果，按 path 幂等
+    this._photoTimeTouched = false;  // 用户手动改过拍摄时间 → 自动识别永不覆盖
+    this._photoTimeAutoFilled = false; // 自动填写的值可被后续批次重算（保证多图多数为准）
     if (!options || !options._id) {
       wx.showToast({ title: '参数错误', icon: 'none' });
       setTimeout(() => wx.navigateBack(), 800);
@@ -86,6 +100,8 @@ Page({
         oldPhotoNum: data.photoNum || 0,
       });
       this.setPhoto();
+      // 官方推文编辑记录：编辑人 / 编辑时间（仅管理员编辑页展示，见 editTimeText）
+      this.setData({ editTimeText: data.editBy ? formatTime(data.editTime) : '' });
       // 草稿：编辑页草稿 id 用记录 _id（同一篇推文每次编辑共用一个草稿档）
       this._draftType = 'editBooklet';
       this._draftId = data._id;
@@ -129,11 +145,16 @@ Page({
       good: trash.pick(rec, 'good') || 0,
       pageTime: trash.pick(rec, 'pageTime') || new Date(),
       photoNum: trash.pick(rec, 'photoNum') || 0,
+      official: trash.pick(rec, 'official') || false,
+      officialLogo: !!trash.pick(rec, 'officialLogo'),
+      editBy: trash.pick(rec, 'editBy') || '',
+      editTime: trash.pick(rec, 'editTime') || null,
     };
     // 图片区：用存档目录的 URL（保存时 reconcileImages 会服务端复制回正式 key）
     const photoArchive = trash.pick(rec, 'photoArchive');
     const photoKeys = Array.isArray(trash.pick(rec, 'photoKeys')) ? trash.pick(rec, 'photoKeys') : [];
     const imageUrls = [];
+    if (data.officialLogo) imageUrls.push(cos.BUNDLED_LOGO); // 官方封面：包内 logo 首张，不上传
     if (photoArchive && photoKeys.length) {
       photoKeys.forEach((key) => imageUrls.push(cos.archiveUrl(photoArchive, key)));
     }
@@ -145,8 +166,11 @@ Page({
       imageUrls: imageUrls,
       beforeTittle: data.tittle,
       oldPhotoNum: data.photoNum,
+      editTimeText: data.editBy ? formatTime(data.editTime) : '',
       restoreAvailable: false, // 恢复模式下没有"恢复上次数据"（内容来源就是存档）
     });
+    // 回填存档里持久化的逐图日期（老存档可能没有 photoDates，seed 会安全跳过）
+    photoTime.seedPhotoDates(this, imageUrls, trash.pick(rec, 'photoDates'));
     // 草稿：恢复模式用存档 id 作草稿档，避免与"正常编辑同一篇"的草稿串档
     this._draftType = 'editBooklet';
     this._draftId = rec._id;
@@ -175,8 +199,12 @@ Page({
   /** 页面被隐藏（切后台/去别的页）：把当前内容兜底保存成草稿 */
   onHide() { this.saveDraftNow(); },
 
-  /** 页面被卸载（返回上一页）：同样兜底保存 */
-  onUnload() { this.saveDraftNow(); },
+  /** 页面被卸载（返回上一页）：同样兜底保存。
+   *  标记"已卸载"：自动识别拍摄时间是异步的，页面销毁后不再 setData（防对已卸载页面 setData 的警告）。 */
+  onUnload() {
+    this._photoUnloaded = true;
+    this.saveDraftNow();
+  },
 
   /** 当前用户是否有权编辑/删除这条推文（管理员或作者本人）。
    *  onLoad 时 listData 尚未回填，必须传入已查到的 data 判断作者；
@@ -190,13 +218,19 @@ Page({
     return !!(app.globalData.isAdministrator || isAuthor || isRecoverOperator);
   },
 
-  /** 生成推文当前的图片地址列表（图片名 = 标题 + 序号.jpg） */
+  /** 生成推文当前的图片地址列表（图片名 = 标题 + 序号.jpg）。
+   *  官方推文（officialLogo）：首张为包内 logo（不走 COS，不占 photoNum），其后是自有图。 */
   setPhoto() {
     const imageUrls = [];
-    const tittle = this.data.listData.tittle;
-    for (let i = 0; i < this.data.listData.photoNum; i++) {
+    const data = this.data.listData;
+    if (data.officialLogo) imageUrls.push(cos.BUNDLED_LOGO);
+    const tittle = data.tittle;
+    for (let i = 0; i < (data.photoNum || 0); i++) {
       imageUrls.push(cos.pageUrl(tittle, i));
     }
+    // 回填发布记录里持久化的逐图日期（photoDates 与 imageUrls 一一对应）：
+    // 编辑已有图也能参与权重判定（加图/切封面不丢封面的日期）
+    photoTime.seedPhotoDates(this, imageUrls, data.photoDates);
     this.setData({ imageUrls });
   },
 
@@ -214,10 +248,14 @@ Page({
   },
 
   /** 内容编辑器变更（正文 + 话题合并）→ 写回 main 与 relative
-   *  （relative 为规范串 "#话题 #话题"），并标记草稿已变 */
+   *  （relative 为规范串 "#话题 #话题"），并标记草稿已变。
+   *  注意：main/relative 必须【一次 setData】写回——拆成两次会让组件 observers
+   *  'main, relative' 拿到中间态（新 main + 旧 relative）→ 误重拼正文（跳字/话题移位）。 */
   onContentChange(e) {
-    setField(this, 'listData.main', e.detail.main);
-    setField(this, 'listData.relative', e.detail.relative);
+    this.setData({
+      'listData.main': e.detail.main,
+      'listData.relative': e.detail.relative,
+    });
     draft.markDirty(this);
   },
 
@@ -228,18 +266,23 @@ Page({
   onTitleFocus() {
     const editor = this.selectComponent && this.selectComponent('#contentEditor');
     if (editor && typeof editor.collapseSuggest === 'function') editor.collapseSuggest();
+    kbHeight.cancelResetSoon(); // 又聚焦输入框 = 键盘仍要弹，作废"切输入框"的延迟清零
     this.setData({ titleFocus: true });
     this.syncContentFocused();
   },
 
-  /** 标题失焦：看正文是否仍聚焦，都不聚焦才还原图片区 */
+  /** 标题失焦：看正文是否仍聚焦，都不聚焦才还原图片区。
+   *  键盘状态延迟 300ms 复位：切正文时键盘可能还弹着（其 onEditorFocus 会 cancelResetSoon），
+   *  真失焦时键盘也随即收起，由 kbHeight 的 0 事件快速感知，这里只是兜底。 */
   onTitleBlur() {
     this.setData({ titleFocus: false });
+    kbHeight.resetSoon(300);
     this.syncContentFocused();
   },
 
   /** 正文聚焦：压缩图片区 */
   onEditorFocus() {
+    kbHeight.cancelResetSoon(); // 与标题同理：切回正文 = 键盘仍要弹
     this.setData({ editorFocus: true });
     this.syncContentFocused();
   },
@@ -253,15 +296,25 @@ Page({
   },
 
   /** 根据标题/正文聚焦标记推导图片区是否压缩（任一聚焦即压缩，都失焦才还原）。
-   *  加 60ms 防抖：从标题切到正文（或反向）时失焦/聚焦事件先后顺序各平台不定，
-   *  不防抖会在"blur 先到"的瞬间误判成"都失焦"→ 图片闪一下展开又缩回。 */
+   *  聚焦 → 立即压缩（不等防抖）：iOS 正文→标题切换时 blur/focus 事件间隔可能超过 60ms，
+   *  延迟压缩会在"blur 先到"的瞬间把 contentFocused 误置 false → 图片区先展开（卡片下移）
+   *  再缩回（卡片上移），即"添加标题"几个字上→下→上抖动。聚焦立即压缩，天然消除这帧抖动。
+   *  失焦 → 延迟 300ms 再展开：事件顺序各平台不定，留窗口等"切输入框"的聚焦跟上；
+   *  窗口内新聚焦（聚焦分支 clearTimeout）取消展开。 */
   syncContentFocused() {
     const self = this;
-    clearTimeout(this._focusSyncTimer);
-    this._focusSyncTimer = setTimeout(function () {
-      const focused = !!(self.data.titleFocus || self.data.editorFocus);
-      if (focused !== self.data.contentFocused) self.setData({ contentFocused: focused });
-    }, 60);
+    const focused = !!(this.data.titleFocus || this.data.editorFocus);
+    if (focused) {
+      clearTimeout(this._expandTimer);
+      if (!this.data.contentFocused) this.setData({ contentFocused: true });
+      return;
+    }
+    clearTimeout(this._expandTimer);
+    this._expandTimer = setTimeout(function () {
+      if (!self.data.titleFocus && !self.data.editorFocus && self.data.contentFocused) {
+        self.setData({ contentFocused: false });
+      }
+    }, 300);
   },
 
   /** 点击输入区外部（图片区/拍摄时间/空白处等）→ 收起建议 + 收回聚焦还原图片区。
@@ -280,25 +333,68 @@ Page({
   /** 选择日期（拍摄时间） */
   bindDateChange(e) {
     setField(this, 'listData.photoTime', e.detail.value); // 动态字段名赋值
+    this._photoTimeTouched = true; // 手动改过拍摄时间 → 自动识别不再覆盖
     draft.markDirty(this);
   },
 
-  /** 追加选择新图片（相册/拍摄，统一处理权限与失败提示；达到 20 张上限拦截） */
+  /** 追加选择新图片（聊天记录 / 相机 / 相册 三项平铺，无二级选择），统一处理权限与失败提示；达到 20 张上限拦截。
+   *  聊天记录能拿到原始文件名/发送时间，识别拍摄时间最准（工具不支持 chooseMessageFile，点了会提示，真机才有）。
+   *  编辑页已有 COS 旧图读不到 EXIF、不参与投票；仅新增的本地新图参与识别。 */
   getphoto() {
     const left = imgEditor.remaining(this);
     if (left <= 0) {
       wx.showToast({ title: '最多 20 张', icon: 'none' });
       return;
     }
-    // 选图是异步的，用 onChange 回调标记草稿"已变"，防抖保存才能看到刚加入的图
-    media.chooseImages(this, 'imageUrls', left, true, () => draft.markDirty(this));
+    // 按需求固定三项平铺顺序：选择聊天记录 → 相机 → 相册
+    wx.showActionSheet({
+      itemList: ['选择聊天记录', '相机', '相册'],
+      success: (res) => {
+        // 三个入口都是微信隐私接口（chooseMessageFile / chooseMedia），统一先做授权拦截：
+        // 未授权先弹合规授权弹窗，同意后无缝继续；已授权直接继续。「暂不使用」则不继续。
+        const mark = () => draft.markDirty(this); // 选图是异步的，用回调标记草稿"已变"
+        if (res.tapIndex === 0) {
+          // 聊天记录：原始文件名/发送时间 → 识别最准（真机才有，工具/PC 不支持会提示）
+          privacy.guard(this, () => media.chooseImagesFromChat(this, 'imageUrls', left, true, mark,
+            (items) => photoTime.recognizeAndFill(this, items)));
+        } else if (res.tapIndex === 1) {
+          // 相机：直接打开相机拍摄
+          privacy.guard(this, () => media.chooseImages(this, 'imageUrls', left, true, mark, {
+            sourceType: ['camera'],
+            sizeType: ['original', 'compressed'],
+            onTime: (items) => photoTime.recognizeAndFill(this, items),
+          }));
+        } else if (res.tapIndex === 2) {
+          // 相册：强制原图（EXIF 必有，拍摄时间识别最准），识别后压缩成小图再上传（体积仍小）
+          privacy.guard(this, () => media.chooseImages(this, 'imageUrls', left, true, mark, {
+            sourceType: ['album'],
+            sizeType: ['original'], // 微信相册「原图」默认选中且不可取消 → 一定有 EXIF
+            onTime: (items) => photoTime.recognizeAndCompress(this, items),
+          }));
+        }
+      },
+      fail: () => {}, // 取消 actionSheet：静默
+    });
   },
 
   // ============ 图片区（image-sorter 组件） ============
-  /** 图片顺序/增删变化 → 把新数组写回页面字段（草稿自动保存读的是页面数组） */
+  /** 图片顺序/增删变化 → 把新数组写回页面字段（草稿自动保存读的是页面数组）；
+   *  同时立即重算拍摄时间（加权：封面权重 1.5）——新增/删除/切换封面实时刷新 */
   onImgChange(e) {
     setField(this, this.data.imgField, e.detail.items);
     draft.markDirty(this); // 图片列表变了 → 触发自动保存
+    photoTime.reaggregate(this);
+  },
+
+  /** image-sorter 删除确认弹窗开/关 → 弹窗打开时禁用/收回底层输入，杜绝 iOS 点击弹窗
+   *  穿透唤醒底层 input/textarea 弹系统键盘（见 del-mask 的 catch 阻断） */
+  onSorterModal(e) {
+    const show = !!(e && e.detail && e.detail.show);
+    const editor = this.selectComponent && this.selectComponent('#contentEditor');
+    if (show && editor && typeof editor.blurMain === 'function') {
+      editor.blurMain(); // 收回正文聚焦 + hideKeyboard（配合 disabled 彻底关键盘）
+    }
+    this.setData({ sorterModalOpen: show }); // 标题 input / 正文 textarea 同步 disabled
   },
 
   /** 点击"修改" */
@@ -376,18 +472,36 @@ Page({
   /** 写入 Page 集合 */
   updatePage() {
     const data = this.data.listData;
+    // 图片数：包内 logo 不占 COS、不计入 photoNum；官方推文才写 officialLogo/editBy/editTime
+    const imageUrls = Array.isArray(this.data.imageUrls) ? this.data.imageUrls : [];
+    const hasLogo = imageUrls.some((u) => cos.isBundledLogo(u));
+    const ownCount = imageUrls.filter((u) => !cos.isBundledLogo(u)).length;
+    const $set = {
+      tittle: guard.toText(data.tittle),
+      main: guard.toText(data.main),
+      photoTime: guard.clampDate(data.photoTime), // 缺省/未来日期钳制到今天
+      relative: guard.toText(data.relative),
+      photoNum: ownCount, // 数字，不做文本兜底
+      // 逐图日期数组（与编辑区当前图片顺序一一对应）：保存后再次编辑仍能回填逐图日期
+      photoDates: photoTime.exportPhotoDates(this, imageUrls),
+    };
+    // 官方推文：保留 official 标记、按编辑区图片重算 officialLogo、记录编辑人/编辑时间。
+    // 归属规则：标为官方即清掉个人 openid，author/authorImg 归属官方账号（与 addOfficial 一致）
+    if (data.official || hasLogo) {
+      $set.official = true;
+      $set.officialLogo = hasLogo;
+      $set.authorId = ''; // 官方推文不携带个人 openid
+      $set.author = '北理珠关爱部';
+      $set.authorImg = cos.BUNDLED_LOGO;
+      if (app.globalData.isAdministrator) {
+        $set.editBy = guard.toText(app.globalData.Administrator || (app.globalData.userInfo || {}).nickName || '');
+        $set.editTime = new Date();
+      }
+    }
     return db.updateOne(
       'Page',
       { _id: data._id },
-      {
-        $set: {
-          tittle: guard.toText(data.tittle),
-          main: guard.toText(data.main),
-          photoTime: guard.clampDate(data.photoTime), // 缺省/未来日期钳制到今天
-          relative: guard.toText(data.relative),
-          photoNum: this.data.imageUrls.length, // 数字，不做文本兜底
-        },
-      }
+      { $set: $set }
     ).then(() => {
       this._submitting = false;
       draft.clearDraft(this, this._draftType, this._draftId); // 提交成功 → 清掉草稿
@@ -417,9 +531,13 @@ Page({
         return;
       }
       // 1) 照片：编辑区里的存档 URL → 服务端复制回正式 key；新增本地图直接上传。
-      //    oldKeys 传空：恢复只做"新增/覆盖"，不做旧图清理，绝不多删
+      //    oldKeys 传空：恢复只做"新增/覆盖"，不做旧图清理，绝不多删。
+      //    包内 logo 不走 COS：过滤掉后自有图按"跳过 logo 的序号"从 0 起对账
+      const imageUrls = Array.isArray(this.data.imageUrls) ? this.data.imageUrls : [];
+      const ownUrls = imageUrls.filter((u) => !cos.isBundledLogo(u));
+      const hasLogo = imageUrls.length !== ownUrls.length;
       await cos.reconcileImages({
-        imageUrls: this.data.imageUrls,
+        imageUrls: ownUrls,
         newKey: (i) => cos.pageJpg(tittle, i),
         oldKeys: [],
         urlToKey: cos.keyFromUrl,
@@ -427,18 +545,36 @@ Page({
       // 2) 重建 Page 记录（作者字段原值写回；commendId 缺失则新生成，评论丢失记录在案）
       const doc = {
         author: guard.toText(data.author || (app.globalData.userInfo || {}).nickName || ''),
-        authorId: data.authorId || (app.globalData.userInfo || {}).userId || '',
+        // 原值缺失时才兜底，且以登录态优先（防恢复操作把操作者/他人 openid 当原作者的错乱）
+        authorId: data.authorId || app.globalData.userId || (app.globalData.userInfo || {}).userId || '',
         authorImg: data.authorImg || '',
         tittle: tittle,
         main: guard.toText(data.main),
         photoTime: guard.clampDate(data.photoTime),
         relative: guard.toText(data.relative),
-        photoNum: this.data.imageUrls.length,
+        photoNum: ownUrls.length,
+        // 逐图日期数组（与恢复后的图片顺序一一对应）：恢复进正式库后再次编辑仍能回填逐图日期
+        photoDates: photoTime.exportPhotoDates(this, imageUrls),
         // 兜底生成 commendId，但不能为 0（falsy 会导致评论加载跳过）
         commendId: data.commendId != null ? data.commendId : (Math.floor(Math.random() * 9999999999) + 1),
         good: data.good || 0,
         pageTime: data.pageTime || new Date(),
       };
+      // 官方推文：恢复时保留 official 标记与编辑人/编辑时间，并按编辑区图片重算 officialLogo。
+      // 归属规则：官方推文不留个人 openid，author/authorImg 归属官方账号（与 addOfficial 一致）
+      if (data.official || hasLogo) {
+        doc.official = true;
+        doc.officialLogo = hasLogo;
+        doc.authorId = ''; // 官方推文不携带个人 openid
+        doc.author = '北理珠关爱部';
+        doc.authorImg = cos.BUNDLED_LOGO;
+        if (data.editBy) doc.editBy = data.editBy;
+        if (data.editTime) doc.editTime = data.editTime;
+        if (app.globalData.isAdministrator) {
+          doc.editBy = guard.toText(app.globalData.Administrator || (app.globalData.userInfo || {}).nickName || '');
+          doc.editTime = new Date();
+        }
+      }
       await db.insertOne('Page', doc);
       // 3) 删除 Delete 存档记录（防止重复恢复）
       await db.deleteOne(DELETE_COLLECTION, { _id: this._recoverRec._id });
@@ -467,7 +603,9 @@ Page({
     const tittle = this.data.listData.tittle;
     const beforeTittle = this.data.beforeTittle;
     const oldCount = this.data.oldPhotoNum;
-    const imageUrls = this.data.imageUrls;
+    // 包内 logo 不走 COS：对账前过滤掉（图片区里 logo 可能是首张或混在中间，
+    // 过滤后自有图按"跳过 logo 的序号"从 0 起对账，保证 pageUrl(tittle,0..N-1) 命中）
+    const imageUrls = this.data.imageUrls.filter((u) => !cos.isBundledLogo(u));
 
     const oldKeys = [];
     for (let i = 0; i < oldCount; i++) {
@@ -587,19 +725,24 @@ Page({
       return;
     }
     const f = d.data;
-    // 1) 文字回填（标题、正文、拍摄时间、话题）
+    // 1) 文字回填（标题、正文、拍摄时间、话题；官方推文标记原样保留）
     this.setData({
       listData: Object.assign({}, this.data.listData, {
         tittle: f.tittle,
         main: f.main,
         photoTime: f.photoTime,
         relative: f.relative,
+        official: f.official || false,
+        officialLogo: !!f.officialLogo,
       }),
     });
     // 2) 照片回填：有照片快照则换成存档目录 URL；某张存档缺失（复制失败）时
-    //    回退到正式 key 的 URL，保证图片区不出现破图
+    //    回退到正式 key 的 URL，保证图片区不出现破图。
+    //    官方推文：首张为包内 logo（不上传），其后是存档里的自有图。
+    //    无照片快照 → 保持当前图片区不动（原行为；官方推文的 logo 本就在 imageUrls 里）
+    const urls = [];
+    if (f.officialLogo) urls.push(cos.BUNDLED_LOGO);
     if (d.photoArchive && Array.isArray(d.photoKeys) && d.photoKeys.length) {
-      const urls = [];
       for (let i = 0; i < d.photoKeys.length; i++) {
         const key = d.photoKeys[i];
         const archiveK = cos.archiveKey(d.photoArchive, key);

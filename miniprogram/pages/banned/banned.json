@@ -1,4 +1,6 @@
 {
   "navigationBarTitleText": "访问受限",
-  "usingComponents": {}
+  "usingComponents": {
+    "privacy-popup": "/components/privacy-popup/privacy-popup"
+  }
 }

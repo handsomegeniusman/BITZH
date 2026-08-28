@@ -86,6 +86,14 @@
   width: 100%;
 }
 
+/* 昵称含禁用词（官方/北理珠关爱部等仿冒词）的提示：允许换行，不裁剪 */
+.tip-message-forbid {
+  min-height: 40rpx;
+  color: red;
+  font-size: 28rpx;
+  line-height: 1.4;
+}
+
   
 
 .input-field {

@@ -14,7 +14,7 @@
 <view class="head1">
   <text user-select="true">名字</text><text class="req-star">*</text>
 </view>
-<input data-key='name' bindinput="inputText" bindblur="onNameBlur" class="edit-input {{formErrors.name ? 'input-error' : ''}}" value="{{cat.name}}" />
+<input data-key='name' bindinput="inputText" show-confirm-bar="{{false}}" bindblur="onNameBlur" class="edit-input {{formErrors.name ? 'input-error' : ''}}" value="{{cat.name}}" />
 <view class="field-error" wx:if="{{formErrors.name}}">名字为必填项，请填写</view>
 <view class="name-warn" wx:if="{{nameDuplicate}}">{{nameDuplicate}}</view>
 <view class="deleted-restore-tip" wx:if="{{deletedRestoreTip}}">{{deletedRestoreTip}}</view>
@@ -22,17 +22,17 @@
 <view class="head1">
   <text user-select="true">别名 / 外号</text>
 </view>
-<input data-key='otherName' bindinput="inputText" class="edit-input" value="{{cat.otherName}}" placeholder="多个用空格或逗号分隔，如：猫哥 小奶猫" />
+<input data-key='otherName' bindinput="inputText" show-confirm-bar="{{false}}" class="edit-input" value="{{cat.otherName}}" placeholder="多个用空格或逗号分隔，如：猫哥 小奶猫" />
 
 <view class="head1">
   <text user-select="true">曾用名</text>
 </view>
-<input data-key='usedName' bindinput="inputText" class="edit-input" value="{{cat.usedName}}" placeholder="多个用空格或逗号分隔，如：黄条子" />
+<input data-key='usedName' bindinput="inputText" show-confirm-bar="{{false}}" class="edit-input" value="{{cat.usedName}}" placeholder="多个用空格或逗号分隔，如：黄条子" />
 
 <view class="head1">
   <text user-select="true">外貌</text>
 </view>
-<input data-key='appearance' bindinput="inputText" class="edit-input" value="{{cat.appearance}}" />
+<input data-key='appearance' bindinput="inputText" show-confirm-bar="{{false}}" class="edit-input" value="{{cat.appearance}}" />
 
 <view class="head1">
   <text user-select="true">毛色分类</text>
@@ -46,7 +46,7 @@
 <view class="head1">
   <text user-select="true">毛色</text>
 </view>
-<input data-key='furColor' bindinput="inputText" class="edit-input" value="{{cat.furColor}}" />
+<input data-key='furColor' bindinput="inputText" show-confirm-bar="{{false}}" class="edit-input" value="{{cat.furColor}}" />
 
 <view class="head1">
   <text user-select="true">性别</text>
@@ -96,12 +96,12 @@
 <view class="head1">
   <text user-select="true">出没地点</text>
 </view>
-<input data-key='location' bindinput="inputText" class="edit-input" value="{{cat.location}}" />
+<input data-key='location' bindinput="inputText" show-confirm-bar="{{false}}" class="edit-input" value="{{cat.location}}" />
 
 <view class="head1">
   <text user-select="true">出生时间</text>
 </view>
-<input data-key='birthTime' bindinput="inputText" class="edit-input" value="{{cat.birthTime}}" />
+<input data-key='birthTime' bindinput="inputText" show-confirm-bar="{{false}}" class="edit-input" value="{{cat.birthTime}}" />
 
 <view class="head1">
   <text user-select="true">性格</text>
@@ -115,12 +115,12 @@
 <view class="head1">
   <text user-select="true">第一次目击时间</text>
 </view>
-<input data-key='firstSightingTime' bindinput="inputText" class="edit-input" value="{{cat.firstSightingTime}}" />
+<input data-key='firstSightingTime' bindinput="inputText" show-confirm-bar="{{false}}" class="edit-input" value="{{cat.firstSightingTime}}" />
 
 <view class="head1">
   <text user-select="true">第一次目击地点</text>
 </view>
-<input data-key='firstSightingLocation' bindinput="inputText" class="edit-input" value="{{cat.firstSightingLocation}}" />
+<input data-key='firstSightingLocation' bindinput="inputText" show-confirm-bar="{{false}}" class="edit-input" value="{{cat.firstSightingLocation}}" />
 
 <view class="head1">
   <text user-select="true">失踪时间</text>
@@ -152,22 +152,22 @@
 <view class="head1">
   <text user-select="true">离世原因</text>
 </view>
-<input data-key='deathReason' bindinput="inputText" class="edit-input" value="{{cat.deathReason}}" />
+<input data-key='deathReason' bindinput="inputText" show-confirm-bar="{{false}}" class="edit-input" value="{{cat.deathReason}}" />
 
 <view class="head1">
   <text user-select="true">名字来源</text>
 </view>
-<input data-key='namereason' bindinput="inputText" class="edit-input" value="{{cat.namereason}}" />
+<input data-key='namereason' bindinput="inputText" show-confirm-bar="{{false}}" class="edit-input" value="{{cat.namereason}}" />
 
 <view class="head1">
   <text user-select="true">更多</text>
 </view>
-<input data-key='moreInformation' bindinput="inputText" class="edit-input" value="{{cat.moreInformation}}" />
+<input data-key='moreInformation' bindinput="inputText" show-confirm-bar="{{false}}" class="edit-input" value="{{cat.moreInformation}}" />
 
 <view class="head1">
   <text user-select="true">关系</text>
 </view>
-<input data-key='relationship' bindinput="inputText" class="edit-input" value="{{cat.relationship}}" />
+<input data-key='relationship' bindinput="inputText" show-confirm-bar="{{false}}" class="edit-input" value="{{cat.relationship}}" />
 
 <view class="head1">
   <text user-select="true">相关猫咪关系</text>
@@ -206,3 +206,9 @@
 <view class="bottom-bar">
   <button class="bar-btn primary reset-margin" bindtap="upload">确定提交</button>
 </view>
+
+<!-- 跟随键盘的「完成」栏：键盘弹起时提供一键收起（部分输入法没有收起键） -->
+<kb-done-bar/>
+
+<!-- 隐私授权弹窗（相册/相机选图前按需弹出，含原生 agreePrivacyAuthorization 按钮） -->
+<privacy-popup id="privacyPopup" desc="需要你的授权，才能从相册或相机中选择图片。是否同意？"/>

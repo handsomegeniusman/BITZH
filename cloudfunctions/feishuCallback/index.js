@@ -12,9 +12,10 @@
  *   封禁用户 → 封禁该用户（作者，软删其全部内容 + 拉黑）
  *   解封     → 解封该帖子（恢复单条内容；无帖子ID时提示「已被删除」）
  *   解封帖子 → 解封该帖子
- *   解封用户 → 解封该用户（恢复其内容可见 + 移出黑名单）
+ *   解封用户 → 解除该用户黑名单（账号可再发帖，内容保持隐藏）
+ *   全部解封 → 解除黑名单 + 恢复该用户全部内容（显式全量恢复，防误触）
  *   拉黑用户 → 永久拉黑该用户（全场景可用；标记 BlackNum.permanent，不再受理申诉）
- *   也兼容旧用法：私聊机器人发「封禁 <openid>」/「解封 <openid>」/「拉黑用户 <openid>」。
+ *   也兼容旧用法：私聊机器人发「封禁 <openid>」/「解封 <openid>」/「全部解封 <openid>」/「拉黑用户 <openid>」。
  *
  * 【实现：评论区只写「封禁」不带 openid，机器人怎么知道封谁？】
  *   1. 飞书回复消息带 root_id（指向被回复的那条推送）。
@@ -32,13 +33,17 @@ const crypto = require('crypto');
 const https = require('https');
 const { URL } = require('url');
 
-// ===== 飞书配置（全部走环境变量，代码不硬编码真实值，防误提交泄露）=====
-const FEISHU_VERIFICATION_TOKEN = process.env.FEISHU_VERIFICATION_TOKEN || '';
-const FEISHU_APP_ID = process.env.FEISHU_APP_ID || ''; // 应用凭证页 cli_xxx
-const FEISHU_APP_SECRET = process.env.FEISHU_APP_SECRET || ''; // 应用凭证页 secret
+// ===== 飞书配置（优先控制台环境变量 process.env；EMAS 无环境变量入口时用随函数部署的 config.js 兜底）=====
+let CFG = {};
+try { CFG = require('./config.js') || {}; } catch (e) { /* 无 config.js 时忽略 */ }
+function getCfg(name) { return process.env[name] || CFG[name] || ''; }
+
+const FEISHU_VERIFICATION_TOKEN = getCfg('FEISHU_VERIFICATION_TOKEN');
+const FEISHU_APP_ID = getCfg('FEISHU_APP_ID'); // 应用凭证页 cli_xxx
+const FEISHU_APP_SECRET = getCfg('FEISHU_APP_SECRET'); // 应用凭证页 secret
 // 通知群机器人 webhook（回复失败/无消息可回复时的回退通道）
-const FEISHU_WEBHOOK_URL = process.env.FEISHU_WEBHOOK_URL || '';
-const FEISHU_WEBHOOK_SECRET = process.env.FEISHU_WEBHOOK_SECRET || '';
+const FEISHU_WEBHOOK_URL = getCfg('FEISHU_WEBHOOK_URL');
+const FEISHU_WEBHOOK_SECRET = getCfg('FEISHU_WEBHOOK_SECRET');
 
 // ---- tenant_access_token 缓存（single-flight）----
 let tokenCache = { token: null, expireAt: 0 };
@@ -144,6 +149,16 @@ function extractOpenid(text) {
   return '';
 }
 
+/** 从推送原文解析「举报人ID」（【举报】推送里的「举报人ID：xxx」行）。
+ *  「封禁举报人」命令专用：与 extractOpenid 相互独立（extractOpenid 匹配「被举报人ID」），
+ *  避免「封禁用户」误封到举报人。
+ *  注意必须行首锚定（/m）：「举报人ID」是「被举报人ID」的后缀子串，否则会误匹配到被举报人。 */
+function extractReporterId(text) {
+  const s = String(text || '');
+  const m = s.match(/^举报人ID[：:]\s*(\S+)/m);
+  return (m && m[1]) ? m[1].trim() : '';
+}
+
 /** 从推送原文解析「类型 + 目标ID」（封禁/解封帖子用） */
 function extractTarget(text) {
   const s = String(text || '');
@@ -159,11 +174,13 @@ function extractTarget(text) {
   return { type: type, id: (im && im[1]) ? im[1].trim() : '' };
 }
 
-/** 从推送原文判断场景：申诉 / 举报 / 审核（默认） */
+/** 从推送原文判断场景：申诉 / 举报 / 审核（默认）。
+ *  只看第一行标题，避免正文内容误含「【申诉】/【举报】」字样导致误判场景。 */
 function detectContext(text) {
   const s = String(text || '');
-  if (s.indexOf('【申诉】') >= 0) return 'appeal';
-  if (s.indexOf('【举报】') >= 0) return 'report';
+  const firstLine = (s.split('\n')[0] || s).trim();
+  if (firstLine.indexOf('【申诉】') >= 0) return 'appeal';
+  if (firstLine.indexOf('【举报】') >= 0) return 'report';
   return 'review';
 }
 
@@ -186,9 +203,18 @@ function resolveAction(cmd, context, parentText) {
   if (verb === 'ban') {
     const obj = object || 'post'; // 裸「封禁」= 封禁帖子
     if (obj === 'user') {
-      if (context === 'appeal') return { error: '❌ 该用户已被封禁，如需永久拒绝请回复「拉黑用户」' };
+      // 2026-08-28 用户要求：回「封禁用户」一律直接封禁（申诉人可能本就不在黑名单里，不拒绝）
       const userId = cmd.userId || extractOpenid(parentText);
       return userId ? { action: 'ban', userId: userId } : { error: '❌ 未能解析出用户ID' };
+    }
+    if (obj === 'reporter') {
+      // 2026-08-28 「封禁举报人」：封禁提交举报的用户（恶意/滥用举报）。
+      // 只从【举报】推送的「举报人ID」行解析；extractReporterId 与 extractOpenid 相互独立，
+      // 保证「封禁用户」仍解析「被举报人ID」、不会误封到举报人。
+      const reporterId = cmd.userId || extractReporterId(parentText);
+      return reporterId
+        ? { action: 'ban', userId: reporterId, reason: '举报人滥用举报被封禁' }
+        : { error: '❌ 未能解析出举报人ID（仅举报推送可回复「封禁举报人」）' };
     }
     const t = extractTarget(parentText);
     if (!t.id) {
@@ -200,13 +226,19 @@ function resolveAction(cmd, context, parentText) {
   if (verb === 'unban') {
     const obj = object || 'post'; // 裸「解封」= 解封帖子
     if (obj === 'user') {
+      // 「解封用户」只解除黑名单（账号可再发帖），内容保持隐藏；要恢复全部内容需显式「全部解封」
+      const userId = cmd.userId || extractOpenid(parentText);
+      return userId ? { action: 'unblacklist', userId: userId } : { error: '❌ 未能解析出用户ID' };
+    }
+    if (obj === 'all') {
+      // 「全部解封」= 解除黑名单 + 恢复该用户全部内容（显式全量恢复，防误触）
       const userId = cmd.userId || extractOpenid(parentText);
       return userId ? { action: 'unban', userId: userId } : { error: '❌ 未能解析出用户ID' };
     }
     const t = extractTarget(parentText);
     if (!t.id) {
       return context === 'appeal'
-        ? { error: '❌ 该帖子已被删除，解封失败（申诉请回复「解封用户」）' }
+        ? { error: '❌ 该帖子已被删除，解封失败（申诉请回复「解封用户」或「全部解封」）' }
         : { error: '❌ 该帖子已被删除' };
     }
     return { action: 'restore', targetType: t.type, targetId: t.id };
@@ -229,10 +261,14 @@ function parseCommand(content) {
   if (m) return { verb: 'unban', object: 'user', userId: m[1] };
   m = c.match(/^拉黑用户\s+(o[A-Za-z0-9_-]{10,})$/);
   if (m) return { verb: 'reject', object: 'user', userId: m[1] };
+  m = c.match(/^全部解封\s+(o[A-Za-z0-9_-]{10,})$/);
+  if (m) return { verb: 'unban', object: 'all', userId: m[1] };
   if (c === '封禁用户') return { verb: 'ban', object: 'user' };
+  if (c === '封禁举报人') return { verb: 'ban', object: 'reporter' };
   if (c === '封禁帖子') return { verb: 'ban', object: 'post' };
   if (c === '解封用户') return { verb: 'unban', object: 'user' };
   if (c === '解封帖子') return { verb: 'unban', object: 'post' };
+  if (c === '全部解封') return { verb: 'unban', object: 'all' };
   if (c === '拉黑用户') return { verb: 'reject', object: 'user' };
   if (c === '封禁') return { verb: 'ban', object: null };   // 裸封禁 → 帖子
   if (c === '解封') return { verb: 'unban', object: null }; // 裸解封 → 帖子
@@ -297,17 +333,101 @@ async function fetchMessageText(token, messageId) {
   return (item.body && item.body.content) || '';
 }
 
-/** fire-and-forget 触发 moderate（确认消息由 moderate 完成后自行回发到评论区） */
-function fireModerate(ctx, params) {
-  try {
-    const p = ctx.mpserverless.function.invoke('moderate', params);
-    if (p && typeof p.catch === 'function') {
-      p.catch(function (e) {
-        console.error('[feishuCallback] 触发 moderate 失败', e && e.message);
-      });
+// ---- 幂等去重（防飞书超时重试 / 网络抖动对同一事件重复执行）----
+// 内存去重表：同一 message_id 在窗口内只处理一次（moderate 侧另有持久化去重兜底跨实例）
+const DEDUP_MAX = 500;          // 去重表上限，超过清理最旧，防内存无界增长
+const DEDUP_WINDOW_MS = 5000;   // 同一事件去重窗口（5 秒，覆盖飞书即时重试）
+const DEDUP_CMD_MS = 30000;     // 相同指令内容去重窗口（30 秒：同一命令发两次 → 第二次只回执「重复指令」）
+const MODERATE_AWAIT_MS = 8000; // await moderate 的最长等待：正常秒级内完成，此值只防飞书回调超时重试
+const dedupSeen = {};           // key -> 最近处理时间戳(ms)
+
+function dedupKeyOf(messageId, params) {
+  const mid = String(messageId || '').trim();
+  if (mid) return 'msg:' + mid;
+  return 'op:' + JSON.stringify(params || {});
+}
+
+/** 窗口内已处理 → true；否则登记本次时间戳并返回 false；windowMs 缺省用 DEDUP_WINDOW_MS */
+function dedupCheck(key, windowMs) {
+  const now = Date.now();
+  const win = (typeof windowMs === 'number' && windowMs > 0) ? windowMs : DEDUP_WINDOW_MS;
+  const last = dedupSeen[key];
+  if (last && now - last < win) return true;
+  dedupSeen[key] = now;
+  const keys = Object.keys(dedupSeen);
+  if (keys.length > DEDUP_MAX) {
+    keys.slice(0, Math.floor(DEDUP_MAX / 2)).forEach(function (k) { delete dedupSeen[k]; });
+  }
+  return false;
+}
+
+/** 给 promise 包一层超时：ms 内未完成即 resolve，避免等待提示回发阻塞主流程 */
+function withTimeout(p, ms) {
+  return Promise.race([
+    Promise.resolve(p).catch(function () {}),
+    new Promise(function (resolve) { setTimeout(resolve, ms); }),
+  ]);
+}
+
+/** 诊断：moderate 执行过慢（>5s）时推群里一条，正常只记 console（用户看不到云函数日志，只能看群） */
+function diagSlow(action, t0) {
+  const elapsed = Date.now() - t0;
+  if (elapsed > 5000) {
+    console.warn('[feishuCallback] moderate 执行耗时过长:', elapsed + 'ms', action);
+    confirmPush('⚠️ 诊断：' + (action || '?') + ' 执行耗时 ' + (elapsed / 1000).toFixed(1) + 's');
+  }
+}
+
+/** 等待 moderate 完成（上限 MODERATE_AWAIT_MS 保护飞书回调不超时重试），并做耗时 + 失败诊断 */
+async function fireModerateAndDiag(ctx, params, messageId) {
+  const t0 = Date.now();
+  const r = await withTimeout(fireModerate(ctx, params, messageId), MODERATE_AWAIT_MS);
+  diagSlow((params && params.action) || '?', t0);
+  const action = (params && params.action) || '?';
+  // 诊断：invoke 失败 / moderate 返回失败时推群里（用户看不到云函数日志，只能看群）
+  if (r === null) {
+    console.error('[feishuCallback] 触发 moderate 失败（已重试 1 次）:', action);
+    confirmPush('❌ 诊断：未能触发 moderate（' + action + '），请检查 moderate 云函数是否已部署');
+  } else if (r && typeof r === 'object' && r.ok === false) {
+    console.error('[feishuCallback] moderate 返回失败:', action, r.msg);
+    confirmPush('❌ 诊断：moderate 执行失败（' + action + '）：' + (r.msg || '未知'));
+  }
+}
+
+/**
+ * 触发并等待 moderate 执行审核指令。
+ * 早期版本是 fire-and-forget（不 await），但 EMAS 里 invoke 在 handler 返回后会悬挂/冻结，
+ * moderate 迟迟不执行 → 表现为「⏳ 秒回、✅ 却要几分钟甚至第二次/第三次发送才来」。
+ * 现改为 await：moderate 已改为一次 updateMany（封禁秒级），await 不会触发飞书超时重试；
+ * 同指令 30s 内容去重 + moderate 侧 opId 持久化幂等兜底，飞书重试也不会重复执行。
+ * 注：不再回发「⏳ 已收到指令」即时提示（处理已足够快，结果由 moderate 回发 ✅/❌）。
+ */
+async function fireModerate(ctx, params, messageId) {
+  const opId = String(messageId || '').trim();
+  const dedupKey = dedupKeyOf(opId, params);
+  if (dedupCheck(dedupKey)) {
+    console.log('[feishuCallback] 该指令已处理过，跳过重复触发:', opId || dedupKey);
+    return 'skip'; // 区分「已去重」与「触发失败」两种空返回
+  }
+
+  const invokeParams = Object.assign({}, params);
+  if (opId) invokeParams.opId = opId; // 透传给 moderate 做持久化幂等
+  return await invokeModerate(ctx, invokeParams);
+}
+
+/** 调用 moderate 并 await 完成。调用失败时自动重试 1 次；配合 moderate 侧 opId 幂等，重试不重复执行。 */
+async function invokeModerate(ctx, params) {
+  let tries = 0;
+  const MAX = 2; // 首次 + 1 次重试
+  for (;;) {
+    tries++;
+    try {
+      return await ctx.mpserverless.function.invoke('moderate', params);
+    } catch (e) {
+      console.error('[feishuCallback] 触发 moderate 失败' + (tries > 1 ? '（第' + tries + '次）' : ''), e && e.message);
+      if (tries >= MAX) return null;
+      await new Promise(function (resolve) { setTimeout(resolve, 1500); });
     }
-  } catch (e) {
-    console.error('[feishuCallback] 触发 moderate 失败', e && e.message);
   }
 }
 
@@ -353,6 +473,17 @@ module.exports = async function (ctx) {
   }
 
   const message = event.message || {};
+  // 只处理真实用户发来的消息；机器人（自定义机器人 webhook 推送、应用自己发的评论回复）触发的回调
+  // 一律静默忽略，否则会形成「机器人回复 → 回调 → 再回复」的自言自语循环：
+  // 🛠 诊断 / ✅ 回执 / ⚠️ 重复指令回执都会被当成新评论解析出「未识别」或再次触发去重回执。
+  // sender_type 缺失时放行（兼容旧事件格式），只有明确是 app/机器人时才忽略。
+  const senderType = (event.sender && event.sender.sender_type) || '';
+  if (senderType && senderType !== 'user') {
+    console.log('[feishuCallback] 忽略非用户消息 sender_type=' + senderType);
+    return { code: 0 };
+  }
+  // 调试：把 chat_id 打进日志，方便从云函数日志里拿到「通知群 chat_id」（机器人入群后在群里 @它即可看到）
+  if (message.chat_id) console.log('[feishuCallback] chat_id =', message.chat_id);
   const text = cleanText(parseContentText(message.content));
   const fromUser = (event.sender && event.sender.sender_id &&
     (event.sender.sender_id.open_id || event.sender.sender_id.user_id || event.sender.sender_id.union_id)) || '';
@@ -360,13 +491,24 @@ module.exports = async function (ctx) {
   const cmd = parseCommand(text);
   if (!cmd) {
     console.log('[feishuCallback] 未识别:', text);
-    await respond(message, '⚠️ 未识别：「' + text + '」（来自 ' + fromUser + '）\n可用：封禁 / 封禁帖子 / 封禁用户 / 解封 / 解封帖子 / 解封用户 / 拉黑用户');
+    await respond(message, '⚠️ 未识别：「' + text + '」（来自 ' + fromUser + '）\n可用：封禁 / 封禁帖子 / 封禁用户 / 封禁举报人 / 解封 / 解封帖子 / 解封用户 / 拉黑用户');
     return { code: 0 };
   }
 
-  // 私聊带 openid 的旧用法：封禁 <openid> / 解封 <openid>
+  // 重复指令识别：同一命令内容 + 同一会话在窗口内重复出现 → 只回执、不重复触发执行
+  //（区别于 fireModerate 按 message_id 去重：两次发送 message_id 不同，但命令内容相同）
+  const sessionKey = message.root_id || message.parent_id || 'dm';
+  const cmdDedupKey = 'cmd:' + text + '|' + sessionKey;
+  if (dedupCheck(cmdDedupKey, DEDUP_CMD_MS)) {
+    console.log('[feishuCallback] 重复指令，仅回执:', text);
+    await respond(message, '⚠️ 收到相同指令，已在执行中，不重复处理');
+    return { code: 0 };
+  }
+
+  // 处理已足够快（await moderate 秒级完成）：不再回发「⏳ 已收到指令」，直接执行，结果由 moderate 回发
+  // 私聊带 openid 的旧用法：封禁 <openid> / 解封 <openid>（message_id 作为幂等 opId）
   if (cmd.userId) {
-    fireModerate(ctx, { action: cmd.verb, userId: cmd.userId, reason: '飞书指令', confirm: true, replyTo: message.message_id || '' });
+    await fireModerateAndDiag(ctx, { action: cmd.verb, userId: cmd.userId, reason: '飞书指令', confirm: true, replyTo: message.message_id || '' }, message.message_id || '');
     return { code: 0 };
   }
 
@@ -385,8 +527,12 @@ module.exports = async function (ctx) {
     console.error('[feishuCallback] 回读父消息失败', e && e.message);
   }
 
-  const resolved = resolveAction(cmd, detectContext(parentText), parentText);
+  const context = detectContext(parentText);
+  const resolved = resolveAction(cmd, context, parentText);
   if (resolved.error) {
+    // 诊断：被拒原因 + 回读到的父推送 + 场景推群里，便于核对是否回错推送/误判场景
+    await confirmPush('🔍 诊断：指令「' + text + '」→ 场景=' + context + '，被拒绝：' + resolved.error +
+      '\n父推送（前120字）：\n' + String(parentText || '(回读为空)').slice(0, 120));
     await respond(message, resolved.error);
     return { code: 0 };
   }
@@ -397,7 +543,16 @@ module.exports = async function (ctx) {
     replyTo: message.message_id || '',
   }, resolved);
 
-  // 异步解耦：立即 ack 飞书，实际操作 + 评论区确认在 moderate 独立实例完成
-  fireModerate(ctx, params);
+  // await moderate 完成（已改为秒级）：不挂后台、不排队，飞书回调在上限内拿到 ack；
+  // message_id 作为幂等 opId，同指令 30s 内容去重 + moderate 侧 opId 幂等共同兜底
+  await fireModerateAndDiag(ctx, params, message.message_id || '');
   return { code: 0 };
 };
+
+// ---- 导出纯解析函数，供本地测试 / 后续复用（云函数入口仍是上面的 async function）----
+module.exports.parseCommand = parseCommand;
+module.exports.resolveAction = resolveAction;
+module.exports.detectContext = detectContext;
+module.exports.extractTarget = extractTarget;
+module.exports.extractOpenid = extractOpenid;
+module.exports.extractReporterId = extractReporterId;

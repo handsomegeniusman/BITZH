@@ -259,6 +259,9 @@
   background: #fff;
   border-radius: 24rpx;
   box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.03);
+  /* F2.1：margin-top 过渡与图片区缩图动画同长同缓动（0.3s ease-out），
+     聚焦时"缩图 + 去间隙"同步完成、失焦时同步还原 */
+  transition: margin-top 0.3s ease-out;
 }
 /* 聚焦输入时图片区缩小，白卡片上移并收紧与图片区的空隙（避免留一大块空白） */
 .form-card.is-compact {

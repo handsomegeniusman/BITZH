@@ -1,0 +1,206 @@
+/* 用户管理 / 黑名单页样式 */
+.root {
+  padding: 24rpx;
+  box-sizing: border-box;
+}
+
+/* ---------- 搜索区 ---------- */
+.search-bar {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  background: #fff;
+  border-radius: 16rpx;
+  padding: 16rpx;
+  margin-bottom: 24rpx;
+}
+
+.search-input {
+  flex: 1;
+  font-size: 28rpx;
+  padding: 8rpx 16rpx;
+  background: #f5f5f5;
+  border-radius: 8rpx;
+}
+
+.search-btn {
+  flex-shrink: 0;
+  background: #FF405E;
+  color: #fff;
+  border-radius: 8rpx;
+}
+
+/* ---------- 通用卡片 / 空态 ---------- */
+.card {
+  background: #fff;
+  border-radius: 16rpx;
+  padding: 24rpx;
+  margin-bottom: 24rpx;
+}
+
+.empty {
+  text-align: center;
+  color: #999;
+  font-size: 28rpx;
+  padding: 80rpx 0;
+}
+
+.empty.small {
+  padding: 24rpx 0;
+  font-size: 24rpx;
+}
+
+.section-title {
+  font-size: 28rpx;
+  font-weight: bold;
+  color: #333;
+  margin: 8rpx 0 16rpx;
+}
+
+/* ---------- 用户头部（头像 + 昵称 + openid + 状态） ---------- */
+.user-head {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+}
+
+.user-avatar {
+  width: 88rpx;
+  height: 88rpx;
+  border-radius: 50%;
+  background: #f0f0f0;
+  flex-shrink: 0;
+}
+
+.user-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.user-name {
+  font-size: 30rpx;
+  font-weight: bold;
+  color: #333;
+  word-break: break-all;
+}
+
+.user-id {
+  font-size: 22rpx;
+  color: #999;
+  word-break: break-all;
+  margin-top: 4rpx;
+}
+
+.user-reason {
+  font-size: 22rpx;
+  color: #999;
+  margin-top: 4rpx;
+  word-break: break-all;
+}
+
+/* ---------- 黑名单状态徽标 ---------- */
+.user-status {
+  flex-shrink: 0;
+  font-size: 22rpx;
+  padding: 6rpx 14rpx;
+  border-radius: 24rpx;
+}
+
+.status-ban {
+  background: #fdeaea;
+  color: #FF405E;
+}
+
+.status-ok {
+  background: #e8f8ee;
+  color: #27ae60;
+}
+
+/* ---------- 操作行 ---------- */
+.user-actions {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin-top: 16rpx;
+  padding-top: 16rpx;
+  border-top: 1rpx solid #f2f2f2;
+}
+
+.expand-hint {
+  flex-shrink: 0;
+  font-size: 24rpx;
+  color: #FF405E;
+  margin-left: auto;
+  padding: 8rpx 4rpx; /* 扩大点击热区，方便点按 */
+}
+
+.expand-hint:active {
+  opacity: 0.5; /* 点按反馈 */
+}
+
+.btn {
+  background: #FF405E;
+  color: #fff;
+  border-radius: 8rpx;
+}
+
+.btn.small {
+  margin: 0;
+}
+
+.btn.success {
+  background: #27ae60;
+}
+
+.btn.danger {
+  background: #c0392b;
+}
+
+/* ---------- 展开的发帖列表 ---------- */
+.user-posts {
+  margin-top: 16rpx;
+  padding-top: 8rpx;
+  border-top: 1rpx solid #f2f2f2;
+}
+
+.post-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  padding: 12rpx 0;
+  border-bottom: 1rpx solid #f7f7f7;
+}
+
+.post-row:last-child {
+  border-bottom: none;
+}
+
+.post-title {
+  flex: 1;
+  font-size: 26rpx;
+  color: #333;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.post-time {
+  flex-shrink: 0;
+  font-size: 22rpx;
+  color: #999;
+}
+
+.post-badge {
+  flex-shrink: 0;
+  font-size: 20rpx;
+  color: #fff;
+  background: #999;
+  border-radius: 6rpx;
+  padding: 2rpx 8rpx;
+}
+
+.post-arrow {
+  flex-shrink: 0;
+  font-size: 28rpx;
+  color: #ccc;
+}

@@ -2,6 +2,14 @@
 <!-- 整体内容列：max-width 720px 居中，宽屏（平板/电脑）不拉伸 -->
 <view class="page-wrap">
 
+  <!-- 封禁占位：帖子被下架/封禁后，非管理入口打开全屏显示占位，遮住并替代正文 -->
+  <view wx:if="{{blocked}}" class="blocked-mask">
+    <view class="blocked-icon">🔒</view>
+    <view class="blocked-title">该帖子已被封禁</view>
+    <view class="blocked-tip">内容因违规已被下架，无法查看</view>
+    <button class="blocked-back" bindtap="goBack">返回</button>
+  </view>
+
   <!-- 顶部图片轮播：高度自适应（手机≈屏宽、宽屏由 vh 封顶），不超屏 -->
   <view class="image-container">
     <!-- 回收站预览且无照片存档：占位提示，不渲染空轮播 -->
@@ -12,7 +20,7 @@
         <swiper-item>
           <image lazy-load="true" class="item-image" src="{{item}}" mode="aspectFit" bindtap="previewImageHandler"/>
           <view class="showNum">
-            <text class="show-num-text">{{index+1}}/{{listData.photoNum}}</text>
+            <text class="show-num-text">{{index+1}}/{{imageUrls.length}}</text>
           </view>
         </swiper-item>
       </block>
@@ -75,11 +83,14 @@
   <!-- 底部评论输入栏：固定底部 + 安全区 + 宽屏居中（与评论区同级，便于评论区底部留白） -->
   <view wx:if="{{audit && !recoverMode}}" class="view-wrapper">
     <view wx:if="{{isFeeder}}" class="toComment">
-      <textarea data-key='main' bindinput="inputText" class="comment_input" auto-height="true" placeholder-class="comment-placeholder" placeholder="善语结善缘，恶语伤人心" value="{{comment}}"></textarea>
+      <textarea data-key='main' bindinput="inputText" show-confirm-bar="{{false}}" class="comment_input" auto-height="true" placeholder-class="comment-placeholder" placeholder="善语结善缘，恶语伤人心" value="{{comment}}"></textarea>
       <button bindtap="addComment" class="new-button">发送</button>
     </view>
     <view wx:else="" class="toComment">
-      <textarea data-key='main' bindinput="inputText" class="comment_input" auto-height="true" placeholder-class="comment-placeholder" placeholder="评论功能暂时下线" value="{{comment}}"></textarea>
+      <textarea data-key='main' bindinput="inputText" show-confirm-bar="{{false}}" class="comment_input" auto-height="true" placeholder-class="comment-placeholder" placeholder="注册后再评论吧" value="{{comment}}"></textarea>
     </view>
   </view>
+
+<!-- 跟随键盘的「完成」栏：键盘弹起时提供一键收起（部分输入法没有收起键） -->
+<kb-done-bar/>
 </view>

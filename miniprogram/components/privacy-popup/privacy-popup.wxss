@@ -1,0 +1,54 @@
+/* components/privacy-popup/privacy-popup.wxss */
+.pp-mask {
+  position: fixed;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2000;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.pp-modal {
+  width: 600rpx;
+  box-sizing: border-box;
+  padding: 40rpx 32rpx 32rpx;
+  background: #fff;
+  border-radius: 16rpx;
+}
+.pp-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  text-align: center;
+  margin-bottom: 20rpx;
+}
+.pp-body {
+  font-size: 28rpx;
+  color: #666;
+  line-height: 1.6;
+  margin-bottom: 32rpx;
+  text-align: center;
+}
+.pp-btns {
+  display: flex;
+  justify-content: space-between;
+}
+.pp-btn {
+  width: 250rpx;
+  margin: 0;
+  font-size: 28rpx;
+  border-radius: 8rpx;
+}
+.pp-btn::after {
+  border: none;
+}
+.pp-cancel {
+  background: #f2f2f2;
+  color: #333;
+}
+.pp-agree {
+  background: #FF405E;
+  color: #fff;
+}

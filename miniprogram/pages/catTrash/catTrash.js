@@ -22,6 +22,7 @@ Page({
 
   /** 页面加载：只有管理员可以使用回收站 */
   async onLoad() {
+    guard.ensureNotBanned();
     await db.initUserState();
     if (!guard.requireAdmin()) return;
     this.loadList();

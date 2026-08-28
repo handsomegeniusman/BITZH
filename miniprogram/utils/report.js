@@ -3,7 +3,7 @@
  * ============================================================
  * 【作用】把「用户举报违规内容」统一收口：
  *   1. 写入 Report 集合（取证留存）
- *   2. 同用户对同目标 24h 内限举报 1 次（防刷举报骚扰管理员）
+ *   2. 同用户对同目标 5 分钟内限举报 1 次（防刷举报骚扰管理员）
  *   3. 举报即下架：调 moderate 云函数（服务端按阈值软删，评论/推文都覆盖）
  *   4. 提交后复用 secCheck 云函数 notify 模式，把「被举报内容 + 下架结果」推飞书
  *
@@ -42,12 +42,12 @@ async function submitReport(p) {
   const targetId = String(p.targetId || '');
   const targetType = p.targetType === 'page' ? 'page' : 'comment';
 
-  // 同一用户对同一目标 24h 内限举报 1 次（写库前校验，防刷举报）
+  // 同一用户对同一目标 5 分钟内限举报 1 次（写库前校验，防刷举报）
   const recent = await db.find('Report', { reporterId: userId, targetId: targetId, targetType: targetType }, { limit: 20 });
   const now = Date.now();
   const dup = (recent || []).some(function (r) {
     const t = r.time ? new Date(r.time).getTime() : 0;
-    return t && (now - t) < 24 * 3600 * 1000;
+    return t && (now - t) < 5 * 60 * 1000;
   });
   if (dup) return { ok: false, reason: 'duplicate' };
 
@@ -76,8 +76,8 @@ async function submitReport(p) {
         : (td.ok ? '状态：未达阈值（暂未下架）' : '状态：⚠️ 自动下架失败，请人工在复核中心处理');
       // 帖子已自动下架 → 「封禁」只能是封用户；未下架 → 「封禁帖子」用于下架内容
       const menu = takenDown
-        ? '封禁 = 封禁该帖子\n· 封禁用户 = 封禁该用户\n· 解封 = 解封该帖子（恢复）\n· 解封用户 = 解封该用户\n· 拉黑用户 = 永久拉黑该用户'
-        : '封禁 = 封禁该帖子（下架）\n· 封禁用户 = 封禁该用户\n· 解封用户 = 解封该用户\n· 拉黑用户 = 永久拉黑该用户';
+        ? '封禁 = 封禁该帖子\n· 封禁用户 = 封禁该用户\n· 封禁举报人 = 封禁举报人（恶意举报）\n· 解封 = 解封该帖子（恢复）\n· 解封用户 = 解除黑名单\n· 全部解封 = 解除黑名单 + 恢复全部内容\n· 拉黑用户 = 永久拉黑该用户'
+        : '封禁 = 封禁该帖子（下架）\n· 封禁用户 = 封禁该用户\n· 封禁举报人 = 封禁举报人（恶意举报）\n· 解封用户 = 解除黑名单\n· 全部解封 = 解除黑名单 + 恢复全部内容\n· 拉黑用户 = 永久拉黑该用户';
       const text = '【举报】' + typeLabel +
         '\n被举报内容：' + String(p.content || '').slice(0, 120) +
         '\n被举报人ID：' + (p.targetAuthorId || '') +

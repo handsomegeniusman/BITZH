@@ -100,6 +100,17 @@ const CATEGORIES = [
     block: ['卖猫', '有偿领养', '品种猫', '繁殖', '配种', '虐猫', '打猫', '摔猫', '毒猫', '扔猫', '活埋', '猫肉', '猫皮', '猫骨'],
     review: ['偏方治疗', '土法治病', '不就医', '弃养', '转让'],
   },
+  {
+    // 仿冒官方/误导性昵称：仅 scene=1（资料/昵称）生效。
+    // 与前端 utils/guard.js 的 FORBIDDEN_NAME_WORDS 同步维护。
+    // 不放进通用词库的原因：官方/管理员/客服/运营等词在推文/评论正文里是正常用词，
+    // 只对"昵称"做拦截（scene=1），避免误伤正文。
+    key: 'impersonation',
+    label: '仿冒官方/误导性昵称',
+    scene: 1,
+    block: ['官方', '北理珠关爱部', '关爱部', '北理珠', '北理流浪猫', '管理员', '客服', '运营'],
+    review: [],
+  },
 ];
 
 /** 繁体→简体（逐字符查表，未命中保留原字符） */
@@ -148,16 +159,21 @@ function hitWords(norm, words) {
 /**
  * 匹配文本：返回命中的类别与严重度，并带调试信息（matchCostMs / normalizedText）。
  * @param {String} text 原始文本
+ * @param {Object} [opts] { scene } 场景 1=资料/昵称 2=评论 3=推文；
+ *        带 scene:1 标记的类别（如仿冒官方昵称）只在 scene=1 时生效。
  * @returns {{severity:('block'|'review'|null), category:(String|null), categoryLabel:String, keywords:String[], matchCostMs:Number, normalizedText:String}}
  */
-function match(text) {
+function match(text, opts) {
   const start = Date.now();
+  const scene = (opts && opts.scene) || 3;
   const norm = normalize(text);
   const cost = function () { return Date.now() - start; };
   const debug = { matchCostMs: cost(), normalizedText: norm.slice(0, 80) };
   if (!norm) return Object.assign({ severity: null, category: null, categoryLabel: '', keywords: [] }, debug);
   for (let i = 0; i < CATEGORIES.length; i++) {
     const cat = CATEGORIES[i];
+    // 昵称专属类别（scene:1）：只在昵称场景生效，不拦截推文/评论正文里的正常用词
+    if (cat.scene === 1 && scene !== 1) continue;
     const blockHits = hitWords(norm, cat.block);
     if (blockHits.length) {
       return Object.assign({ severity: 'block', category: cat.key, categoryLabel: cat.label, keywords: blockHits.slice(0, 5) }, debug);

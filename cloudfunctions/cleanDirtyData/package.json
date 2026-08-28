@@ -1,0 +1,7 @@
+{
+  "name": "cleanDirtyData",
+  "version": "1.0.0",
+  "description": "一次性清洗脏数据云函数（官方推文混入个人帖子的恢复），dry-run 优先，用完即删",
+  "main": "index.js",
+  "dependencies": {}
+}

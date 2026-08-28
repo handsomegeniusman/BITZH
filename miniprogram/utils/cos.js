@@ -16,6 +16,17 @@ const config = require('../config.js');
 // 这里集中生成，避免 8+ 个页面各自拼接出错。
 const ROOT = config.imageUrl; // 形如 https://.../main/images/
 
+// ============ 官方推文默认封面（包内 logo，不走 COS） ============
+// 官方推文默认用小程序包内自带的 logo 图作封面/首图，不上传到 COS：
+// 页面展示端用官方推文上的 officialLogo 标记 + 判断显示本路径；
+// 上传/对账前用 isBundledLogo 识别"这是包内图，跳过 COS 处理"（不占 photoNum）。
+const BUNDLED_LOGO = '/pages/images/logo.png';
+
+/** 判断一个图片地址是不是"包内默认 logo"（官方推文默认封面） */
+function isBundledLogo(url) {
+  return typeof url === 'string' && url.indexOf(BUNDLED_LOGO) === 0;
+}
+
 // 上传到 COS 的对象 Key（上传用）
 function catJpg(name, i) { return 'main/images/' + name + i + '.jpg'; }
 function catThumb(name) { return 'main/images/' + name + '.png'; }
@@ -488,4 +499,7 @@ module.exports = {
   catThumbUrl: catThumbUrl,
   pageUrl: pageUrl,
   profileUrl: profileUrl,
+  // 官方推文默认封面（包内 logo）
+  BUNDLED_LOGO: BUNDLED_LOGO,
+  isBundledLogo: isBundledLogo,
 };

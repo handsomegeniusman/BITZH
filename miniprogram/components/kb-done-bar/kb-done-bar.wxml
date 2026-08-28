@@ -1,0 +1,5 @@
+<!-- 跟随键盘的「完成」栏：键盘弹起时固定在键盘顶边（bottom 行内 kbH），
+     点「完成」一键收起。bindtap 冒泡到页面根节点，页面有 onPageTap 时顺带还原布局。 -->
+<view class="kdb-bar" wx:if="{{kbUp && !disabled}}" style="bottom: {{kbH}}px;">
+  <text class="kdb-done" bindtap="done">{{text}}</text>
+</view>

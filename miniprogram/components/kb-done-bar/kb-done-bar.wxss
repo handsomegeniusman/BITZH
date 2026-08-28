@@ -1,0 +1,24 @@
+/* 跟随键盘的「完成」栏：固定在键盘顶边（bottom 由行内 kbH 覆盖），
+   与正文编辑器的键盘栏（.ce-kb-bar）同款样式，右对齐一个「完成」按钮。
+   z-index 高于弹窗遮罩（del-mask 1000、公告弹层 999），确保弹层内输入时也在最上层；
+   低于首页悬浮按钮（float-image 9999），但键盘弹起时该按钮被键盘遮住，不会同时可见。 */
+.kdb-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5000;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  height: 96rpx;
+  padding: 0 40rpx;
+  box-sizing: border-box;
+  background: #fff;
+  border-top: 1rpx solid #f0e2d2;
+}
+.kdb-done {
+  font-size: 28rpx;
+  color: #333;
+  padding: 12rpx 8rpx;
+}

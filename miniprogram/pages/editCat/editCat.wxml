@@ -31,7 +31,7 @@
 <view class="head1">
   <text user-select="true">名字</text><text class="req-star">*</text>
 </view>
-<input data-key='name' bindinput="inputText" bindblur="onNameBlur" class="edit-input {{formErrors.name ? 'input-error' : ''}}" value="{{cat.name}}" />
+<input data-key='name' bindinput="inputText" show-confirm-bar="{{false}}" bindblur="onNameBlur" class="edit-input {{formErrors.name ? 'input-error' : ''}}" value="{{cat.name}}" />
 <view class="field-error" wx:if="{{formErrors.name}}">名字为必填项，请填写</view>
 <view class="name-warn" wx:if="{{nameDuplicate}}">{{nameDuplicate}}</view>
 <view wx:if="{{restoreOld.name}}" class="restore-old {{restoreApplied.name ? 'applied' : ''}}" data-key="name" bindtap="applyOld"><text>上次：{{restoreOld.name}}</text><text wx:if="{{restoreApplied.name}}" class="restore-tag">已用</text></view>
@@ -39,19 +39,19 @@
 <view class="head1">
   <text user-select="true">别名 / 外号</text>
 </view>
-<input data-key='otherName' bindinput="inputText" class="edit-input" value="{{cat.otherName}}" placeholder="多个用空格或逗号分隔，如：猫哥 小奶猫" />
+<input data-key='otherName' bindinput="inputText" show-confirm-bar="{{false}}" class="edit-input" value="{{cat.otherName}}" placeholder="多个用空格或逗号分隔，如：猫哥 小奶猫" />
 <view wx:if="{{restoreOld.otherName}}" class="restore-old {{restoreApplied.otherName ? 'applied' : ''}}" data-key="otherName" bindtap="applyOld"><text>上次：{{restoreOld.otherName}}</text><text wx:if="{{restoreApplied.otherName}}" class="restore-tag">已用</text></view>
 
 <view class="head1">
   <text user-select="true">曾用名</text>
 </view>
-<input data-key='usedName' bindinput="inputText" class="edit-input" value="{{cat.usedName}}" placeholder="多个用空格或逗号分隔，如：黄条子" />
+<input data-key='usedName' bindinput="inputText" show-confirm-bar="{{false}}" class="edit-input" value="{{cat.usedName}}" placeholder="多个用空格或逗号分隔，如：黄条子" />
 <view wx:if="{{restoreOld.usedName}}" class="restore-old {{restoreApplied.usedName ? 'applied' : ''}}" data-key="usedName" bindtap="applyOld"><text>上次：{{restoreOld.usedName}}</text><text wx:if="{{restoreApplied.usedName}}" class="restore-tag">已用</text></view>
 
 <view class="head1">
   <text user-select="true">外貌</text>
 </view>
-<input data-key='appearance' bindinput="inputText" class="edit-input" value="{{cat.appearance}}" />
+<input data-key='appearance' bindinput="inputText" show-confirm-bar="{{false}}" class="edit-input" value="{{cat.appearance}}" />
 <view wx:if="{{restoreOld.appearance}}" class="restore-old {{restoreApplied.appearance ? 'applied' : ''}}" data-key="appearance" bindtap="applyOld"><text>上次：{{restoreOld.appearance}}</text><text wx:if="{{restoreApplied.appearance}}" class="restore-tag">已用</text></view>
 
 <view class="head1">
@@ -67,7 +67,7 @@
 <view class="head1">
   <text user-select="true">毛色</text>
 </view>
-<input data-key='furColor' bindinput="inputText" class="edit-input" value="{{cat.furColor}}" />
+<input data-key='furColor' bindinput="inputText" show-confirm-bar="{{false}}" class="edit-input" value="{{cat.furColor}}" />
 <view wx:if="{{restoreOld.furColor}}" class="restore-old {{restoreApplied.furColor ? 'applied' : ''}}" data-key="furColor" bindtap="applyOld"><text>上次：{{restoreOld.furColor}}</text><text wx:if="{{restoreApplied.furColor}}" class="restore-tag">已用</text></view>
 
 <view class="head1">
@@ -116,13 +116,13 @@
 <view class="head1">
   <text user-select="true">出没地点</text>
 </view>
-<input data-key='location' bindinput="inputText" class="edit-input" value="{{cat.location}}" />
+<input data-key='location' bindinput="inputText" show-confirm-bar="{{false}}" class="edit-input" value="{{cat.location}}" />
 <view wx:if="{{restoreOld.location}}" class="restore-old {{restoreApplied.location ? 'applied' : ''}}" data-key="location" bindtap="applyOld"><text>上次：{{restoreOld.location}}</text><text wx:if="{{restoreApplied.location}}" class="restore-tag">已用</text></view>
 
 <view class="head1">
   <text user-select="true">出生时间</text>
 </view>
-<input data-key='birthTime' bindinput="inputText" class="edit-input" value="{{cat.birthTime}}" />
+<input data-key='birthTime' bindinput="inputText" show-confirm-bar="{{false}}" class="edit-input" value="{{cat.birthTime}}" />
 <view wx:if="{{restoreOld.birthTime}}" class="restore-old {{restoreApplied.birthTime ? 'applied' : ''}}" data-key="birthTime" bindtap="applyOld"><text>上次：{{restoreOld.birthTime}}</text><text wx:if="{{restoreApplied.birthTime}}" class="restore-tag">已用</text></view>
 
 <view class="head1">
@@ -138,13 +138,13 @@
 <view class="head1">
   <text user-select="true">第一次目击时间</text>
 </view>
-<input data-key='firstSightingTime' bindinput="inputText" class="edit-input" value="{{cat.firstSightingTime}}" />
+<input data-key='firstSightingTime' bindinput="inputText" show-confirm-bar="{{false}}" class="edit-input" value="{{cat.firstSightingTime}}" />
 <view wx:if="{{restoreOld.firstSightingTime}}" class="restore-old {{restoreApplied.firstSightingTime ? 'applied' : ''}}" data-key="firstSightingTime" bindtap="applyOld"><text>上次：{{restoreOld.firstSightingTime}}</text><text wx:if="{{restoreApplied.firstSightingTime}}" class="restore-tag">已用</text></view>
 
 <view class="head1">
   <text user-select="true">第一次被目击地点</text>
 </view>
-<input data-key='firstSightingLocation' bindinput="inputText" class="edit-input" value="{{cat.firstSightingLocation}}" />
+<input data-key='firstSightingLocation' bindinput="inputText" show-confirm-bar="{{false}}" class="edit-input" value="{{cat.firstSightingLocation}}" />
 <view wx:if="{{restoreOld.firstSightingLocation}}" class="restore-old {{restoreApplied.firstSightingLocation ? 'applied' : ''}}" data-key="firstSightingLocation" bindtap="applyOld"><text>上次：{{restoreOld.firstSightingLocation}}</text><text wx:if="{{restoreApplied.firstSightingLocation}}" class="restore-tag">已用</text></view>
 
 <view class="head1">
@@ -180,25 +180,25 @@
 <view class="head1">
   <text user-select="true">离世原因</text>
 </view>
-<input data-key='deathReason' bindinput="inputText" class="edit-input" value="{{cat.deathReason}}" />
+<input data-key='deathReason' bindinput="inputText" show-confirm-bar="{{false}}" class="edit-input" value="{{cat.deathReason}}" />
 <view wx:if="{{restoreOld.deathReason}}" class="restore-old {{restoreApplied.deathReason ? 'applied' : ''}}" data-key="deathReason" bindtap="applyOld"><text>上次：{{restoreOld.deathReason}}</text><text wx:if="{{restoreApplied.deathReason}}" class="restore-tag">已用</text></view>
 
 <view class="head1">
   <text user-select="true">名字来源</text>
 </view>
-<input data-key='namereason' bindinput="inputText" class="edit-input" value="{{cat.namereason}}" />
+<input data-key='namereason' bindinput="inputText" show-confirm-bar="{{false}}" class="edit-input" value="{{cat.namereason}}" />
 <view wx:if="{{restoreOld.namereason}}" class="restore-old {{restoreApplied.namereason ? 'applied' : ''}}" data-key="namereason" bindtap="applyOld"><text>上次：{{restoreOld.namereason}}</text><text wx:if="{{restoreApplied.namereason}}" class="restore-tag">已用</text></view>
 
 <view class="head1">
   <text user-select="true">更多</text>
 </view>
-<input data-key='moreInformation' bindinput="inputText" class="edit-input" value="{{cat.moreInformation}}" />
+<input data-key='moreInformation' bindinput="inputText" show-confirm-bar="{{false}}" class="edit-input" value="{{cat.moreInformation}}" />
 <view wx:if="{{restoreOld.moreInformation}}" class="restore-old {{restoreApplied.moreInformation ? 'applied' : ''}}" data-key="moreInformation" bindtap="applyOld"><text>上次：{{restoreOld.moreInformation}}</text><text wx:if="{{restoreApplied.moreInformation}}" class="restore-tag">已用</text></view>
 
 <view class="head1">
   <text user-select="true">关系</text>
 </view>
-<input data-key='relationship' bindinput="inputText" class="edit-input" value="{{cat.relationship}}" />
+<input data-key='relationship' bindinput="inputText" show-confirm-bar="{{false}}" class="edit-input" value="{{cat.relationship}}" />
 <view wx:if="{{restoreOld.relationship}}" class="restore-old {{restoreApplied.relationship ? 'applied' : ''}}" data-key="relationship" bindtap="applyOld"><text>上次：{{restoreOld.relationship}}</text><text wx:if="{{restoreApplied.relationship}}" class="restore-tag">已用</text></view>
 
 <view class="head1">
@@ -258,3 +258,9 @@
     </view>
   </view>
 </view>
+
+<!-- 跟随键盘的「完成」栏：键盘弹起时提供一键收起（部分输入法没有收起键） -->
+<kb-done-bar/>
+
+<!-- 隐私授权弹窗（相册/相机选图前按需弹出，含原生 agreePrivacyAuthorization 按钮） -->
+<privacy-popup id="privacyPopup" desc="需要你的授权，才能从相册或相机中选择图片。是否同意？"/>

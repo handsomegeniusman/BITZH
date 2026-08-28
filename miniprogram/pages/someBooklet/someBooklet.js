@@ -23,13 +23,14 @@ Page({
     name: '',                              // 作者名 / 标签名
     sanitizedName: '',                     // 清洗后的名字（用于图片 URL，防特殊字符）
     multiArray: [['拍摄时间', '发布时间'], ['升序', '降序']],
-    multiIndex: [0, 1],                    // 默认按"拍摄时间 + 降序"
+    multiIndex: [1, 0],                    // 默认按"拍摄时间 + 降序"
     skipCount: 0,
     loaded: false,                         // 首屏查询是否完成（用于空态提示）
   },
 
   /** 页面加载：从分享链接可直接带 name / isName 打开；缺 name 时兜底 */
   onLoad(options) {
+    guard.ensureNotBanned();
     if (!options || !options.name) {
       wx.showToast({ title: '参数错误', icon: 'none' });
       setTimeout(() => wx.navigateBack(), 800);

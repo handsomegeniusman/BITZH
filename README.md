@@ -334,7 +334,8 @@ module.exports = {
 1. 在 MPServerless 控制台新建云函数 `secCheck`，上传 `cloudfunctions/secCheck/` 下的 `index.js` + `sensitiveWords.js`（无需 npm 依赖）。
 2. 在「环境变量」里配置（见[第七节](#七密钥与云函数环境变量重要必读)）：
    - `WX_APPID` / `WX_SECRET`：小程序 AppID / AppSecret（只放云函数，不下放前端）
-   - `FEISHU_WEBHOOK_URL` / `FEISHU_WEBHOOK_SECRET`：飞书群机器人 webhook（可选，不配就不推送）
+   - `FEISHU_APP_ID` / `FEISHU_APP_SECRET` / `FEISHU_CHAT_ID`：飞书自建应用凭证 + 通知群 chat_id（推荐，通知走应用 API，机器人发的消息评论区命令可回读解析，见[第十二节](#12可选进阶飞书机器人联动评论区封禁解封可跳过)）
+   - `FEISHU_WEBHOOK_URL` / `FEISHU_WEBHOOK_SECRET`：飞书群机器人 webhook（可选，应用 API 未配置/失败时的回退通道）
    - `ADMIN_EMAIL`：管理员邮箱（与 `config.js` 的 `adminEmail` 保持一致）
 3. 审核是「写库前拦截」：`risky` 直接拦下；`review` 放行但写待复核 + 推送；`pass` 放行。
 4. **没部署也不会崩**：前端会「降级放行」（审核不阻断发布），只是没有审核保护。
@@ -345,13 +346,133 @@ module.exports = {
 2. 部署 `moderate` 云函数（封禁/解封/下架/恢复的服务端执行器，无需 npm 依赖）。
 3. 管理员入口「我的 → 复核中心」处理举报 / 申诉 / 疑似内容。
 
-### 12.（可选，进阶）飞书机器人联动（可跳过）
+### 12.（可选，进阶）飞书机器人联动（评论区封禁/解封，可跳过）
 
-管理员在飞书群收到违规推送后，在评论区回复「封禁 / 封禁用户 / 解封 / 拉黑用户」等命令，机器人自动执行。
+管理员在飞书群收到举报 / 申诉 / 审核推送后，在推送消息**下方评论区回复**「封禁 / 封禁用户 / 封禁举报人 / 解封 / 解封用户 / 全部解封 / 拉黑用户」，机器人自动执行并在评论区回发「✅ 已封禁/解封」确认。
 
-1. 部署 `feishuCallback` 云函数，配置环境变量：`FEISHU_VERIFICATION_TOKEN` / `FEISHU_APP_ID` / `FEISHU_APP_SECRET` / `FEISHU_WEBHOOK_URL` / `FEISHU_WEBHOOK_SECRET`。
-2. 飞书后台：开通 `im:message` 权限、把机器人拉进通知群并设「接收所有消息」、配置事件订阅回调地址指向 `feishuCallback`。
-3. 这是**进阶玩法**，不影响小程序基本功能，新手可完全跳过。
+> **工作原理**（评论区命令为什么能找到目标）：
+> 通知优先**用自建应用 API** 发到群里（机器人自己发的消息，message_id 一定能被回读）→ 管理员回复该消息（回复事件带 `root_id`）→ `feishuCallback` 用 `root_id` 回读推送原文 → 解析出「目标ID + 类型 / 被举报人ID」→ 触发 `moderate` 执行写库 → 评论区回复确认。
+
+#### 12.1 一次性准备（飞书开放平台）
+
+1. **创建自建应用**：飞书开放平台 https://open.feishu.cn/app →「创建企业自建应用」→ 创建成功后，在「凭证与基础信息」页拿到 `App ID`（`cli_xxx`）和 `App Secret`。
+2. **开启机器人能力**：应用功能 → 机器人 → 启用（机器人是发送/接收消息的主体）。
+3. **开通权限**：权限管理 → 开通 `im:message`（获取与发送单聊、群组消息）。
+4. **配置事件订阅**：事件与回调 → 订阅方式选「**使用请求地址**」→ 请求地址填 `feishuCallback` 云函数的 **HTTP 触发器地址**（在 MPServerless 控制台为该云函数配置 HTTP 触发器，复制触发 URL）。首次保存会触发「URL 校验」，`feishuCallback` 已自动处理 `url_verification` 应答，保存通过即可。
+5. **订阅事件**：事件与回调 → 事件 → 添加 `接收消息 im.message.receive_v1`。
+6. **记录验证令牌**：事件与回调页的「Verification Token」→ 填到 `feishuCallback` 环境变量 `FEISHU_VERIFICATION_TOKEN`。
+7. **发布版本**：版本管理与发布 → 创建版本 → 申请发布。**未发布前权限、事件、机器人能力都不生效。**
+
+#### 12.2 把机器人拉进通知群（并开启「接收所有消息」）
+
+**目标**：让**自建应用机器人**进入通知群，并允许它读取群内所有消息——否则它只在被 @ 时才收到消息，管理员普通回复命令它收不到，整个评论区分级功能失效。
+
+**第 1 步：新建（或选用已有的）通知群**
+1. 飞书客户端 → 左侧「+」→「发起群聊」→ 选择成员 → 创建。用已有群也可以。
+
+**第 2 步：把自建应用机器人拉进群**
+1. 打开群 → 点右上角**群头像**（或群名称）→ 进入**群设置**。
+2. 找到「**群机器人**」→「**添加机器人**」。
+3. 在列表里选中**你的自建应用**（名字 = 你在开放平台给应用起的名字）→ 添加。
+   - ⚠️ **别选错**：列表里同时可能有「自定义机器人」（webhook 机器人，只有往群里发消息的能力）。**要加的是你的自建应用**，通常排在「应用 / 企业应用」分类下。群里会出现两个机器人，就是这个原因——自定义机器人不是干这件事的。
+4. 添加成功后，群里会出现系统提示「XX 加入了群聊」。
+
+**第 3 步：开启「接收所有消息」（关键，别漏）**
+1. 仍在**群设置**里 →「群机器人」→ 找到你的应用机器人 → 点进去。
+2. 打开「**接收所有消息**」开关。
+   - 不开这个，评论区分级命令全部无效。
+
+**第 4 步：确认机器人已就位**
+- 在群里发一条消息，应该没有报错（机器人平时不主动发言是正常的）。
+- 更直接的验证：直接私聊你的应用机器人发一句「你好」，正常收到就说明它在线。
+
+#### 12.3 获取通知群的 chat_id（应用 API 推送目标）
+
+**chat_id 形如 `oc_xxx`，是机器人往群里发消息用的「群地址」。** 二选一：
+
+**方法一（推荐，不用动代码）：用开放平台「API 调试」查**
+1. 打开飞书开放平台 → 开发者后台 → 进入你的应用。
+2. 左侧「开发调试」→「**API 调试**」→ 搜索接口 **「获取会话列表」`GET /open-apis/im/v1/chats`**。
+3. 右侧调试面板：确认顶部选择的是你的应用（系统会自动带 `tenant_access_token`）→ 点「**发送**」。
+4. 看返回 `data.items` 数组，按 `name` 找到你通知群的条目，复制它的 `chat_id`（`oc_xxx`）。
+   - 返回示例：`{"code":0,"msg":"success","data":{"items":[{"chat_id":"oc_xxx...","name":"通知群",...}]}}`
+   - 群多时点返回里的 `page_token` 翻页继续找。
+
+**方法二：在群里 @机器人，从云函数日志里读**
+1. 确保机器人已入群且「接收所有消息」已开（12.2）。
+2. 在通知群里发一条消息并 **@你的应用机器人**。
+3. 打开 MPServerless 控制台 → 云函数 → `feishuCallback` → **运行日志**。
+4. 找最新日志里的 `[feishuCallback] chat_id = oc_xxx`，复制那个 `oc_xxx`。
+   - 如果日志里没有这行，说明事件还没推到云函数：查 12.1 第 7 步「发布版本」是否完成、机器人「接收所有消息」是否打开。
+
+**拿到 `chat_id` 后**：记下来，12.4 配置 `secCheck` 环境变量时填到 `FEISHU_CHAT_ID`。
+
+#### 12.4 部署云函数 + 配置环境变量
+
+**目标**：把 `feishuCallback` / `secCheck` / `moderate` 三个云函数部署到 MPServerless，并填好飞书凭证。三个函数**只用 Node 内置模块，无需 `npm install`**。
+
+**先准备好所有变量的值（照着这个表去各自的平台拿）**
+
+| 变量 | 示例值 | 去哪拿 |
+| --- | --- | --- |
+| `FEISHU_APP_ID` | `cli_xxxxxxxx` | 飞书开放平台 → 你的应用 →「凭证与基础信息」→ App ID |
+| `FEISHU_APP_SECRET` | 一串字符 | 同上 → App Secret（点「查看/重置」） |
+| `FEISHU_VERIFICATION_TOKEN` | 一串字符 | 飞书开放平台 → 你的应用 →「事件与回调」→ Verification Token |
+| `FEISHU_CHAT_ID` | `oc_xxx` | 见 12.3 |
+| `WX_APPID` | `wxxxxxxxxx` | 微信公众平台 → 开发管理 → 开发设置 → AppID |
+| `WX_SECRET` | 一串字符 | 微信公众平台 → 同上 → AppSecret（需管理员权限） |
+| `ADMIN_EMAIL` | `you@mail.com` | 自己填，与小程序 `config.js` 的 `adminEmail` 一致 |
+| `FEISHU_WEBHOOK_URL`（可选·回退） | `https://open.feishu.cn/open-apis/bot/v2/hook/xxx` | 群里自定义机器人 webhook |
+| `FEISHU_WEBHOOK_SECRET`（可选·回退） | 一串字符 | 自定义机器人添加时的签名密钥 |
+
+**每个云函数要填哪些变量**
+
+| 云函数 | 必填变量 | 用途 |
+| --- | --- | --- |
+| `feishuCallback` | `FEISHU_APP_ID`、`FEISHU_APP_SECRET`、`FEISHU_VERIFICATION_TOKEN` | 事件回调入口：读评论、回读父消息、回复确认 |
+| `secCheck` | `WX_APPID`、`WX_SECRET`、`ADMIN_EMAIL`、`FEISHU_APP_ID`、`FEISHU_APP_SECRET`、`FEISHU_CHAT_ID` | 内容审核 + 举报/申诉通知推送 |
+| `moderate` | `FEISHU_APP_ID`、`FEISHU_APP_SECRET` | 封禁/解封写库执行器 |
+| 三个（可选） | `FEISHU_WEBHOOK_URL`、`FEISHU_WEBHOOK_SECRET` | 回退通道：应用 API 失败时才用 |
+
+> `FEISHU_WEBHOOK_URL` / `FEISHU_WEBHOOK_SECRET` 现在只是**回退**：应用 API 推送/回复失败时才走它。想保证「推送 → 评论区命令 → 确认」必达，`FEISHU_APP_ID` / `FEISHU_APP_SECRET` / `FEISHU_CHAT_ID` 必须配齐。
+
+**以 `secCheck` 为例的操作步骤（其余两个函数完全一样）**
+1. 登录 **MPServerless 控制台** → 左侧「云函数」→ 找到 `secCheck` → 点进函数详情。
+   - 还没有这个函数？点「创建云函数」，上传 `cloudfunctions/secCheck/` 里的 `index.js` 和 `sensitiveWords.js`，运行时选 **Node.js**。
+2. 找到「**环境变量**」（通常在「配置 / 高级配置」标签页）→ 点「添加」→ 按上面两张表逐条填「键 = 值」。
+3. 保存后，**重新部署 / 发布函数版本**——改环境变量后必须重新发布才生效。
+4. 用同样方法配置 `feishuCallback`、`moderate`。
+5. 给 `feishuCallback` 配置 **HTTP 触发器**：函数详情 →「触发器 / HTTP 触发器」→ 新建 → 得到形如 `https://fc-mp-xxxx.next.bspapp.com/feishuCallback` 的地址。这个地址已在 12.1 填进飞书「事件与回调」请求地址。
+
+**部署后怎么验证**
+- `feishuCallback`：浏览器直接访问它的 HTTP 地址，返回任意 JSON（哪怕是 `{"code":1}`）都说明函数在线、触发器正常。
+- 或按 12.6 完整走一遍端到端。
+
+#### 12.5 命令表（评论区回复，作用于被回复的那条推送）
+
+| 评论 | 动作 |
+| --- | --- |
+| 封禁 | 封禁该帖子（下架） |
+| 封禁帖子 | 同上 |
+| 封禁用户 | 封禁该用户（软删其全部内容 + 拉黑） |
+| 封禁举报人 | 封禁发举报的人（恶意举报，作用于【举报】推送） |
+| 解封 | 解封该帖子（恢复） |
+| 解封帖子 | 同上 |
+| 解封用户 | 只解除该用户黑名单（账号可再发帖，内容保持隐藏） |
+| 全部解封 | 解除黑名单 + 恢复该用户全部内容 |
+| 拉黑用户 | 永久拉黑该用户（不再受理申诉） |
+
+> ⚠️ **权限提示**：当前实现里，**群内任何能评论的人**回复命令都会被执行（未做管理员白名单）。若群里有非管理员，建议：a) 把通知群设为「仅部分成员可发言」；b) 或后续给 `feishuCallback` 加管理员 open_id 白名单。
+
+#### 12.6 端到端验证
+
+1. 小程序里举报一条推文 → 通知群应收到「【举报】推文…」推送（机器人发的，走应用 API）。
+2. 在推送消息下方评论「封禁用户」→ 机器人回读原文并回复「✅ 已封禁用户：xxx」。
+3. 去小程序复核中心 / 用户管理确认该用户已封禁。
+4. 评论「解封用户」→ 确认恢复。
+5. 本地命令解析自测：`node tests/feishuCommands.test.js`（42 项全过，覆盖全部命令 + 你给的样例 + 飞书 URL 验证应答）。
+
+这是**进阶玩法**，不影响小程序基本功能，新手可完全跳过。
 
 ---
 
@@ -375,7 +496,7 @@ module.exports = {
 | 云函数 | 需要配置的环境变量 |
 | --- | --- |
 | `getCosSts` | `COS_SECRET_ID`、`COS_SECRET_KEY`、`COS_APPID`、`COS_BUCKET`、`COS_REGION` |
-| `secCheck` | `WX_APPID`、`WX_SECRET`、`FEISHU_WEBHOOK_URL`、`FEISHU_WEBHOOK_SECRET`、`ADMIN_EMAIL` |
+| `secCheck` | `WX_APPID`、`WX_SECRET`、`ADMIN_EMAIL`、`FEISHU_APP_ID`、`FEISHU_APP_SECRET`、`FEISHU_CHAT_ID`（推荐，应用 API 推送）、`FEISHU_WEBHOOK_URL`、`FEISHU_WEBHOOK_SECRET`（回退） |
 | `moderate` | `FEISHU_WEBHOOK_URL`、`FEISHU_WEBHOOK_SECRET`、`FEISHU_APP_ID`、`FEISHU_APP_SECRET` |
 | `feishuCallback` | `FEISHU_VERIFICATION_TOKEN`、`FEISHU_APP_ID`、`FEISHU_APP_SECRET`、`FEISHU_WEBHOOK_URL`、`FEISHU_WEBHOOK_SECRET` |
 
@@ -393,6 +514,9 @@ WX_SECRET       = 你的小程序AppSecret
 FEISHU_WEBHOOK_URL = https://open.feishu.cn/open-apis/bot/v2/hook/xxxx
 FEISHU_WEBHOOK_SECRET = 你的飞书机器人签名密钥
 ADMIN_EMAIL     = 你的邮箱
+FEISHU_APP_ID   = 飞书自建应用 cli_xxx（应用 API 推送 / 评论区命令回读，必达）
+FEISHU_APP_SECRET = 飞书自建应用 Secret
+FEISHU_CHAT_ID  = 飞书通知群 oc_xxx（应用 API 推送目标）
 ```
 
 4. 保存后**重新发布函数版本**（编辑环境变量后通常需要重新部署/发布才生效）。
@@ -434,7 +558,7 @@ ADMIN_EMAIL     = 你的邮箱
 | --- | --- |
 | 文本审核 | 云函数 `secCheck`：本地敏感词预检 + 微信 `security.msgSecCheck` v2（服务端换 `access_token`） |
 | 图片审核 | 二期（`mediaCheckAsync`），本期未接入 |
-| 举报 | 推文详情 / 评论长按 → 举报页 → 写 `Report` + 推企业微信；同用户对同目标 24h 限举报 1 次 |
+| 举报 | 推文详情 / 评论长按 → 举报页 → 写 `Report` + 推企业微信；同用户对同目标 5 分钟内限举报 1 次 |
 | 人工复核 | 管理员「复核中心」处理举报 / 申诉 / 疑似内容 |
 | 封禁清退 | 管理员点「封禁」→ 加入 `BlackNum` + 软删其全部内容；该用户打开任意 tab 被 `reLaunch` 到封禁页 |
 | 软删除 | 内容只打 `hidden`/`deleted` 标志，不物理删，保留数据供监管抽查取证 |

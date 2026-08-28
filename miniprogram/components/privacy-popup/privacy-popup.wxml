@@ -1,0 +1,15 @@
+<!-- components/privacy-popup/privacy-popup.wxml
+     隐私授权合规弹窗：mask + 白卡 + 「同意并继续」原生授权按钮（open-type="agreePrivacyAuthorization"）。
+     注意：mask/modal 绝不能用 catchtouchstart —— catchtouchstart 会阻断子元素（按钮）的
+     tap 事件（微信已知坑），表现为弹窗里两个按钮都点不动。只用 catchtap 阻断冒泡即可。 -->
+<view class="pp-mask" wx:if="{{show}}" catchtouchmove="noop" catchtap="onCancel">
+  <view class="pp-modal" catchtap="noop">
+    <view class="pp-title">隐私授权</view>
+    <view class="pp-body">{{desc}}</view>
+    <view class="pp-btns">
+      <button class="pp-btn pp-cancel" catchtap="onCancel">暂不使用</button>
+      <!-- 必须带 id：基础库会用 id 校验该按钮确实被点击过，缺 id 时 bindagreeprivacyauthorization 不触发（表现为点了没反应） -->
+      <button id="agree-btn" class="pp-btn pp-agree" open-type="agreePrivacyAuthorization" bindagreeprivacyauthorization="onAgree">同意并继续</button>
+    </view>
+  </view>
+</view>

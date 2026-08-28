@@ -1,23 +1,34 @@
 <view wx:if="{{audit}}">
   <view class="page">
     <view class="card">
-      <button class="avatar-button" open-type="chooseAvatar" bind:chooseavatar="onChooseAvatar">
+      <!-- 头像选择改为普通按钮 bindtap：chooseAvatar 是隐私接口，须先弹合规授权弹窗（open-type 按钮无法前置拦截），
+           同意后再调 wx.chooseAvatar 打开微信头像选择器，行为与 open-type 完全一致 -->
+      <button class="avatar-button" bindtap="pickAvatar">
       <image class="avatar-img" src="{{userInfo.avatarUrl}}" ></image>
       </button>
       <view class="input-container">
         <text class="input-label">昵称：</text>
-        <input type="nickname" class="input-field" placeholder="请输入昵称" value="{{userInfo.nickName}}" bindinput="onInput"/>
+        <input type="nickname" class="input-field" placeholder="请输入昵称" value="{{userInfo.nickName}}" bindinput="onInput" show-confirm-bar="{{false}}"/>
       </view>
       <view class="input-container1">
         <view class="tip-message" wx:if="{{sameName}}">已重名，请修改昵称</view>
         <view class="tip-message1" wx:else></view>
       </view>
+      <view class="input-container1" wx:if="{{forbidWord}}">
+        <view class="tip-message-forbid">昵称不能含「{{forbidWord}}」等仿冒/误导词汇，请更换</view>
+      </view>
       <view class="input-container2">
         <text class="input-label1">手机号：</text>
-        <input type="text" class="input-field" value="{{userInfo.phoneNum}}" bindinput="onInput1" placeholder="可不填"></input>
+        <input type="text" class="input-field" value="{{userInfo.phoneNum}}" bindinput="onInput1" show-confirm-bar="{{false}}" placeholder="可不填"></input>
       </view>
 
     </view>
     <button class="submit-button" bindtap="upload">提交</button>
   </view>
+
+  <!-- 跟随键盘的「完成」栏：键盘弹起时提供一键收起（部分输入法没有收起键） -->
+  <kb-done-bar/>
+
+  <!-- 隐私授权弹窗（选择头像前按需弹出，含原生 agreePrivacyAuthorization 按钮） -->
+  <privacy-popup id="privacyPopup" desc="需要你的授权，才能从微信选择头像。是否同意？"/>
 </view>

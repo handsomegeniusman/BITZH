@@ -1,9 +1,12 @@
 /* ============================================================
-   内容编辑器（正文 + 话题合并）样式
-   - 正文 textarea：与表单其他字段一致的下划线样式
-   - #话题 按钮 + 胶囊：#FF405E 粉色（沿用旧 topic-editor 视觉）
-   - 建议下拉：绝对定位贴在正文下方（向下弹出，占用图片压缩腾出的空间），可滚动
-   - 键盘上方工具栏：正文聚焦时显示，左「话题」右「完成」，替代正文里的 #话题 按钮
+   内容编辑器（正文 + 话题混写）样式
+   - 正文 textarea：小红书式，无下划线、可输入区更高
+   - #话题 按钮（正文下方 + 键盘工具栏）：同一粉色描边胶囊（需求 12 统一）
+   - 建议列表：绝对定位贴在正文下方（向下弹出，占用图片压缩腾出的空间），可滚动
+   - 键盘上方工具栏：正文聚焦时显示，固定在键盘顶边（bottom=kbH 行内），左「#话题」右「完成」
+   【Bug-A】.ce-kb-bar 用 position:fixed 贴键盘顶，前提是没有任何祖先带 transform/will-change
+   （position:fixed 会被 transform 祖先降级成 absolute）。本组件祖先（.form-card/.page-root）
+   均无 transform，页面上若有新增 transform 需留意。
 ============================================================ */
 .ce-wrap {
   padding: 20rpx 0 0; /* 左右留白由页面白卡片提供，这里只留上下 */
@@ -19,12 +22,15 @@
   position: relative;
 }
 
-/* 正文 textarea：小红书式——无下划线、可输入区更高 */
+/* 正文 textarea：小红书式——无下划线、可输入区更高。
+   auto-height + CSS max-height（行内 ceMaxH）限高后，超出部分在内部滚动（不裁剪），
+   保证长文时光标所在行可见（adjust-position=false 不自动滚页，见 layoutSuggest） */
 .ce-textarea {
   display: block;
   width: 100%;
   box-sizing: border-box;
   min-height: 200rpx;
+  max-height: 9999px; /* 默认不限制；聚焦时由行内 style="max-height:{{ceMaxH}}px" 覆盖 */
   font-size: 31rpx;
   color: #333333;
   line-height: 1.6;
@@ -32,13 +38,15 @@
   margin-bottom: 8rpx;
   background: none;
   border: none;
+  overflow-y: auto;
 }
 
 .ce-placeholder {
   color: #bbb;
 }
 
-/* #话题 小按钮：粉色描边小胶囊（正文聚焦时隐藏，见 wxml wx:if="{{!showToolbar}}"） */
+/* #话题 小按钮：粉色描边小胶囊（正文聚焦时隐藏，见 wxml wx:if="{{!showToolbar}}"）。
+   正文下方与键盘工具栏共用此样式，保证两个「话题」按钮完全同款（需求 12） */
 .ce-toolbar {
   display: flex;
   align-items: center;
@@ -58,43 +66,9 @@
   background: #ffe0e6;
 }
 
-/* 话题胶囊区 */
-.ce-chips {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  margin-top: 16rpx;
-}
-.ce-chip {
-  display: inline-flex;
-  align-items: center;
-  margin: 4rpx 12rpx 4rpx 0;
-  padding: 4rpx 6rpx 4rpx 20rpx;
-  background: #FF405E;
-  color: #fff;
-  font-size: 26rpx;
-  border-radius: 999rpx;
-  line-height: 1.7;
-}
-.ce-chip-text {
-  max-width: 240rpx;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ce-chip-del {
-  width: 40rpx;
-  text-align: center;
-  font-size: 30rpx;
-  color: #fff;
-  opacity: 0.85;
-}
-.ce-chip-del:active {
-  opacity: 1;
-}
-
-/* 建议下拉：绝对定位在正文【下方】（向下弹出），高度由 JS 按
-   「窗口高 - 键盘高 - 正文底部」动态钳制（行内 style），保证底边不越过键盘 */
+/* 建议列表：绝对定位在正文【下方】（top:100%，即 # 号所在行的下一行开始展示），
+   实际高度由 JS 按内容算（suggestH，行内 style）：刚好展示几条，封顶「输入框底 → 键盘顶」
+   的剩余空间（suggestMaxH），超出部分内部滚动，底边不越过键盘上方工具栏 */
 .ce-suggest {
   position: absolute;
   left: 0;
@@ -108,7 +82,7 @@
   box-shadow: 0 8rpx 24rpx rgba(0, 0, 0, 0.08);
   overflow: hidden;
 }
-/* 建议列表滚动区：高度由行内 suggestMaxH 提供，内部滚动 */
+/* 建议列表滚动区：高度由行内 suggestH 提供（内容高、封顶 suggestMaxH），内部滚动（Bug-C 已扣工具栏高度） */
 .ce-suggest-scroll {
   width: 100%;
   box-sizing: border-box;
@@ -147,11 +121,12 @@
 }
 
 /* 键盘上方工具栏：正文聚焦时显示，固定在键盘顶边（bottom=kbH 行内），
-   左「话题」右「完成」，替代正文里的 #话题 按钮 */
+   左「#话题」（同款粉胶囊）右「完成」。Bug-A：position:fixed 依赖无 transform 祖先 */
 .ce-kb-bar {
   position: fixed;
   left: 0;
   right: 0;
+  bottom: 0; /* 由行内 style="bottom: {{kbH}}px" 覆盖 */
   z-index: 30;
   display: flex;
   align-items: center;
@@ -161,11 +136,6 @@
   box-sizing: border-box;
   background: #fff;
   border-top: 1rpx solid #f0e2d2;
-}
-.ce-kb-topic {
-  font-size: 28rpx;
-  color: #FF405E;
-  padding: 12rpx 8rpx;
 }
 .ce-kb-done {
   font-size: 28rpx;

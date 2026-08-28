@@ -4,7 +4,7 @@
  * 【作用】小程序 UGC（推文/评论/昵称）写库前的服务端审核：
  *    1. 本地敏感词预检（拦 msgSecCheck 识别滞后的赌博暗语等）
  *    2. 调微信 security.msgSecCheck（v2）文本检测
- *    3. 命中「疑似/违规」时，发飞书群机器人 Webhook 通知管理员
+ *    3. 命中「疑似/违规」时，通知飞书管理员（优先自建应用 API 推送，缺配置回退群机器人 Webhook）
  *    4. action='notify' 时只做推送（举报/申诉等轻量通知复用本函数）
  *
  * 【部署】新建云函数 secCheck（Node.js 运行时），粘贴本文件 + sensitiveWords.js 即可运行。
@@ -23,11 +23,22 @@ const sensitive = require('./sensitiveWords.js');
 // 密钥：全部从「环境变量」读取，代码里绝不硬编码真实值。
 // 缺省为空串（未配置时对应能力自动降级，不影响其它功能）。
 // 请在云函数控制台配置：WX_APPID / WX_SECRET / FEISHU_WEBHOOK_URL / FEISHU_WEBHOOK_SECRET / ADMIN_EMAIL
-const APPID = process.env.WX_APPID || '';
-const SECRET = process.env.WX_SECRET || '';
-const FEISHU_WEBHOOK_URL = process.env.FEISHU_WEBHOOK_URL || '';
-const FEISHU_WEBHOOK_SECRET = process.env.FEISHU_WEBHOOK_SECRET || '';
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL || '';
+//                   及（可选，推荐）：FEISHU_APP_ID / FEISHU_APP_SECRET / FEISHU_CHAT_ID（应用 API 推送，评论区命令可回读解析）
+// 配置来源：优先控制台环境变量 process.env；EMAS 小程序云没有环境变量入口时，
+// 随函数部署一个 config.js（模板见同目录 config.example.js）兜底。
+let CFG = {};
+try { CFG = require('./config.js') || {}; } catch (e) { /* 无 config.js 时忽略 */ }
+function getCfg(name) { return process.env[name] || CFG[name] || ''; }
+
+const APPID = getCfg('WX_APPID');
+const SECRET = getCfg('WX_SECRET');
+const FEISHU_WEBHOOK_URL = getCfg('FEISHU_WEBHOOK_URL');
+const FEISHU_WEBHOOK_SECRET = getCfg('FEISHU_WEBHOOK_SECRET');
+const ADMIN_EMAIL = getCfg('ADMIN_EMAIL');
+// 自建应用凭证 + 通知群 chat_id：让通知用「应用 API」发送（机器人自己发的消息一定能被 feishuCallback 回读）
+const FEISHU_APP_ID = getCfg('FEISHU_APP_ID');
+const FEISHU_APP_SECRET = getCfg('FEISHU_APP_SECRET');
+const FEISHU_CHAT_ID = getCfg('FEISHU_CHAT_ID');
 
 // ---------- access_token 缓存（single-flight，防并发重复刷新） ----------
 // 说明：云函数并发执行，多请求同时发现 token 过期时会各刷一次 → 被微信限流。
@@ -41,6 +52,9 @@ const PUSH_DEDUP_MS = 60000;   // 相同内容去重窗口（60s）
 const PUSH_SEEN_MAX = 200;     // 去重表上限，超过清理最旧，防内存无界增长
 let pushWindow = { count: 0, windowStart: 0 };
 const pushSeen = {};           // text -> 上次推送时间戳
+// ---- tenant_access_token 缓存（single-flight，应用 API 推送用）----
+let appTokenCache = { token: null, expireAt: 0 };
+let appTokenPromise = null;
 
 function httpsGet(url) {
   return new Promise(function (resolve, reject) {
@@ -57,7 +71,7 @@ function httpsGet(url) {
   });
 }
 
-function httpsPostJson(url, body) {
+function httpsPostJson(url, body, extraHeaders) {
   return new Promise(function (resolve, reject) {
     const u = new URL(url);
     const payload = JSON.stringify(body);
@@ -65,7 +79,10 @@ function httpsPostJson(url, body) {
       hostname: u.hostname,
       path: u.pathname + u.search,
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
+      headers: Object.assign(
+        { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
+        extraHeaders || {}
+      ),
     }, function (res) {
       let data = '';
       res.on('data', function (d) { data += d; });
@@ -148,6 +165,47 @@ async function feishuPush(text) {
   }
 }
 
+/** 换 tenant_access_token（single-flight + 提前 300s 过期，应用 API 推送用） */
+async function getTenantToken() {
+  const now = Date.now();
+  if (appTokenCache.token && now < appTokenCache.expireAt) return appTokenCache.token;
+  if (!appTokenPromise) {
+    appTokenPromise = (async function () {
+      if (!FEISHU_APP_ID || !FEISHU_APP_SECRET) throw new Error('未配置 FEISHU_APP_ID / FEISHU_APP_SECRET');
+      const r = await httpsPostJson('https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal', {
+        app_id: FEISHU_APP_ID, app_secret: FEISHU_APP_SECRET,
+      });
+      if (!r || !r.tenant_access_token) throw new Error('获取 tenant_access_token 失败: ' + JSON.stringify(r));
+      appTokenCache = { token: r.tenant_access_token, expireAt: Date.now() + (r.expire - 300) * 1000 };
+      return appTokenCache.token;
+    })();
+    appTokenPromise.then(function () { appTokenPromise = null; }, function () { appTokenPromise = null; });
+  }
+  return appTokenPromise;
+}
+
+/**
+ * 应用 API 推送到群（自建应用 im/v1/messages，receive_id_type=chat_id）。
+ * 机器人自己发的消息一定带 message_id，feishuCallback 回读父消息 100% 可用
+ * → 评论区命令能准确解析出目标。未配置应用凭证/chat_id，或发送失败时返回 false（调用方回退 webhook）。
+ */
+async function feishuPushApp(text) {
+  if (!FEISHU_APP_ID || !FEISHU_APP_SECRET || !FEISHU_CHAT_ID) return false;
+  try {
+    const token = await getTenantToken();
+    const content = { text: String(text || '').slice(0, 2000) };
+    await httpsPostJson(
+      'https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id',
+      { receive_id: FEISHU_CHAT_ID, msg_type: 'text', content: JSON.stringify(content) },
+      { Authorization: 'Bearer ' + token }
+    );
+    return true;
+  } catch (e) {
+    console.error('[secCheck] 应用 API 推送失败，回退 webhook', e && e.message);
+    return false;
+  }
+}
+
 /** 构造推送文案（分类 + 内容 + 作者 + 用户ID + 命中词 + 底部命令菜单） */
 function buildPush(kind, categoryLabel, keywords, content, author, userId, requestId) {
   const snippet = String(content || '').slice(0, 120);
@@ -164,7 +222,8 @@ function buildPush(kind, categoryLabel, keywords, content, author, userId, reque
   lines.push('——————');
   lines.push('评论区回复：');
   lines.push('· 封禁用户 = 封禁该用户');
-  lines.push('· 解封用户 = 解封该用户');
+  lines.push('· 解封用户 = 解除黑名单（内容仍隐藏）');
+  lines.push('· 全部解封 = 解除黑名单 + 恢复全部内容');
   lines.push('· 拉黑用户 = 永久拉黑该用户');
   return lines.join('\n');
 }
@@ -177,15 +236,19 @@ module.exports = async function (ctx) {
   try {
     // ---- 轻量通知模式：举报/申诉等只推送，不做内容检测 ----
     if (event.action === 'notify') {
-      await feishuPush(String(event.text || '').slice(0, 2000));
-      return { ok: true, requestId: requestId };
+      const text = String(event.text || '').slice(0, 2000);
+      // 优先应用 API 推送（保证评论区命令可回读解析），未配置/失败回退 webhook
+      const viaApp = await feishuPushApp(text);
+      if (!viaApp) await feishuPush(text);
+      return { ok: true, requestId: requestId, channel: viaApp ? 'app' : 'webhook' };
     }
 
     const content = String(event.content || '').slice(0, 2000);
     if (!content.trim()) return { ok: true, suggest: 'pass', requestId: requestId };
 
     // 1) 本地敏感词预检（先于 msgSecCheck，拦赌博暗语延迟）
-    const local = sensitive.match(content);
+    //    传 scene 给词库：仿冒官方昵称等 scene=1 专属类别只在昵称场景生效
+    const local = sensitive.match(content, { scene: event.scene || 3 });
     if (local.severity) {
       const suggest = local.severity === 'block' ? 'risky' : 'review';
       await feishuPush(buildPush(

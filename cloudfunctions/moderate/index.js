@@ -33,12 +33,17 @@ const TAKEDOWN_THRESHOLD = Number(process.env.TAKEDOWN_THRESHOLD || 1);
 // 每批更新的文档数上限（分批软删，防单次 updateMany 命中过多触发写限制）
 const BATCH = 200;
 
+// 飞书配置（优先控制台环境变量 process.env；EMAS 无环境变量入口时用随函数部署的 config.js 兜底）
+let CFG = {};
+try { CFG = require('./config.js') || {}; } catch (e) { /* 无 config.js 时忽略 */ }
+function getCfg(name) { return process.env[name] || CFG[name] || ''; }
+
 // 飞书群机器人 webhook（确认消息回退通道，评论区回复失败时用）
-const FEISHU_WEBHOOK_URL = process.env.FEISHU_WEBHOOK_URL || '';
-const FEISHU_WEBHOOK_SECRET = process.env.FEISHU_WEBHOOK_SECRET || '';
+const FEISHU_WEBHOOK_URL = getCfg('FEISHU_WEBHOOK_URL');
+const FEISHU_WEBHOOK_SECRET = getCfg('FEISHU_WEBHOOK_SECRET');
 // 飞书自建应用凭证（换 tenant_access_token，用于在评论区回复管理员）
-const FEISHU_APP_ID = process.env.FEISHU_APP_ID || '';
-const FEISHU_APP_SECRET = process.env.FEISHU_APP_SECRET || '';
+const FEISHU_APP_ID = getCfg('FEISHU_APP_ID');
+const FEISHU_APP_SECRET = getCfg('FEISHU_APP_SECRET');
 
 // ---- tenant_access_token 缓存（single-flight）----
 let tokenCache = { token: null, expireAt: 0 };
@@ -56,19 +61,41 @@ function toList(r) {
   return (r && r.result) || [];
 }
 
-/** 分批软删/恢复：分页取出匹配文档的 _id，再按批 updateMany（按 _id $in） */
+/** 分批软删/恢复。
+ *  优先一次 updateMany（Mongo 多文档更新，扫描一次即完成，封禁秒级）；
+ *  若云数据库对超大批量 updateMany 报错，回退「游标式分页」（按 _id 递增推进，O(n)，
+ *  而非旧 skip 分页的 O(n²)——旧实现内容多时封禁要跑几分钟，是「响应/确认很慢」的元凶）。 */
 async function batchUpdateAll(db, name, filter, setFields) {
+  try {
+    const r = await col(db, name).updateMany(filter, { $set: setFields });
+    const c = (r && r.modifiedCount != null) ? r.modifiedCount
+      : ((r && r.result && r.result.modifiedCount != null) ? r.result.modifiedCount : 0);
+    return c;
+  } catch (e) {
+    console.warn('[moderate] 直接 updateMany 失败，回退游标分页', e && e.message);
+  }
   let total = 0;
-  for (let skip = 0; ; skip += BATCH) {
-    const list = toList(await col(db, name).find(filter, { limit: BATCH, skip: skip }));
+  let lastId = null;
+  for (;;) {
+    const q = Object.assign({}, filter);
+    if (lastId !== null) q._id = { $gt: lastId };
+    const list = toList(await col(db, name).find(q, { limit: BATCH, sort: { _id: 1 } }));
     if (!list.length) break;
     const ids = [];
-    list.forEach(function (x) { if (x && x._id) ids.push(x._id); });
+    let maxId = null;
+    list.forEach(function (x) {
+      if (x && x._id) {
+        ids.push(x._id);
+        maxId = x._id; // 假定按 _id 增序返回，取末位为下一页游标
+      }
+    });
     if (ids.length) {
       await col(db, name).updateMany({ _id: { $in: ids } }, { $set: setFields });
       total += ids.length;
     }
     if (list.length < BATCH) break;
+    if (maxId === null || maxId === lastId) break; // 无进展则终止，防死循环
+    lastId = maxId;
   }
   return total;
 }
@@ -100,6 +127,18 @@ async function unban(db, userId) {
   const pages = await batchUpdateAll(db, 'Page', { authorId: id }, { hidden: false });
   const comments = await batchUpdateAll(db, 'Comment', { authorId: id }, { deleted: false });
   return { ok: true, action: 'unban', userId: id, pages: pages, comments: comments };
+}
+
+/** 解除黑名单（仅移出 BlackNum，不恢复内容）：账号可再发帖，历史内容保持隐藏；
+ *  要恢复全部内容走「全部解封」action:'unban'。与 ban 的「拉黑+软删」互为反向的轻量解封。 */
+async function unblacklist(db, userId) {
+  const id = String(userId || '').trim();
+  if (!id) return { ok: false, msg: '缺 userId' };
+  const recs = toList(await col(db, 'BlackNum').find({ id: id }));
+  for (let i = 0; i < recs.length; i++) {
+    if (recs[i]._id) await col(db, 'BlackNum').deleteOne({ _id: recs[i]._id });
+  }
+  return { ok: true, action: 'unblacklist', userId: id };
 }
 
 /** 封禁帖子：下架单条内容（管理员手动，无阈值，区别于举报 takedown） */
@@ -277,6 +316,7 @@ async function confirmResult(event, r) {
     else if (r.action === 'unban') text = '✅ 已解封用户：' + r.userId;
     else if (r.action === 'hide') text = '✅ 已封禁该帖子：' + r.targetId;
     else if (r.action === 'restore') text = '✅ 已解封该帖子：' + r.targetId;
+    else if (r.action === 'unblacklist') text = '✅ 已解封用户：' + r.userId + '（内容仍隐藏，恢复全部内容请回复「全部解封」）';
     else if (r.action === 'reject') text = '✅ 已永久拉黑用户：' + r.userId + '（不再受理申诉）';
     else text = '✅ 已执行 ' + r.action;
   } else {
@@ -294,26 +334,81 @@ async function confirmResult(event, r) {
   await pushFeishu(text);
 }
 
+/**
+ * 幂等登记：以 opId（= 飞书消息 id）为唯一操作标识，防飞书超时重试/网络抖动导致重复执行。
+ *   已处理过 → true（跳过）；未处理 → 写入标记并返回 false（_id 冲突视为已处理）。
+ *   表查询/登记本身故障时降级放行（返回 false 继续执行），绝不因幂等表故障阻断封禁。
+ */
+async function markDone(db, opId, action) {
+  if (!opId) return false;
+  try {
+    const list = toList(await col(db, 'ModerateOps').find({ _id: opId }));
+    if (list.length) return true; // 已处理过（重试/重复触发）→ 跳过
+  } catch (e) {
+    console.warn('[moderate] 幂等表查询失败，继续执行（不幂等）', e && e.message);
+    return false;
+  }
+  try {
+    await col(db, 'ModerateOps').insertOne({ _id: opId, action: action || '', time: new Date() });
+  } catch (e) {
+    // 可能是并发同插（_id 冲突）→ 二次确认；也可能是其它故障 → 不阻塞执行
+    try {
+      const again = toList(await col(db, 'ModerateOps').find({ _id: opId }));
+      if (again.length) return true;
+    } catch (e2) { /* 忽略 */ }
+    console.warn('[moderate] 幂等登记失败，继续执行', e && e.message);
+    return false;
+  }
+  return false;
+}
+
+/** 执行失败时清除幂等标记，允许重试重新执行（防「登记了却半途而废」） */
+async function unmarkDone(db, opId) {
+  if (!opId) return;
+  try { await col(db, 'ModerateOps').deleteOne({ _id: opId }); } catch (e) { /* 忽略 */ }
+}
+
 module.exports = async function (ctx) {
   const event = (ctx && ctx.args) || {};
   const db = ctx && ctx.mpserverless && ctx.mpserverless.db;
+  const opId = String(event.opId || '').trim(); // 唯一操作标识（飞书消息 id）；无 opId 的调用（举报 takedown 等）不受幂等影响
   try {
+    // 幂等：同一 opId 只执行一次
+    if (opId && await markDone(db, opId, event.action)) {
+      console.log('[moderate] 幂等跳过（该指令已处理过）:', opId);
+      return { ok: true, skipped: true, opId: opId };
+    }
+    // 诊断：Feishu 指令触发的调用，群里推一条「开始执行」，便于定位（用户看不到云函数日志）
+    if (event.replyTo) {
+      try {
+        await pushFeishu('🛠 收到指令：' + (event.action || '?') +
+          (event.userId ? ' userId=' + event.userId : '') +
+          (event.targetId ? ' targetId=' + event.targetId : ''));
+      } catch (e) {
+        console.error('[moderate] 推送开始执行诊断失败', e && e.message);
+      }
+    }
     let r;
+    // 幂等执行：命令对应操作直接执行（各 handler 内部天然幂等——黑名单按 id 去重、软删/恢复只写标志位），
+    // 无论目标当前处于什么状态，回执统一为「已 X」成功文案，让操作者一眼确认命令已生效。
     switch (event.action) {
       case 'ban':
         r = await ban(db, event.userId, event.reason);
         break;
+      case 'unblacklist':
+        r = await unblacklist(db, event.userId);
+        break;
       case 'unban':
         r = await unban(db, event.userId);
+        break;
+      case 'reject':
+        r = await reject(db, event.userId, event.reason);
         break;
       case 'hide':
         r = await hide(db, event.targetType, event.targetId);
         break;
       case 'restore':
         r = await restore(db, event.targetType, event.targetId);
-        break;
-      case 'reject':
-        r = await reject(db, event.userId, event.reason);
         break;
       case 'takedown':
         // 举报即下架：走阈值判定，不回发确认（避免刷屏）
@@ -324,6 +419,7 @@ module.exports = async function (ctx) {
     if (event.confirm) await confirmResult(event, r);
     return r;
   } catch (e) {
+    if (opId) await unmarkDone(db, opId); // 失败清除标记，允许重试重新执行
     console.error('[moderate] 执行失败', event && event.action, (e && e.message) || e);
     return { ok: false, msg: String((e && e.message) || e) };
   }

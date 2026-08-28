@@ -1,0 +1,89 @@
+/* pages/manageOfficial/manageOfficial.wxss —— 官方推文管理列表 */
+
+/* 覆盖全局 .container：列表页贴近顶部、左右留白（与 pageTrash 一致） */
+.container {
+  padding: 40rpx 24rpx;
+  align-items: stretch;
+  justify-content: flex-start;
+}
+
+/* 顶部「发布新推文」按钮 */
+.add-btn {
+  display: block;
+  width: 80%;
+  margin: 20rpx auto 30rpx;
+  font-size: 30rpx;
+  background: #FF405E;
+  color: #fff;
+  border-radius: 20rpx;
+}
+
+/* 空态 */
+.list-empty {
+  text-align: center;
+  color: #b0b3bb;
+  font-size: 26rpx;
+  padding: 80rpx 0;
+}
+
+/* 推文条目：白卡片（左图 + 信息 + 右侧编辑按钮） */
+.list-item {
+  display: flex;
+  align-items: center;
+  background: #fff;
+  border-radius: 16rpx;
+  overflow: hidden;
+  margin-bottom: 20rpx;
+  box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.06);
+  box-sizing: border-box;
+}
+.list-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  padding: 16rpx 0 16rpx 16rpx;
+}
+.list-cover {
+  flex: none;
+  width: 120rpx;
+  height: 120rpx;
+  border-radius: 12rpx;
+  background: #f0f2f5;
+}
+.list-cover-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #b0b3bb;
+  font-size: 22rpx;
+}
+.list-info {
+  flex: 1;
+  min-width: 0;
+  margin-left: 20rpx;
+}
+.list-title {
+  font-size: 30rpx;
+  font-weight: bold;
+  color: #2f3542;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.list-meta {
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  color: #a0a4ad;
+}
+.list-edit {
+  flex: none;
+  margin: 0 16rpx;
+  padding: 6rpx 24rpx;
+  font-size: 24rpx;
+  color: #FF405E;
+  border: 2rpx solid #FF8FA3;
+  border-radius: 28rpx;
+  line-height: 1.6;
+  background: #fff;
+}

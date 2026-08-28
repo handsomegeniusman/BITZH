@@ -30,10 +30,12 @@ Page({
     currentImageIndex: 0,
     recoverMode: false, // 回收站预览模式：内容来自 Delete 存档，只读，不展示评论区
     catTopicMap: {},    // 话题 -> 是否猫名（是猫的话胶囊前加 🐱，和 catDetail 一致）
+    blocked: false,     // 推文已被封禁/下架：非管理入口打开 → 全屏封禁占位（禁止查看）
   },
 
   /** 页面加载：从分享链接可直接带 _id 打开；缺 _id 时兜底 */
   async onLoad(options) {
+    guard.ensureNotBanned();
     console.log('[bookletDetail] onLoad, options =', options);
     if (!options || !options._id) {
       wx.showToast({ title: '参数错误', icon: 'none' });
@@ -52,6 +54,9 @@ Page({
       this.getArchive(options._id);
       return;
     }
+    // 管理入口（用户管理后台点被下架帖子）带 admin=1：仅该入口对「已封禁」内容放行，
+    // 管理员经普通分享/直接访问打开同样显示封禁占位（2026-08-28 用户要求：封禁后分享不允许看）
+    if (options.admin === '1') this._fromManage = true;
     this.getPage(options._id);                    // 加载推文内容
   },
 
@@ -75,9 +80,11 @@ Page({
           wx.showToast({ title: '推文不存在或已删除', icon: 'none' });
           return;
         }
-        // 被封禁用户下架的推文：非管理员不可查看（软删除留存，不物理删）
-        if (data.hidden && !app.globalData.isAdministrator) {
-          wx.showToast({ title: '内容已下架', icon: 'none' });
+        // 被封禁/下架的推文（软删除留存，不物理删）：普通用户一律不可查看；
+        // 管理员也仅限「用户管理」后台入口（_fromManage）可查看——管理员经普通分享
+        // 或直接访问打开同样显示封禁占位，确保封禁后的帖子分享出去看不到内容。
+        if (data.hidden && !(app.globalData.isAdministrator && this._fromManage)) {
+          this.setData({ blocked: true });
           return;
         }
         this.setData({ listData: data });
@@ -86,6 +93,13 @@ Page({
         this.getComment();    // 加载评论
       })
       .catch(err => { console.error(err); wx.showToast({ icon: 'none', title: '加载失败' }); });
+  },
+
+  /** 封禁占位：返回上一页（从分享直达时无上一页 → 回首页） */
+  goBack() {
+    wx.navigateBack({
+      fail: function () { wx.reLaunch({ url: '/pages/index/index' }); }
+    });
   },
 
   /** 回收站预览：从 Delete 存档读取被删除的内容并只读展示。
@@ -114,6 +128,9 @@ Page({
         if (photoArchive && photoKeys.length) {
           photoKeys.forEach((key) => imageUrls.push(cos.archiveUrl(photoArchive, key)));
         }
+        // 官方推文：包内 logo 不占 COS 存档，按 officialLogo 标记补回首张
+        const officialLogo = !!trash.pick(rec, 'officialLogo');
+        if (officialLogo) imageUrls.unshift(cos.BUNDLED_LOGO);
         // 展示数据：从存档还原（新存档字段在 data 里、老存档在顶层）
         const data = {
           _id: rec._id,
@@ -121,7 +138,8 @@ Page({
           main: trash.pick(rec, 'main') || '',
           photoTime: trash.pick(rec, 'photoTime') || '',
           relative: trash.pick(rec, 'relative') || '',
-          photoNum: imageUrls.length, // 预览轮播页码以实际存档照片数为准
+          photoNum: imageUrls.length, // 预览轮播页码以实际展示图数为准（含 logo）
+          officialLogo: officialLogo,
         };
         this._recoverMode = true;
         this._recoverArchiveId = rec._id;
@@ -131,11 +149,14 @@ Page({
       .catch(err => { console.error(err); wx.showToast({ icon: 'none', title: '加载存档失败' }); });
   },
 
-  /** 生成推文图片地址列表（图片路径：目录+标题+序号.jpg） */
+  /** 生成推文图片地址列表（图片路径：目录+标题+序号.jpg）。
+   *  官方推文（officialLogo）：首张为包内 logo，其后是自有图（pageUrl 从 0 起）。 */
   setPhoto() {
     const imageUrls = [];
-    const tittle = this.data.listData.tittle;
-    for (let i = 0; i < this.data.listData.photoNum; i++) {
+    const data = this.data.listData;
+    if (data.officialLogo) imageUrls.push(cos.BUNDLED_LOGO); // 官方封面：包内 logo，不走 COS
+    const tittle = data.tittle;
+    for (let i = 0; i < (data.photoNum || 0); i++) {
       imageUrls.push(cos.pageUrl(tittle, i));
     }
     this.setData({ imageUrls });
@@ -239,10 +260,15 @@ Page({
       const myCommentId = Math.floor(Math.random() * 1000000000000);
       const formattedTime = new Date().toISOString().slice(0, 16).replace('T', ' ');
       const userInfo = app.globalData.userInfo || {};
+      // 作者头像安全兜底：本地临时路径（wxfile:// / http://tmp）写进库里会立即失效，
+      // 且会随评论扩散成脏数据。本地路径一律不写，自动兜底成 COS 地址（nickName 对应用户头像文件）。
+      const rawAvatar = typeof userInfo.avatarUrl === 'string' ? userInfo.avatarUrl : '';
+      const isLocalAvatar = rawAvatar.indexOf('wxfile://') === 0 || rawAvatar.indexOf('http://tmp') === 0;
+      const authorImg = isLocalAvatar ? cos.profileUrl(userInfo.nickName) : rawAvatar;
       db.insertOne('Comment', {
         author: guard.toText(userInfo.nickName),
-        authorId: userInfo.userId,
-        authorImg: userInfo.avatarUrl,
+        authorId: app.globalData.userId || userInfo.userId || '',
+        authorImg,
         main: guard.toText(content),
         commentTime: formattedTime,
         commendId: this.data.listData.commendId,
@@ -406,9 +432,14 @@ Page({
 
   /** 点击图片全屏预览 */
   previewImageHandler() {
+    // 包内 logo（官方推文默认封面）不是网络/临时图，微信原生预览不支持包内路径：
+    // 预览列表剔除 logo；当前正好是 logo 时从第一张自有图开始看
+    const urls = this.data.imageUrls.filter((u) => !cos.isBundledLogo(u));
+    if (!urls.length) return;
+    const cur = this.data.imageUrls[this.data.currentImageIndex];
     wx.previewImage({
-      urls: this.data.imageUrls,
-      current: this.data.imageUrls[this.data.currentImageIndex],
+      urls: urls,
+      current: (!cos.isBundledLogo(cur) && cur) || urls[0],
     });
   },
 

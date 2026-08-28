@@ -37,7 +37,7 @@
 <template name="page">
   <view class="li" >
     <view bindtap="toBookletDetail" bindlongpress="editBooklet" data-_id="{{item._id}}" data-authorid="{{item.authorId}}">
-      <image lazy-load="true" class="pic" src="{{urlPage}}{{item.tittle}}0.jpg" mode="widthFix" ></image>
+      <image lazy-load="true" class="pic" src="{{item.officialLogo ? '/pages/images/logo.png' : urlPage + item.tittle + '0.jpg'}}" mode="widthFix" ></image>
       <view class="title-wrap"  >
         <navigator class="title">{{item.tittle}}</navigator>
       </view>
@@ -45,7 +45,7 @@
     </view>
     <view class="bottom">
       <view class="toux-name">
-        <image class="toux" lazy-load="true" src="{{item.authorImg}}" bindtap="showAuthorImg" data-authorimg="{{item.authorImg}}"></image>
+        <image class="toux" lazy-load="true" src="{{item.authorImg}}" mode="aspectFill" bindtap="showAuthorImg" data-authorimg="{{item.authorImg}}"></image>
         <text class="name">{{item.author}}</text>
       </view>
       <view class="love" wx:if="{{item.good !== undefined}}">

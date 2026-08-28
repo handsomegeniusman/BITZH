@@ -5,6 +5,8 @@
 
 # 1) 密钥配置（真实密钥在 miniprogram/config.js，提交到仓库的是 config.example.js）
 miniprogram/config.js
+# 云函数目录内的真实配置（各目录下的 config.example.js 作为模板提交）
+cloudfunctions/*/config.js
 
 # 2) 依赖与构建产物
 node_modules/
@@ -23,7 +25,10 @@ Desktop.ini
 tags
 
 # 6) 云函数部署压缩包（本地打包产物，源码以 cloudfunctions/*/ 目录为准）
-cloudfunctions/*.zip
+cloudfunctions/**/*.zip
 
 # 7) 微信开发者工具诊断临时文件
 miniprogram/.diag_tmp.js
+
+# 8) 本地部署备忘（含真实群 chat_id / 机器人 ID，仅供本人本地部署对照，勿上传）
+飞书部署-环境变量配置卡.md

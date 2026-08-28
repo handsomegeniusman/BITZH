@@ -14,7 +14,7 @@
     <input
       class="search-input"
       value="{{search}}"
-      bindinput="onSearchInput"
+      bindinput="onSearchInput" show-confirm-bar="{{false}}"
       placeholder="🔍 搜索话题 / 标题 / 用户名"
       confirm-type="search"
       placeholder-class="search-placeholder"
@@ -42,6 +42,30 @@
     </view>
   </view>
 
+  <!-- 用户横条：仅管理员，搜索命中用户时展示，点击进用户管理页（可封禁/解封）。
+       用户下方直接列出他发过的帖子，点击帖子可跳原文详情页看内容。 -->
+  <view wx:if="{{isAdministrator && search && userResults.length}}" class="cat-results">
+    <view class="cat-results-title">用户</view>
+    <view wx:for="{{userResults}}" wx:key="_id" wx:for-item="user" class="user-search-block">
+      <view class="cat-bar" bindtap="toUserManage" data-userid="{{user.userId}}" data-index="{{index}}">
+        <image class="cat-bar-img" src="{{user.avatarUrl || defaultAvatar}}" binderror="onUserImgError" data-index="{{index}}" lazy-load="true"></image>
+        <view class="cat-bar-info">
+          <view class="cat-bar-name">{{user.nickName}}</view>
+          <view class="cat-bar-sub">{{user.userId}}</view>
+        </view>
+        <view class="cat-bar-arrow">›</view>
+      </view>
+      <!-- 该用户的帖子列表：点击跳转原文详情页（仅管理员可见，含已下架的，标注 hidden） -->
+      <view wx:if="{{user.posts && user.posts.length}}" class="user-post-list">
+        <view class="user-post-row" wx:for="{{user.posts}}" wx:for-item="post" wx:key="_id" bindtap="toPostDetail" data-id="{{post._id}}">
+          <text class="user-post-title">{{post.tittle}}</text>
+          <text class="user-post-time">{{post.timeText}}</text>
+          <text wx:if="{{post.hidden}}" class="post-badge">已下架</text>
+        </view>
+      </view>
+    </view>
+  </view>
+
   <!-- 用户选择排序方式：搜索出猫后位于猫咪下方、文章上方（中间位置）；
        未搜索时猫横条不显示，即位于搜索框下方、文章上方 -->
   <view class="picker">
@@ -53,8 +77,8 @@
     </picker>
   </view>
 
-  <!-- 搜索空态：无猫也无推文才提示 -->
-  <view wx:if="{{search && loaded && !listData.length && !catResults.length}}" class="search-empty">没有找到相关内容，换个关键词试试</view>
+  <!-- 搜索空态：无猫也无推文也无用户才提示 -->
+  <view wx:if="{{search && loaded && !listData.length && !catResults.length && !userResults.length}}" class="search-empty">没有找到相关内容，换个关键词试试</view>
 
   <!-- 审核模式（audit=false）下默认不显示小猫书内容；用户搜索时仍显示搜索结果 -->
   <view wx:if="{{audit || searchMode}}">
@@ -71,5 +95,8 @@
       </view>
     </view>
   </view>
+
+<!-- 跟随键盘的「完成」栏：键盘弹起时提供一键收起（部分输入法没有收起键） -->
+<kb-done-bar/>
 
 </view>

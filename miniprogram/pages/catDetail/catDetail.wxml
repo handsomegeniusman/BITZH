@@ -39,32 +39,23 @@
 
 
 
-<view class="parent-view">
-
-      <view class="itemname1 itemname-box">
-        <view class="detail-label-wrap">
-          <view class="cat-card cat-detail-name">{{ cat.name }}</view>
-        </view>
-          <view class="name-spacer"></view>
-      </view>
-      
-</view>
-
-<view class="itemname1">
+<view class="cat-head">
+  <!-- 猫咪大名（叠加全局 .cat-card）：收紧布局，状态胶囊紧贴其下。
+       原 parent-view/itemname-box/name-spacer 固定宽高 + 负边距会把名字区撑出怪异空隙，已移除 -->
+  <view class="cat-card cat-detail-name">{{ cat.name }}</view>
   <view class="status-container">
     <!-- 状态标签的背景色 {{bgcolor}} 由 JS 动态控制，必须保留内联样式 -->
-    <view wx:if="{{cat.status || cat.isSterilization}}" class="status-item" style="background-color: {{bgcolor}};">
+    <view wx:if="{{cat.status}}" class="status-item" style="background-color: {{bgcolor}};">
       <view class="status-item-label">{{cat.status}}</view>
     </view>
     <!-- 绝育标签的背景色 {{bgcolor1}} 由 JS 动态控制，必须保留内联样式 -->
-    <view wx:if="{{cat.isSterilization}}" class="status-item sterilizationStatus" style="background-color: {{bgcolor1}};">
+    <view wx:if="{{cat.isSterilization}}" class="status-item" style="background-color: {{bgcolor1}};">
       <view class="status-item-label">{{cat.isSterilization}}</view>
     </view>
-    <view class="status-spacer">
-    </view>
   </view>
-  
+</view>
 
+<view class="itemname1">
   <view wx:if="{{cat.furColor}}" class="flex-wrp">
     <view class="detail-label-wrap">
       <text user-select="true">毛色</text>

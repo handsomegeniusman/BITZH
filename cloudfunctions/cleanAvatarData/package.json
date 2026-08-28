@@ -1,0 +1,7 @@
+{
+  "name": "cleanAvatarData",
+  "version": "1.0.0",
+  "description": "一次性清洗「本地临时图片路径」脏数据云函数（Feeder/Page/Comment 的头像字段），dry-run 优先，用完即删",
+  "main": "index.js",
+  "dependencies": {}
+}

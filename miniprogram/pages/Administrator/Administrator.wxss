@@ -18,33 +18,63 @@
   font-weight: 700;
   letter-spacing: 2rpx;
   margin-top: 140rpx;
+  margin-bottom: 20rpx;
 }
-.card-list {
+
+/* 分组区 */
+.section {
   width: 100%;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 24rpx;
-  padding-bottom: 240rpx;
+  margin-bottom: 30rpx;
 }
-.feature-card {
+.section-title {
+  display: block;
+  font-size: 26rpx;
+  color: #b08498;
+  letter-spacing: 2rpx;
+  margin: 10rpx 8rpx 16rpx;
+}
+
+/* 表单类卡片（开关 / 联系方式） */
+.card {
   background: #ffffff;
   border-radius: 18rpx;
   padding: 30rpx 28rpx;
   box-shadow: 0 8rpx 22rpx rgba(160, 90, 120, 0.08);
   display: flex;
   flex-direction: column;
+  gap: 20rpx;
+  margin-bottom: 20rpx;
+}
+.card-head {
+  display: flex;
   align-items: center;
-  gap: 22rpx;
+  justify-content: space-between;
 }
 .feature-title {
   font-size: 30rpx;
   color: #6b2140;
   font-weight: 600;
 }
+.card-desc {
+  font-size: 24rpx;
+  color: #b08498;
+  line-height: 1.5;
+}
+.badge {
+  font-size: 22rpx;
+  padding: 6rpx 18rpx;
+  border-radius: 999rpx;
+}
+.badge-on {
+  color: #1f7a3d;
+  background: #e5f6ea;
+}
+.badge-off {
+  color: #9c6b7e;
+  background: #f4e9ee;
+}
 .feature-button {
-  width: 60%;
+  width: 100%;
   height: 88rpx;
   line-height: 88rpx;
   margin: 0;
@@ -63,9 +93,73 @@
 .feature-button:active {
   opacity: 0.9;
 }
+.contact-input {
+  width: 100%;
+  height: 84rpx;
+  background: #f7f2f4;
+  border-radius: 12rpx;
+  padding: 0 24rpx;
+  box-sizing: border-box;
+  font-size: 28rpx;
+  color: #6b2140;
+}
+/* 联系方式卡片：标题行可点击，右侧箭头指示展开状态 */
+.contact-toggle {
+  font-size: 44rpx;
+  color: #c9aab6;
+  line-height: 1;
+  transition: transform 0.2s ease;
+}
+.contact-toggle-open {
+  transform: rotate(90deg);
+}
+.contact-placeholder {
+  color: #c9aab6;
+}
+
+/* 行式导航入口 */
+.row {
+  background: #ffffff;
+  border-radius: 16rpx;
+  padding: 30rpx 28rpx;
+  box-shadow: 0 8rpx 22rpx rgba(160, 90, 120, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16rpx;
+}
+.row-hover {
+  background: #fdf3f6;
+}
+.row-title {
+  font-size: 28rpx;
+  color: #6b2140;
+  font-weight: 500;
+}
+.row-arrow {
+  font-size: 44rpx;
+  color: #c9aab6;
+  line-height: 1;
+}
+.row-right {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+.row-sub {
+  font-size: 24rpx;
+  color: #b08498;
+}
+
+/* 底部留白（页面可滚动） */
+.footer-space {
+  height: 60rpx;
+}
+
 /* small screens tweak */
 @media (max-width: 640rpx) {
   .title { font-size: 42rpx; margin-top: 100rpx; }
+  .section-title { font-size: 22rpx; }
   .feature-title { font-size: 26rpx; }
-  .feature-button { width: 70%; }
+  .row-title { font-size: 26rpx; }
 }

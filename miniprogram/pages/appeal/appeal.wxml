@@ -1,12 +1,12 @@
 <view class="root">
   <view class="card">
     <view class="label">申诉说明 <text class="hint">（必填，500字以内）</text></view>
-    <textarea class="textarea" maxlength="500" placeholder="请说明被误封的情况，便于管理员核实" bindinput="onDetailInput" value="{{detail}}" />
+    <textarea class="textarea" maxlength="500" placeholder="请说明被误封的情况，便于管理员核实" bindinput="onDetailInput" show-confirm-bar="{{false}}" value="{{detail}}" />
   </view>
 
   <view class="card">
     <view class="label">联系方式 <text class="hint">（选填，手机/邮箱）</text></view>
-    <input class="input" maxlength="50" placeholder="便于管理员联系你（如 138xxxx / xxx@qq.com）" bindinput="onContactInput" value="{{contact}}" />
+    <input class="input" maxlength="50" placeholder="便于管理员联系你（如 138xxxx / xxx@qq.com）" bindinput="onContactInput" show-confirm-bar="{{false}}" value="{{contact}}" />
   </view>
 
   <view class="card">
@@ -17,4 +17,10 @@
   <view class="tip">提交后管理员会尽快核实处理，请留意飞书/邮箱回复。</view>
 
   <button class="btn" bindtap="submit" disabled="{{submitting}}">提交申诉</button>
+
+  <!-- 跟随键盘的「完成」栏：键盘弹起时提供一键收起（部分输入法没有收起键） -->
+  <kb-done-bar/>
+
+  <!-- 隐私授权弹窗（复制邮箱到剪贴板前按需弹出，含原生 agreePrivacyAuthorization 按钮） -->
+  <privacy-popup id="privacyPopup" desc="需要你的授权，才能复制邮箱到剪贴板。是否同意？"/>
 </view>

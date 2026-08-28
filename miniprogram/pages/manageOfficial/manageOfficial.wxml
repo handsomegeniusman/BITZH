@@ -1,0 +1,27 @@
+<!--pages/manageOfficial/manageOfficial.wxml-->
+<!-- 官方推文管理列表（仅管理员）：封面 + 标题 + 编辑时间，点「编辑」进编辑页，
+     点卡片进详情；顶部「发布新推文」进发布页 -->
+<view class="container">
+  <view class="page">
+    <text class="title">官方推文管理</text>
+
+    <!-- 顶部入口：发布新的官方推文 -->
+    <button class="add-btn" bindtap="addOfficial">发布新推文</button>
+
+    <!-- 空态 -->
+    <view wx:if="{{list.length === 0}}" class="list-empty">暂无官方推文</view>
+
+    <!-- 推文列表 -->
+    <view wx:for="{{list}}" wx:key="_id" class="list-item">
+      <view class="list-main" bindtap="toDetail" data-id="{{item._id}}">
+        <image wx:if="{{item._cover}}" lazy-load="true" class="list-cover" src="{{item._cover}}" mode="aspectFill" />
+        <view wx:else class="list-cover list-cover-empty">无图</view>
+        <view class="list-info">
+          <view class="list-title">{{item.tittle}}</view>
+          <view class="list-meta">编辑于 {{item._timeText}} · {{item._count}} 张图</view>
+        </view>
+      </view>
+      <button class="list-edit" catchtap="editOfficial" data-id="{{item._id}}">编辑</button>
+    </view>
+  </view>
+</view>

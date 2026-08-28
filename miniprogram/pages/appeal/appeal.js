@@ -7,6 +7,7 @@ const app = getApp();
 const db = require('../../utils/db.js'); // 公共数据库方法
 const guard = require('../../utils/guard.js'); // 前端保险工具（限长）
 const config = require('../../config.js'); // 全局配置（管理员邮箱）
+const privacy = require('../../utils/privacy.js'); // 隐私授权通用拦截（复制到剪贴板前按需弹合规授权弹窗）
 
 Page({
   data: {
@@ -30,11 +31,13 @@ Page({
     this.setData({ contact: e.detail.value });
   },
 
-  /** 复制管理员邮箱 */
+  /** 复制管理员邮箱（wx.setClipboardData 是隐私接口：未同意隐私指引先弹合规授权弹窗） */
   copyEmail() {
-    wx.setClipboardData({
-      data: this.data.email,
-      success: () => wx.showToast({ title: '已复制邮箱', icon: 'success' }),
+    privacy.guard(this, () => {
+      wx.setClipboardData({
+        data: this.data.email,
+        success: () => wx.showToast({ title: '已复制邮箱', icon: 'success' }),
+      });
     });
   },
 
@@ -97,7 +100,8 @@ Page({
           (bannedContent ? '\n被封禁内容：' + bannedContent : '') +
           '\n——————' +
           '\n评论区回复：' +
-          '\n· 解封用户 = 允许解封（恢复该用户）' +
+          '\n· 解封用户 = 解除黑名单（账号可再发帖）' +
+          '\n· 全部解封 = 解除黑名单 + 恢复全部内容' +
           '\n· 拉黑用户 = 永久拉黑（不再受理）';
         await app.mpServerless.function.invoke('secCheck', { action: 'notify', text: text });
       } catch (e) {

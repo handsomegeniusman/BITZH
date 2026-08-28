@@ -6,6 +6,7 @@
 const app = getApp();
 const db = require('../../utils/db.js'); // 公共数据库方法
 const config = require('../../config.js'); // 全局配置（广告位 ID 等）
+const privacy = require('../../utils/privacy.js'); // 隐私授权通用拦截（复制到剪贴板前按需弹合规授权弹窗）
 
 let videoAd = null; // 激励视频广告实例（首次点击时才创建）
 
@@ -18,6 +19,9 @@ Page({
     screenHeight: 0,
     imgwidth: 0,
     imgheight: 0,
+    // 联系方式默认值：数据库（Administrator 集合）查询失败时兜底显示
+    phone: '18122371332',
+    email: '1758906597@qq.com',
   },
 
   /** 页面加载：初始化用户状态（保证管理员能进入后台），并检查黑名单 */
@@ -40,13 +44,30 @@ Page({
     console.log('[about] onLoad 完成');
   },
 
-  /** 页面显示：同步底部自定义 tabBar 选中态（关于=2） */
+  /** 页面显示：同步底部自定义 tabBar 选中态（关于=2），并刷新联系方式 */
   onShow() {
     console.log('[about] onShow 触发');
     if (typeof this.getTabBar === 'function' && this.getTabBar()) {
       this.getTabBar().setData({ selected: 2 });
       if (typeof this.getTabBar().refreshAudit === 'function') this.getTabBar().refreshAudit();
     }
+    this.loadContact(); // onShow 每次都会触发，管理员改完联系方式回来即可看到新值
+  },
+
+  /**
+   * 从数据库读取联系方式（Administrator 集合的 phone / email 字段）。
+   * 查询失败或字段为空时保持默认值，不阻塞页面显示。
+   */
+  loadContact() {
+    const self = this;
+    db.getContact().then(function (c) {
+      const patch = {};
+      if (c && c.phone) patch.phone = c.phone;
+      if (c && c.email) patch.email = c.email;
+      if (Object.keys(patch).length) self.setData(patch);
+    }).catch(function (e) {
+      console.error('[about.loadContact] 查询联系方式失败，显示默认值', e);
+    });
   },
 
   /** 按需创建激励视频广告实例（避免页面加载时触发广告组件报错） */
@@ -109,16 +130,20 @@ Page({
   // 先查 scope.clipboard 授权状态 → 引导用户去小程序设置里打开剪贴板权限，或重试。
   _copy(data, label) {
     console.log('[about._copy] 点击复制', label, data);
-    wx.setClipboardData({
-      data: data,
-      success: () => {
-        console.log('[about._copy] 复制成功', label);
-        wx.showToast({ title: '已复制', icon: 'success' });
-      },
-      fail: (err) => {
-        console.error('[about._copy] 复制失败', label, err);
-        this._copyFail(data, label);
-      },
+    // wx.setClipboardData 是隐私接口：未同意隐私指引先弹合规授权弹窗，同意后再复制；
+    // 复制仍失败（如 scope.clipboard 被关）由 _copyFail 引导去设置
+    privacy.guard(this, () => {
+      wx.setClipboardData({
+        data: data,
+        success: () => {
+          console.log('[about._copy] 复制成功', label);
+          wx.showToast({ title: '已复制', icon: 'success' });
+        },
+        fail: (err) => {
+          console.error('[about._copy] 复制失败', label, err);
+          this._copyFail(data, label);
+        },
+      });
     });
   },
 
@@ -169,10 +194,10 @@ Page({
     });
   },
   copyTBL() {
-    this._copy('18122371332', '联系电话'); // 联系电话
+    this._copy(this.data.phone, '联系电话'); // 联系电话（数据库 Administrator 集合，查询失败显示默认值）
   },
   copyTBL1() {
-    this._copy('1758906597@qq.com', '邮箱'); // 邮箱
+    this._copy(this.data.email, '邮箱'); // 邮箱（数据库 Administrator 集合，查询失败显示默认值）
   },
   copyWechat() {
     this._copy('北大猫协', '公众号名'); // 公众号名

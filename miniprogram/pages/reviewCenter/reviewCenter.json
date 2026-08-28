@@ -1,4 +1,6 @@
 {
   "navigationBarTitleText": "复核中心",
-  "usingComponents": {}
+  "usingComponents": {
+    "kb-done-bar": "/components/kb-done-bar/kb-done-bar"
+  }
 }

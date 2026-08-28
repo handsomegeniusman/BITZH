@@ -1,6 +1,8 @@
 {
   "usingComponents": {
     "relation-editor": "/components/relation-editor/relation-editor",
-    "image-sorter": "/components/image-sorter/image-sorter"
+    "image-sorter": "/components/image-sorter/image-sorter",
+    "kb-done-bar": "/components/kb-done-bar/kb-done-bar",
+    "privacy-popup": "/components/privacy-popup/privacy-popup"
   }
 }

@@ -19,10 +19,10 @@
 
   <view class="head1">联系方式</view>
   <view class="body">
-    微信、手机号：<text bindtap="copyTBL" class="copy" hover-class="copy-active">18122371332</text>
+    微信、手机号：<text bindtap="copyTBL" class="copy" hover-class="copy-active">{{phone}}</text>
   </view>
   <view class="body">
-    邮箱：<text bindtap="copyTBL1" class="copy" hover-class="copy-active">1758906597@qq.com</text>
+    邮箱：<text bindtap="copyTBL1" class="copy" hover-class="copy-active">{{email}}</text>
   </view>
   <view class="body">
     公众号：<text bindtap="previewQR1" class="copy"> 金凤路6号流浪猫关爱部</text>
@@ -114,3 +114,6 @@
   </view>
 
 </view>
+
+<!-- 隐私授权弹窗（复制联系方式到剪贴板前按需弹出，含原生 agreePrivacyAuthorization 按钮） -->
+<privacy-popup id="privacyPopup" desc="需要你的授权，才能复制联系方式到剪贴板。是否同意？"/>

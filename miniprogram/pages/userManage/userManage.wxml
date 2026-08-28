@@ -1,0 +1,79 @@
+<view class="root">
+
+  <!-- 搜索区：按昵称（模糊）或用户ID（精确）搜索 -->
+  <view class="search-bar">
+    <input
+      class="search-input"
+      value="{{keyword}}"
+      bindinput="onKeywordInput"
+      bindconfirm="onSearchTap"
+      show-confirm-bar="{{false}}"
+      placeholder="搜索昵称 或 用户ID"
+      confirm-type="search"
+      placeholder-class="search-placeholder"
+    />
+    <button class="search-btn" size="mini" bindtap="onSearchTap">搜索</button>
+  </view>
+
+  <!-- 搜索结果：用户卡片 -->
+  <view wx:if="{{searching}}" class="empty">搜索中…</view>
+  <block wx:elif="{{results.length}}">
+    <view class="card" wx:for="{{results}}" wx:key="_id">
+      <!-- 头像 + 昵称 + 完整openid（可复制） + 黑名单状态 -->
+      <view class="user-head" bindtap="toggleExpand" data-userid="{{item.userId}}">
+        <image class="user-avatar" src="{{item.avatarUrl || defaultAvatar}}" mode="aspectFill" lazy-load="{{true}}" binderror="onAvatarError" data-list="results" data-index="{{index}}"></image>
+        <view class="user-info">
+          <view class="user-name">{{item.nickName}}</view>
+          <view class="user-id" catchtap="copyId" data-userid="{{item.userId}}">{{item.userId}} 复制</view>
+        </view>
+        <view class="user-status {{item.isBlack ? 'status-ban' : 'status-ok'}}">{{item.isBlack ? '已拉黑' : '正常'}}</view>
+      </view>
+
+      <!-- 操作：封禁 / 解封；点击"查看发帖/收起发帖"提示文字也可展开/收起（不只点卡片） -->
+      <view class="user-actions">
+        <button wx:if="{{!item.isBlack}}" class="btn danger small" size="mini" bindtap="banUser" data-userid="{{item.userId}}" data-name="{{item.nickName}}">封禁</button>
+        <button wx:else class="btn success small" size="mini" bindtap="unbanUser" data-userid="{{item.userId}}" data-name="{{item.nickName}}">解封</button>
+        <view class="expand-hint" bindtap="toggleExpand" data-userid="{{item.userId}}">{{expandedUserId === item.userId ? '收起发帖 ▴' : '查看发帖 ▾'}}</view>
+      </view>
+
+      <!-- 展开：该用户发过的帖子（含已下架的，标注 hidden）；点击帖子行可跳原文 -->
+      <view wx:if="{{expandedUserId === item.userId}}" class="user-posts">
+        <view wx:if="{{item.postsLoading}}" class="empty small">加载中…</view>
+        <block wx:elif="{{item.postsLoaded}}">
+          <view wx:if="{{!item.posts.length}}" class="empty small">该用户暂无发帖</view>
+          <view class="post-row" wx:for="{{item.posts}}" wx:for-item="p" wx:key="_id" bindtap="toPostDetail" data-id="{{p._id}}">
+            <text class="post-title">{{p.tittle}}</text>
+            <text class="post-time">{{p.timeText}}</text>
+            <text wx:if="{{p.hidden}}" class="post-badge">已下架</text>
+            <text class="post-arrow">›</text>
+          </view>
+        </block>
+      </view>
+    </view>
+  </block>
+
+  <!-- 黑名单列表（全部，可一键解封） -->
+  <view class="section-title">黑名单（{{blackList.length}}）</view>
+  <view wx:if="{{!blackLoaded}}" class="empty">加载中…</view>
+  <view wx:elif="{{!blackList.length}}" class="empty">暂无黑名单用户</view>
+  <view class="card" wx:for="{{blackList}}" wx:key="id">
+    <view class="user-head">
+      <image class="user-avatar" src="{{item.avatarUrl || defaultAvatar}}" mode="aspectFill" lazy-load="{{true}}" binderror="onAvatarError" data-list="blackList" data-index="{{index}}"></image>
+      <view class="user-info">
+        <view class="user-name">{{item.nickName}}{{item.permanent ? '（永久）' : ''}}</view>
+        <view class="user-id" catchtap="copyId" data-userid="{{item.id}}">{{item.id}} 复制</view>
+        <view class="user-reason">{{item.timeText}}{{item.reason ? ' · ' + item.reason : ''}}</view>
+      </view>
+    </view>
+    <view class="user-actions">
+      <button class="btn success small" size="mini" bindtap="unbanUser" data-userid="{{item.id}}" data-name="{{item.nickName}}">一键解封</button>
+    </view>
+  </view>
+
+  <!-- 跟随键盘的「完成」栏 -->
+  <kb-done-bar/>
+
+  <!-- 隐私授权弹窗（复制用户 openid 到剪贴板前按需弹出，含原生 agreePrivacyAuthorization 按钮） -->
+  <privacy-popup id="privacyPopup" desc="需要你的授权，才能复制用户信息到剪贴板。是否同意？"/>
+
+</view>

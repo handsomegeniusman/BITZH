@@ -112,10 +112,10 @@ async function persistLocalImages(page, type, id) {
     return cos.uploadOne(dir + 'img' + job.n + '.jpg', job.src, true);
   }, 6);
 
-  // 记下上传成功的源地址
+  // 记下上传成功的源地址 → 草稿 URL（后面写回列表 + 迁移拍摄时间缓存键都要用它）
   const ok = {};
   jobs.forEach(function (job, k) {
-    if (!(results[k] && results[k].err)) ok[job.src] = true;
+    if (!(results[k] && results[k].err)) ok[job.src] = cos.archiveUrl(dir, 'img' + job.n + '.jpg');
   });
 
   // 【上传完成时刻】重新读一次当前列表（期间可能又增删/排序），
@@ -124,15 +124,22 @@ async function persistLocalImages(page, type, id) {
   const cur = imgEditor.listOf(page);
   const next = cur.map(function (item) {
     const src = imgEditor.srcOf(item);
-    if (!ok[src]) return item; // 失败项保持本地路径（恢复时探活剔除并提示）
-    let n = -1;
-    for (let i = 0; i < jobs.length; i++) {
-      if (jobs[i].src === src) { n = jobs[i].n; break; }
-    }
-    const url = n >= 0 ? cos.archiveUrl(dir, 'img' + n + '.jpg') : src;
+    const url = ok[src];
+    if (!url) return item; // 失败项保持本地路径（恢复时探活剔除并提示）
     return asObjects ? { tempFilePath: url } : url;
   });
   imgEditor.setList(page, next);
+
+  // 拍摄时间缓存键迁移：photoTime.js 把识别结果缓存挂在【本地临时路径】下（_photoTimes[path]）。
+  // 这里本地图被换成草稿 COS URL 后必须把识别结果同步挂到新路径上，否则后续批次聚合
+  // （recognizeAndFill / reaggregate）按 COS URL 查不到封面的日期 → 封面退化成"无日期"，
+  // 新增一张别的日期的图就会把权重判定结果顶掉（封面的 1.5 权重失效）。
+  const cache = page._photoTimes;
+  if (cache) {
+    Object.keys(ok).forEach(function (src) {
+      if (cache[src]) cache[ok[src]] = cache[src];
+    });
+  }
   return pageImages(page);
 }
 
@@ -165,6 +172,9 @@ async function saveNow(page, type, id, fields, relationList, relationSyncTasks) 
         relationList: Array.isArray(relationList) ? relationList : [],
         relationSyncTasks: Array.isArray(relationSyncTasks) ? relationSyncTasks : [],
         images: pageImages(page), // 当前列表：已传好的 URL + 刚选还没传完的本地路径
+        // 逐图识别结果（{path: {date, source}}）：跨会话恢复要靠它重建 photoTime 的
+        // 逐图日期缓存，否则恢复后封面日期丢失、加图/切封面权重判定失效
+        photoTimes: page._photoTimes || {},
       });
       page._draftDirty = false;
     } catch (e) {
@@ -191,6 +201,7 @@ async function saveNow(page, type, id, fields, relationList, relationSyncTasks) 
     if (!existing && !dirty) return;
     const draftObj = existing || {};
     draftObj.images = images;              // 只更新图片地址
+    draftObj.photoTimes = page._photoTimes || {}; // 随草稿落盘（上传后路径已迁移，键与 images 一致）
     draftObj.savedAt = Date.now();
     if (draftObj.fields === undefined && fields) draftObj.fields = fields; // 兜底：万一第一步没写到
     wx.setStorageSync(keyOf(type, id), draftObj);
@@ -308,8 +319,14 @@ async function restore(page, type, id, apply) {
   }
   console.log('[draft.restore] 第3步：图片 存活=' + alive.length + ' 总数=' + urls.length + '（剔除 ' + dead + ' 张）');
   setPageImages(page, alive);
+  // 逐图日期缓存回填：草稿保存时把 _photoTimes 落盘了（键与 images 一致，上传后已迁移成
+  // COS URL）。恢复后直接整表恢复，封面等既有图的日期不再丢 → 再加图/切封面权重判定正常。
+  const savedPT = d.photoTimes;
+  if (savedPT && typeof savedPT === 'object') {
+    page._photoTimes = Object.assign({}, savedPT);
+  }
   console.log('[draft.restore] 第3步完成：写入后列表 ' + imgEditor.listOf(page).length + ' 张，imgField=' + page.data.imgField +
-    ' asObjects=' + !!page.data.draftImagesAsObjects);
+    ' asObjects=' + !!page.data.draftImagesAsObjects + ' 逐图日期恢复=' + (Object.keys(page._photoTimes || {}).length) + ' 条');
   if (dead > 0) {
     wx.showToast({ icon: 'none', title: '已跳过 ' + dead + ' 张失效图片（可重新添加）' });
   }

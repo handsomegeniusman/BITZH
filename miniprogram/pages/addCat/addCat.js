@@ -10,6 +10,7 @@ const db = require('../../utils/db.js'); // 公共数据库方法
 const cos = require('../../utils/cos.js'); // COS 图片上传/路径公共方法
 const guard = require('../../utils/guard.js'); // 前端保险工具（文件名清洗/限频/限长）
 const media = require('../../utils/media.js'); // 选图（相册/拍摄）公共方法
+const privacy = require('../../utils/privacy.js'); // 隐私授权通用拦截（选图前按需弹合规授权弹窗）
 const catForm = require('../../utils/catForm.js'); // 猫咪表单公共方法
 const relation = require('../../utils/relation.js'); // 猫猫关系公共逻辑（解析/反向配对/同步）
 const { setField } = require('../../utils/page.js'); // 动态字段名的 setData（避免编译报错）
@@ -59,6 +60,7 @@ Page({
 
   /** 页面加载：只有管理员可以新增猫咪 */
   async onLoad() {
+    guard.ensureNotBanned();
     await db.initUserState();
     if (!guard.requireAdmin()) return;
     // 草稿：记录本页草稿的"类型 + id"（新增页 id 用 userId，不同管理员不串档）
@@ -467,11 +469,12 @@ Page({
       wx.showToast({ title: '最多 20 张', icon: 'none' });
       return;
     }
-    // 选图是异步的，用 onChange 回调标记草稿"已变"，防抖保存才能看到刚加入的图
-    media.chooseImages(this, 'tempFileList', left, false, () => {
+    // 选图是异步的，用 onChange 回调标记草稿"已变"，防抖保存才能看到刚加入的图。
+    // wx.chooseMedia 是隐私接口：未授权先弹合规授权弹窗，同意后无缝继续；「暂不使用」则不继续。
+    privacy.guard(this, () => media.chooseImages(this, 'tempFileList', left, false, () => {
       draft.markDirty(this);
       this.clearFieldError('photo'); // 补了照片 → 消图片区红框
-    });
+    }));
   },
 
   // ============ 图片区（image-sorter 组件） ============

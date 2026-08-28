@@ -9,3 +9,6 @@
   <button class="btn" bindtap="goAppeal">提交申诉</button>
   <view class="hint">管理员核实后会尽快处理，请耐心等待。</view>
 </view>
+
+<!-- 隐私授权弹窗（复制邮箱到剪贴板前按需弹出，含原生 agreePrivacyAuthorization 按钮） -->
+<privacy-popup id="privacyPopup" desc="需要你的授权，才能复制邮箱到剪贴板。是否同意？"/>

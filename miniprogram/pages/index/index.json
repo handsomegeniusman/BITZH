@@ -1,3 +1,6 @@
 {
-  "navigationBarTitleText": "小猫书"
+  "navigationBarTitleText": "小猫书",
+  "usingComponents": {
+    "kb-done-bar": "/components/kb-done-bar/kb-done-bar"
+  }
 }

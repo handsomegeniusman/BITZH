@@ -17,6 +17,12 @@
       </view>
     </view>
   </view>
+
+  <!-- 发官方推文（仅管理员可见；置于审核开关之外，管理员随时可发） -->
+  <view wx:if="{{isAdministrator}}" class="official-entry">
+    <button class="official-btn" bindtap="addOfficial">发官方推文</button>
+  </view>
+
   <view class="navbar" bindtouchstart="onPageTap">
     <text wx:for="{{navbar}}" data-idx="{{index}}" class="item {{currentTab==index ? 'active' : ''}}" wx:key="*this" bindtap="navbarTap">{{item}}</text>
   </view>

@@ -29,6 +29,7 @@ Page({
 
   /** 页面加载：校验管理员身份并加载公告列表 */
   async onLoad() {
+    guard.ensureNotBanned();
     await db.initUserState();
     if (!guard.requireAdmin()) return;
     this.getNotice();

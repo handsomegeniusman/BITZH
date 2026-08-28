@@ -26,6 +26,7 @@ Page({
     url: app.globalData.url,
     urlPage: app.globalData.url + 'page/', // 帖子图片目录地址
     isFeeder: false,
+    isAdministrator: false, // 当前用户是否为管理员（控制「发官方推文」按钮）
     userInfo: {},
     myPosts: [],           // 我发布且仍存在的帖子（历史分栏）
     trashList: [],         // 我删除过的帖子存档（回收站分栏）
@@ -114,6 +115,7 @@ Page({
     this.setData({
       userId: app.globalData.userId,
       isFeeder: app.globalData.isFeeder,
+      isAdministrator: app.globalData.isAdministrator,
       userInfo: app.globalData.userInfo || {},
     });
     if (app.globalData.isFeeder) {
@@ -125,6 +127,11 @@ Page({
     // 按 userId 过滤加载，与投喂身份无关
     this.loadMyPosts();
     this.loadTrash();
+  },
+
+  /** 发官方推文（仅管理员；入口按钮在 WXML 按 isAdministrator 显示） */
+  addOfficial() {
+    wx.navigateTo({ url: '/pages/addOfficial/addOfficial' });
   },
 
   /** 点击头像/注册按钮 */
@@ -148,8 +155,10 @@ Page({
     db.paginate('Page', { authorId: userId }, { sort: { pageTime: -1 }, limit: 10 }, this.data.myPosts)
       .then(list => this.setData({
         myPosts: db.filterHidden(list).map(p => Object.assign({}, p, {
-          picUrl: this.data.urlPage + p.tittle + '0.jpg', // 首图（列表大图）
-          meta: (p.photoTime || '') + ' · ' + (p.photoNum || 0) + ' 张',
+          // 首图：官方推文（officialLogo）→ 包内 logo；否则按标题拼自有首图
+          picUrl: p.officialLogo ? '/pages/images/logo.png' : this.data.urlPage + p.tittle + '0.jpg',
+          // 张数：logo 不算进 photoNum，展示时补回 1
+          meta: (p.photoTime || '') + ' · ' + ((p.officialLogo ? 1 : 0) + (p.photoNum || 0)) + ' 张',
         })),
       }))
       .catch(err => { console.error('加载我的帖子失败', err); wx.showToast({ icon: 'none', title: '加载失败，下拉重试' }); });

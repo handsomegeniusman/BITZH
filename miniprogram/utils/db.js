@@ -175,6 +175,30 @@ async function getAudit() {
 }
 
 /**
+ * 读取"联系方式"（手机号 + 邮箱）：Administrator 集合中联系方式记录（config.contactRecordId）的
+ * phone / email 字段。注意：联系方式与审核开关不是同一条记录。
+ * 不缓存，每次读取最新值（联系方式改动只改数据库、无需重新发版即可生效）。
+ * 字段缺失或查询失败返回空串，由调用方（about 页）兜底显示默认值。
+ * @returns {Promise<{phone: String, email: String}>}
+ */
+async function getContact() {
+  try {
+    const app = getApp();
+    const res = await app.mpServerless.db.collection('Administrator').find({
+      _id: config.contactRecordId,
+    });
+    const rec = res.result && res.result[0];
+    return {
+      phone: (rec && typeof rec.phone === 'string') ? rec.phone : '',
+      email: (rec && typeof rec.email === 'string') ? rec.email : '',
+    };
+  } catch (e) {
+    console.error('读取联系方式失败（about 页显示默认值）', e);
+    return { phone: '', email: '' };
+  }
+}
+
+/**
  * 检查当前用户是否在"黑名单"（BlackNum 集合）中
  * @returns {Promise<Boolean>}
  */
@@ -322,6 +346,7 @@ module.exports = {
   getUserId: getUserId,
   initUserState: initUserState,
   getAudit: getAudit,
+  getContact: getContact,
   isBlacklisted: isBlacklisted,
   paginate: paginate,
   resetUserState: resetUserState,

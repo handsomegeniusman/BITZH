@@ -1,27 +1,69 @@
 <view class="container">
     <view class="page">
         <text class="title">北理流浪猫管理员后台</text>
-        <view class="card-list">
-            <view class="feature-card">
-                <text class="feature-title">审核开关</text>
+
+        <!-- 基础设置：审核开关 + 联系方式（表单类，独立成卡） -->
+        <view class="section">
+            <text class="section-title">基础设置</text>
+            <view class="card">
+                <view class="card-head">
+                    <text class="feature-title">审核开关</text>
+                    <text class="badge {{audit ? 'badge-on' : 'badge-off'}}">{{audit ? '开放中' : '已关闭'}}</text>
+                </view>
+                <text class="card-desc">控制是否开放注册 / 发布</text>
                 <button bindtap="manage" class="feature-button">切换发布开关</button>
             </view>
-            <view class="feature-card">
-                <text class="feature-title">管理公告板</text>
-                <button bindtap="manageNotice" class="feature-button">管理公告板</button>
-            </view>
-            <view class="feature-card">
-                <text class="feature-title">回收站</text>
-                <button bindtap="manageTrash" class="feature-button">被删除的猫（可恢复）</button>
-            </view>
-            <view class="feature-card">
-                <text class="feature-title">帖子回收站</text>
-                <button bindtap="managePageTrash" class="feature-button">被删除的帖子（可恢复）</button>
-            </view>
-            <view class="feature-card">
-                <text class="feature-title">内容安全</text>
-                <button bindtap="manageReview" class="feature-button">举报 / 申诉 / 复核</button>
+            <view class="card">
+                <view class="card-head" bindtap="toggleContact" hover-class="row-hover">
+                    <text class="feature-title">联系方式</text>
+                    <text class="contact-toggle {{contactOpen ? 'contact-toggle-open' : ''}}">›</text>
+                </view>
+                <block wx:if="{{contactOpen}}">
+                    <input class="contact-input" type="text" value="{{phone}}" bindinput="onPhoneInput" placeholder="联系电话（手机号）" placeholder-class="contact-placeholder"/>
+                    <input class="contact-input" type="text" value="{{email}}" bindinput="onEmailInput" placeholder="联系邮箱" placeholder-class="contact-placeholder"/>
+                    <button bindtap="saveContact" class="feature-button contact-save">保存联系方式</button>
+                </block>
             </view>
         </view>
+
+        <!-- 内容管理：行式导航入口 -->
+        <view class="section">
+            <text class="section-title">内容管理</text>
+            <view class="row" bindtap="manageNotice" hover-class="row-hover">
+                <text class="row-title">管理公告板</text>
+                <text class="row-arrow">›</text>
+            </view>
+            <view class="row" bindtap="manageOfficial" hover-class="row-hover">
+                <text class="row-title">官方推文管理</text>
+                <text class="row-arrow">›</text>
+            </view>
+            <view class="row" bindtap="manageTrashMenu" hover-class="row-hover">
+                <text class="row-title">回收站</text>
+                <view class="row-right">
+                    <text class="row-sub">猫 / 帖子</text>
+                    <text class="row-arrow">›</text>
+                </view>
+            </view>
+        </view>
+
+        <!-- 审核与安全 -->
+        <view class="section">
+            <text class="section-title">审核与安全</text>
+            <view class="row" bindtap="manageReview" hover-class="row-hover">
+                <text class="row-title">举报 / 申诉 / 内容复核</text>
+                <text class="row-arrow">›</text>
+            </view>
+        </view>
+
+        <!-- 用户管理 -->
+        <view class="section">
+            <text class="section-title">用户管理</text>
+            <view class="row" bindtap="manageUsers" hover-class="row-hover">
+                <text class="row-title">搜索用户 / 封禁解封 / 黑名单</text>
+                <text class="row-arrow">›</text>
+            </view>
+        </view>
+
+        <view class="footer-space"></view>
     </view>
 </view>

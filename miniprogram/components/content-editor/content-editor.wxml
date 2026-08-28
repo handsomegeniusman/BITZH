@@ -1,16 +1,15 @@
 <!-- ============================================================
-     内容编辑器（正文 + 话题合并，小红书/抖音式）
-     - 正文在 textarea；点「#话题」按钮末尾出 #（自动补空格保证 token 边界）
-     - 输完按 空格/回车/失焦 → 末尾 #话题 转下方胶囊
-     - 输入 #话题 时防抖检索建议（猫名 + 已有话题），点选即入胶囊（整行可点，无"添加"按钮）
+     内容编辑器（正文 + 话题混写，小红书/抖音式）
+     - 正文在 textarea，话题以 #话题 内联写在正文中（无胶囊行）
+     - 点「#话题」按钮 → 正文末尾追加 #、弹键盘、弹固定初始列表（秒开不查库）
+     - 输入 # + 关键词 → 防抖查库给建议（猫名 + 历史话题），点选即追加到正文结尾
      - 聚焦时通知页面（editorfocus）压缩图片区给建议列表腾位；失焦/点外部还原（editorblur）
      - 存储格式兼容：change 事件输出 { main, relative }（relative 为 "#话题 #话题" 规范串）
      根节点 catchtap 拦截内部点击，不让它冒泡到页面 onPageTap（页面只在点编辑器外部时收起建议）
 ============================================================ -->
 <view class="ce-wrap" catchtap="noop">
   <view class="ce-box">
-    <!-- 正文 textarea 单独包一层相对定位容器：建议下拉据此定位在【正文下方】（文章最后一个字下方），
-         而不是整个组件（含 #话题 按钮/胶囊）的下方 -->
+    <!-- 正文 textarea 单独包一层相对定位容器：建议下拉据此定位在【正文下方】（文章最后一个字下方） -->
     <view class="ce-textarea-wrap">
       <textarea
         class="ce-textarea"
@@ -19,32 +18,40 @@
         placeholder="{{placeholder}}"
         placeholder-class="ce-placeholder"
         auto-height="true"
+        max-height="{{ceMaxH}}"
+        style="max-height: {{ceMaxH}}px;"
+        adjust-position="{{false}}"
         hold-keyboard="{{true}}"
         cursor-spacing="120"
         confirm-type="done"
+        show-confirm-bar="{{false}}"
         focus="{{focusMain}}"
         cursor="{{cursor}}"
+        disabled="{{disabled}}"
         bindinput="onBodyInput"
         bindfocus="onBodyFocus"
         bindconfirm="onBodyConfirm"
         bindblur="onBodyBlur"
+        bindkeyboardheightchange="onKbHeight"
       ></textarea>
 
-      <!-- 建议下拉：正文下方（向下弹出），可滚动；整行可点即选。
+      <!-- 建议列表：正文下方（向下弹出），可滚动；整行可点即选。
            touch 级兜底：键盘收起时 tap 可能被系统吃掉，用 touchstart 记录意图 + blur 定时兜底，
-           保证第一次点击就生效。猫名（真实名/别名/曾用名/昵称命中）带 🐱 标识 -->
+           保证第一次点击就生效。猫名（真实名/别名/曾用名/昵称命中）带 🐱 标识。
+           【注意】这里用 bindtouchstart（不是 catchtouchstart）：catch 会阻止 touchstart
+           冒泡，scroll-view 收不到触摸就滚不动（Bug-B）。bind 不阻断滚动、onItemTouchStart 照常执行。 -->
       <view class="ce-suggest" wx:if="{{showSuggest}}">
-        <scroll-view class="ce-suggest-scroll" scroll-y="{{true}}" style="height: {{suggestMaxH}}px;">
+        <scroll-view class="ce-suggest-scroll" scroll-y="{{true}}" style="height: {{suggestH}}px;">
           <block wx:if="{{suggestions.length}}">
             <view
               class="ce-suggest-item"
               wx:for="{{suggestions}}"
               wx:key="name"
               data-item="{{item.name}}"
-              catchtouchstart="onItemTouchStart"
+              bindtouchstart="onItemTouchStart"
               bindtouchmove="onItemTouchMove"
               bindtouchend="onItemTouchEnd"
-              catchtouchcancel="onItemTouchCancel"
+              bindtouchcancel="onItemTouchCancel"
               bindtap="tapSuggestion"
             >
               <text wx:if="{{item.isCat}}" class="ce-suggest-cat">🐱</text>
@@ -60,20 +67,12 @@
     <view class="ce-toolbar" wx:if="{{!showToolbar}}">
       <view class="ce-topic-btn" catchtap="appendHash" bindtouchstart="onBtnTouchStart">#话题</view>
     </view>
-
-    <!-- 已生成的话题胶囊（点 × 删除） -->
-    <view class="ce-chips" wx:if="{{topics.length}}">
-      <view class="ce-chip" wx:for="{{topics}}" wx:key="*this">
-        <text class="ce-chip-text">#{{item}}</text>
-        <text class="ce-chip-del" catchtap="removeTopic" data-index="{{index}}">×</text>
-      </view>
-    </view>
   </view>
 
   <!-- 键盘上方工具栏（正文聚焦时显示，替代正文里的 #话题 按钮）：
-       左「话题」再追加 # 并刷新全部话题，右「完成」完全退出（收列表 + 还原图片 + 收键盘） -->
-  <view class="ce-kb-bar" wx:if="{{showToolbar}}" style="bottom: {{kbH}}px;">
-    <text class="ce-kb-topic" catchtap="appendHash" catchtouchstart="onBtnTouchStart">话题</text>
+       左「#话题」与正文按钮同款粉色胶囊，右「完成」完全退出（收尾话题 + 收列表 + 还原图片 + 收键盘） -->
+  <view class="ce-kb-bar" wx:if="{{showToolbar && kbUp}}" style="bottom: {{kbH}}px;">
+    <view class="ce-topic-btn" catchtap="appendHash" bindtouchstart="onBtnTouchStart">#话题</view>
     <text class="ce-kb-done" catchtap="collapseAll">完成</text>
   </view>
 </view>

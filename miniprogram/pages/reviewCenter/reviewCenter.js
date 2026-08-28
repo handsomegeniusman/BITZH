@@ -9,6 +9,7 @@
 const app = getApp();
 const db = require('../../utils/db.js'); // 公共数据库方法
 const moderate = require('../../utils/moderate.js'); // 内容安全执行器（封禁/解封/下架/恢复，走云函数）
+const guard = require('../../utils/guard.js'); // 前端保险工具（黑名单拦截/限频）
 
 const SCENE_LABEL = { 1: '昵称', 2: '评论', 3: '推文' };
 
@@ -33,6 +34,7 @@ Page({
   },
 
   async onShow() {
+    guard.ensureNotBanned();
     await db.initUserState();
     if (!app.globalData.isAdministrator) {
       wx.showToast({ title: '无权访问', icon: 'none' });

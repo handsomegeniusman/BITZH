@@ -136,6 +136,50 @@
     line-height: 1;
   }
 
+  /* 用户搜索块：用户横条 + 下方帖子列表（仅管理员） */
+  .user-search-block {
+    margin-bottom: 14rpx;
+  }
+  .user-post-list {
+    background: #fff;
+    border-radius: 0 0 16rpx 16rpx;
+    margin-top: -8rpx; /* 与用户横条紧密衔接（横条已有 margin-bottom 14rpx 抵消） */
+    padding: 4rpx 20rpx 12rpx;
+    box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
+  }
+  .user-post-row {
+    display: flex;
+    align-items: center;
+    gap: 12rpx;
+    padding: 12rpx 0;
+    border-bottom: 1rpx solid #f5f5f5;
+  }
+  .user-post-row:last-child {
+    border-bottom: none;
+  }
+  .user-post-title {
+    flex: 1;
+    min-width: 0;
+    font-size: 26rpx;
+    color: #333;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .user-post-time {
+    flex-shrink: 0;
+    font-size: 22rpx;
+    color: #999;
+  }
+  .post-badge {
+    flex-shrink: 0;
+    font-size: 20rpx;
+    color: #fff;
+    background: #999;
+    border-radius: 6rpx;
+    padding: 2rpx 8rpx;
+  }
+
   .content {
     display: flex;
     flex-direction: row;

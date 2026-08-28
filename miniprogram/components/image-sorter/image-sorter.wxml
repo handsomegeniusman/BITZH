@@ -82,8 +82,11 @@
 
   <view class="is-count" wx:if="{{!compact}}">已选 {{items.length}} 张</view>
 
-  <!-- 删除图片确认弹窗（勾选"下次不再询问"后直接删，不再弹窗） -->
-  <view class="del-mask" wx:if="{{delModal.show}}" catchtouchmove="noop" bindtap="delCancel">
+  <!-- 删除图片确认弹窗（勾选"下次不再询问"后直接删，不再弹窗）。
+       弹窗打开时页面已禁用/收回底层 input/textarea（bind:modalchange），iOS 上不会再弹键盘；
+       蒙层这里不能用 catchtouchstart —— catchtouchstart 会阻断子元素（按钮）的 tap 事件
+       （微信已知坑），会让取消/删除按钮点不动。只用 catchtap 阻断冒泡。 -->
+  <view class="del-mask" wx:if="{{delModal.show}}" catchtouchmove="noop" catchtap="delCancel">
     <view class="del-modal" catchtap="noop">
       <view class="del-title">删除这张图片？</view>
       <view class="del-option" catchtap="toggleNoAsk">
@@ -91,8 +94,8 @@
         <text class="del-option-text">下次不再询问</text>
       </view>
       <view class="del-btns">
-        <button class="del-btn cancel" bindtap="delCancel">取消</button>
-        <button class="del-btn ok" bindtap="delConfirm">删除</button>
+        <button class="del-btn cancel" catchtap="delCancel">取消</button>
+        <button class="del-btn ok" catchtap="delConfirm">删除</button>
       </view>
     </view>
   </view>

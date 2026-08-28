@@ -9,6 +9,7 @@ const db = require('../../utils/db.js'); // 公共数据库方法
 const cos = require('../../utils/cos.js'); // COS 图片上传/删除/路径公共方法
 const guard = require('../../utils/guard.js'); // 前端保险工具（文件名清洗/限频/限长）
 const secCheck = require('../../utils/secCheck.js'); // 内容安全审核（昵称，写库前拦截）
+const privacy = require('../../utils/privacy.js'); // 隐私授权通用拦截（选择头像前按需弹合规授权弹窗）
 
 // 默认头像（微信官方默认头像）
 const defaultAvatarUrl = 'https://mmbiz.qpic.cn/mmbiz/icTdbqWNOwNRna42FI242Lcia07jQodd2FJGIYQfG0LAJGFxM4FbnQP6yfMxBgJ0F3YRqJCJ1aPAK2dQagdusBZg/0';
@@ -25,10 +26,12 @@ Page({
     },
     usedName: '',    // 进入页面时原来的昵称（用于判断是否改名）
     sameName: false, // 昵称是否与其他用户重名
+    forbidWord: '',  // 昵称是否命中禁用词（官方/北理珠关爱部等仿冒词），命中的词原样回显
   },
 
   /** 页面加载 */
   async onLoad(options) {
+    guard.ensureNotBanned();
     // 审核开关：注册功能是否开放
     this.setData({ audit: await db.getAudit() });
     // 身份一律以服务端登录态为准（不信任分享链接里的 userId 参数，
@@ -71,11 +74,18 @@ Page({
     }
   },
 
-  /** 输入昵称：清洗后实时检查是否与其他用户重名（防抖 300ms，避免每次按键都打数据库） */
+  /** 输入昵称：清洗后实时检查禁用词 + 是否与其他用户重名（重名防抖 300ms，避免每次按键都打数据库） */
   onInput(e) {
     // 先清洗（昵称会用作头像文件名，去掉危险字符并限长 20 字）
     const nickName = guard.sanitizeFileName(e.detail.value, 20);
-    this.setData({ 'userInfo.nickName': nickName });
+    // 禁用词（官方/北理珠关爱部等仿冒词）实时拦截：命中就不再做重名查询
+    const forbid = guard.forbiddenName(nickName);
+    this.setData({ 'userInfo.nickName': nickName, forbidWord: forbid });
+    if (forbid) {
+      clearTimeout(this._nameTimer);
+      this.setData({ sameName: false });
+      return;
+    }
     // 防抖：停止输入 300ms 后才真正查询
     clearTimeout(this._nameTimer);
     this._nameTimer = setTimeout(() => {
@@ -100,9 +110,17 @@ Page({
     this.setData({ 'userInfo.phoneNum': e.detail.value });
   },
 
-  /** 选择头像（微信头像选择按钮，返回本地临时文件） */
-  onChooseAvatar(e) {
-    this.setData({ 'userInfo.avatarUrl': e.detail.avatarUrl });
+  /** 选择头像：先做隐私授权拦截（chooseAvatar 是隐私接口），同意后调 wx.chooseAvatar 打开微信头像选择器 */
+  pickAvatar() {
+    privacy.guard(this, () => {
+      wx.chooseAvatar({
+        success: (res) => this.setData({ 'userInfo.avatarUrl': res.avatarUrl }),
+        fail: (err) => {
+          console.error('[regist] 选择头像失败', err);
+          wx.showToast({ title: '头像选择失败，请重试', icon: 'none' });
+        },
+      });
+    });
   },
 
   /** 点击"提交" */
@@ -118,6 +136,10 @@ Page({
         this.setData({ 'userInfo.nickName': nickName });
         if (guard.isEmpty(nickName)) {
           wx.showToast({ icon: 'error', title: '请输入昵称' });
+        } else if (guard.forbiddenName(nickName)) {
+          // 仿冒官方/误导性词兜底拦截（onInput 已实时提示，这里是提交前最后一关）
+          this.setData({ forbidWord: guard.forbiddenName(nickName), sameName: false });
+          wx.showToast({ icon: 'error', title: '昵称含仿冒/误导词汇，请更换' });
         } else if (this.data.userInfo.avatarUrl === '' || this.data.userInfo.avatarUrl === defaultAvatarUrl) {
           wx.showToast({ icon: 'error', title: '请选择头像' });
         } else if (this.data.sameName) {

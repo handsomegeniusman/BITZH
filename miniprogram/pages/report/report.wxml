@@ -13,10 +13,13 @@
 
   <view class="card">
     <view class="label">举报理由 <text class="hint">（必填，200字以内）</text></view>
-    <textarea class="textarea" maxlength="200" placeholder="可点上方类型快速填入，再补充具体细节（如哪句话、哪个账号等）" bindinput="onReasonInput" value="{{reason}}" />
+    <textarea class="textarea" maxlength="200" placeholder="可点上方类型快速填入，再补充具体细节（如哪句话、哪个账号等）" bindinput="onReasonInput" show-confirm-bar="{{false}}" value="{{reason}}" />
   </view>
 
   <view class="tip">举报为匿名，你的身份不会泄露给被举报人。管理员会尽快核实，恶意刷举报将被限制。</view>
 
   <button class="btn" bindtap="submit" disabled="{{submitting}}">提交举报</button>
+
+  <!-- 跟随键盘的「完成」栏：键盘弹起时提供一键收起（部分输入法没有收起键） -->
+  <kb-done-bar/>
 </view>

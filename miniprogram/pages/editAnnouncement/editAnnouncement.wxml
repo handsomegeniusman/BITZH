@@ -22,10 +22,13 @@
     <view class="modal-content">
         <view class="picker-wrapper">
                   <text class="label">公告名：</text>
-                  <input class="other-input other-input-height" type="text" placeholder="请输入公告名" bindinput="onNameInput" value="{{noticeName}}"/>
+                  <input class="other-input other-input-height" type="text" placeholder="请输入公告名" bindinput="onNameInput" show-confirm-bar="{{false}}" value="{{noticeName}}"/>
                   <text class="label">公告：</text>
-                  <input class="other-input other-input-height" type="text" placeholder="请输入公告内容" bindinput="onNoticeInput" value="{{notice}}"/>
+                  <input class="other-input other-input-height" type="text" placeholder="请输入公告内容" bindinput="onNoticeInput" show-confirm-bar="{{false}}" value="{{notice}}"/>
         </view>
         <button class="confirm-btn" bindtap="confirmSelection">确认</button>
     </view>
 </view>
+
+<!-- 跟随键盘的「完成」栏：键盘弹起时提供一键收起（部分输入法没有收起键） -->
+<kb-done-bar/>

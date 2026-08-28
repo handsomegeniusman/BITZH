@@ -56,6 +56,7 @@ const SLOT_LOCK_MS = 250;   // [让位] 让位/退回后冷却锁：期间不再
 const DEBUG_FPS = false;    // [AUTO-SCROLL] 性能观测开关：true 时每秒输出 rafFPS + 每帧耗时
 const NOASK_KEY = 'imgDeleteNoAsk'; // 删除"不再询问"的 storage 标记
 const TOOLS_H = 30;        // 每张图下方工具行高度（px）
+const cos = require('../../utils/cos.js'); // 包内 logo 判断（官方推文默认封面，预览时剔除）
 
 // rAF：逻辑层支持 requestAnimationFrame；低版本回退到 16ms 定时器
 const raf = (typeof requestAnimationFrame === 'function')
@@ -128,11 +129,12 @@ Component({
     measure() {
       const info = (typeof wx.getWindowInfo === 'function') ? wx.getWindowInfo() : wx.getSystemInfoSync();
       const rpx = (info.windowWidth || 375) / 750;
-      // compact（内容编辑器聚焦时）：图片缩成窄缩略图条、隐藏工具行 → 卡片变小、轨道变矮，
-      // 为可滚动的建议列表腾出上方空间；默认关（猫页/非聚焦时不受影响）
+      // compact（内容编辑器聚焦时）：图片缩成缩略图条、隐藏工具行 → 卡片变小、轨道变矮，
+      // 为可滚动的建议列表腾出上方空间；默认关（猫页/非聚焦时不受影响）。
+      // 缩图高度按用户确认的 F1：约 200rpx（≈100px@375pt），比原 56px 更缓和
       const compact = !!this.data.compact;
       const rawPx = Math.max(40, Math.round(this.data.size * rpx));
-      const itemPx = compact ? 56 : rawPx; // 压缩态更窄的缩略图条，给下方建议列表多留空间
+      const itemPx = compact ? Math.round(200 * rpx) : rawPx; // 压缩态缩略图条：约 200rpx
       const gapPx = Math.round(this.data.gap * rpx);
       this._rpx = rpx;
       this._itemPx = itemPx;
@@ -593,6 +595,7 @@ Component({
       if (idx < 0) return;
       if (wx.getStorageSync(NOASK_KEY)) { this.doDelete(id); return; }
       this.setData({ delModal: { show: true, id, noAsk: false } });
+      this.notifyModal(true); // 弹窗打开：通知页面禁用/收回底层输入，防 iOS 点穿弹键盘
     },
 
     doDelete(id) {
@@ -613,10 +616,14 @@ Component({
       const m = this.data.delModal;
       if (m.noAsk) wx.setStorageSync(NOASK_KEY, true);
       this.setData({ 'delModal.show': false });
+      this.notifyModal(false); // 弹窗关闭：恢复底层输入可用
       if (m.id) this.doDelete(m.id);
     },
 
-    delCancel() { this.setData({ 'delModal.show': false }); },
+    delCancel() {
+      this.setData({ 'delModal.show': false });
+      this.notifyModal(false); // 弹窗关闭：恢复底层输入可用
+    },
 
     toggleNoAsk() { this.setData({ 'delModal.noAsk': !this.data.delModal.noAsk }); },
 
@@ -640,9 +647,13 @@ Component({
       const list = this.data.internalItems;
       const idx = list.findIndex((it) => it.id === id);
       if (idx < 0) return;
-      const urls = list.map((it) => it.src).filter(Boolean);
+      // 包内 logo（官方推文默认封面）不是网络/临时图，微信原生预览不支持包内路径：
+      // 预览列表里剔除 logo；点到的恰好是 logo 时改看第一张自有图（全为 logo 则无图可预览）
+      const urls = list.map((it) => it.src).filter(Boolean).filter((u) => !cos.isBundledLogo(u));
       if (!urls.length) return;
-      wx.previewImage({ urls, current: list[idx].src || urls[0] });
+      const src = list[idx].src || '';
+      const current = (!cos.isBundledLogo(src) && src) || urls[0];
+      wx.previewImage({ urls, current });
     },
 
     onImgError(e) {
@@ -664,6 +675,13 @@ Component({
     emitChange(source) {
       const raw = this.data.internalItems.map((it) => it.raw);
       this.triggerEvent('change', { items: raw, source });
+    },
+
+    /** 删除确认弹窗开/关状态通知页面（bind:modalchange）。
+     *  弹窗打开时页面据此禁用/收回底层 input/textarea，杜绝 iOS 点击弹窗
+     *  穿透唤醒底层输入框弹出键盘；关闭时恢复。 */
+    notifyModal(show) {
+      this.triggerEvent('modalchange', { show: !!show });
     },
   },
 });

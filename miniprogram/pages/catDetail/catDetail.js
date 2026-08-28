@@ -45,6 +45,7 @@ Page({
 
   /** 页面加载：从分享链接可直接带 _id 打开；缺 _id 时兜底 */
   async onLoad(options) {
+    guard.ensureNotBanned();
     this._id = options && options._id;
     console.log('[catDetail] onLoad, _id =', this._id, ', options =', options);
     if (!this._id) {

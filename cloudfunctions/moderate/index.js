@@ -429,16 +429,6 @@ module.exports = async function (ctx) {
       console.log('[moderate] 幂等跳过（该指令已处理过）:', opId);
       return { ok: true, skipped: true, opId: opId };
     }
-    // 诊断：Feishu 指令触发的调用，群里推一条「开始执行」，便于定位（用户看不到云函数日志）
-    if (event.replyTo) {
-      try {
-        await pushFeishu('🛠 收到指令：' + (event.action || '?') +
-          (event.userId ? ' userId=' + event.userId : '') +
-          (event.targetId ? ' targetId=' + event.targetId : ''));
-      } catch (e) {
-        console.error('[moderate] 推送开始执行诊断失败', e && e.message);
-      }
-    }
     let r;
     // 幂等执行：命令对应操作直接执行（各 handler 内部天然幂等——黑名单按 id 去重、软删/恢复只写标志位），
     // 无论目标当前处于什么状态，回执统一为「已 X」成功文案，让操作者一眼确认命令已生效。

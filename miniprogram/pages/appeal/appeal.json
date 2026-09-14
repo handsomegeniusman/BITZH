@@ -1,7 +1,6 @@
 {
   "navigationBarTitleText": "申诉",
   "usingComponents": {
-    "kb-done-bar": "/components/kb-done-bar/kb-done-bar",
-    "privacy-popup": "/components/privacy-popup/privacy-popup"
+    "kb-done-bar": "/components/kb-done-bar/kb-done-bar"
   }
 }

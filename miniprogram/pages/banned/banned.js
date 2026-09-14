@@ -6,7 +6,7 @@
 const app = getApp();
 const db = require('../../utils/db.js'); // 公共数据库方法
 const config = require('../../config.js'); // 全局配置（管理员邮箱）
-const privacy = require('../../utils/privacy.js'); // 隐私授权通用拦截（复制到剪贴板前按需弹合规授权弹窗）
+const clipboard = require('../../utils/clipboard.js'); // 复制到剪贴板（统一反馈 + 隐私授权兜底）
 
 Page({
   data: {
@@ -32,13 +32,8 @@ Page({
     wx.navigateTo({ url: '/pages/appeal/appeal' });
   },
 
-  /** 复制管理员邮箱（wx.setClipboardData 是隐私接口：未同意隐私指引先弹合规授权弹窗） */
+  /** 复制管理员邮箱（走 utils/clipboard.js：成功/失败都有提示，失败含隐私授权兜底） */
   copyEmail() {
-    privacy.guard(this, () => {
-      wx.setClipboardData({
-        data: this.data.email,
-        success: () => wx.showToast({ title: '已复制邮箱', icon: 'success' }),
-      });
-    });
+    clipboard.copy(this.data.email, '邮箱');
   },
 });

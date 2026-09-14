@@ -6,7 +6,9 @@
 //                   用户点「同意并继续」后执行 fn；点「暂不使用」则不执行；
 //          已授权 / 无 getPrivacySetting 接口 / 页面没放弹窗 → 直接执行 fn。
 // 【用法】const privacy = require('../../utils/privacy.js');
-//        privacy.guard(this, () => wx.setClipboardData({...}));
+//        privacy.guard(this, () => wx.chooseMedia({...}));  // 选图 / 头像
+// 【注意】剪贴板**不要**走这里：真机上 guard 会静默挂起（Promise 不 resolve），
+//        表现是「点了完全没反应」。复制请用 utils/clipboard.js。
 // ============================================================
 function guard(page, fn) {
   const popup = page.selectComponent && page.selectComponent('#privacyPopup');

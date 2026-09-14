@@ -114,6 +114,3 @@
   </view>
 
 </view>
-
-<!-- 隐私授权弹窗（复制联系方式到剪贴板前按需弹出，含原生 agreePrivacyAuthorization 按钮） -->
-<privacy-popup id="privacyPopup" desc="需要你的授权，才能复制联系方式到剪贴板。是否同意？"/>

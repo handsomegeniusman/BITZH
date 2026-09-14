@@ -1,6 +1,4 @@
 {
   "navigationBarTitleText": "关于",
-  "usingComponents": {
-    "privacy-popup": "/components/privacy-popup/privacy-popup"
-  }
+  "usingComponents": {}
 }

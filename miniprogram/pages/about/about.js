@@ -6,7 +6,7 @@
 const app = getApp();
 const db = require('../../utils/db.js'); // 公共数据库方法
 const config = require('../../config.js'); // 全局配置（广告位 ID 等）
-const privacy = require('../../utils/privacy.js'); // 隐私授权通用拦截（复制到剪贴板前按需弹合规授权弹窗）
+const clipboard = require('../../utils/clipboard.js'); // 复制到剪贴板（统一反馈 + 隐私授权兜底）
 
 let videoAd = null; // 激励视频广告实例（首次点击时才创建）
 
@@ -130,21 +130,10 @@ Page({
   // 先查 scope.clipboard 授权状态 → 引导用户去小程序设置里打开剪贴板权限，或重试。
   _copy(data, label) {
     console.log('[about._copy] 点击复制', label, data);
-    // wx.setClipboardData 是隐私接口：未同意隐私指引先弹合规授权弹窗，同意后再复制；
-    // 复制仍失败（如 scope.clipboard 被关）由 _copyFail 引导去设置
-    privacy.guard(this, () => {
-      wx.setClipboardData({
-        data: data,
-        success: () => {
-          console.log('[about._copy] 复制成功', label);
-          wx.showToast({ title: '已复制', icon: 'success' });
-        },
-        fail: (err) => {
-          console.error('[about._copy] 复制失败', label, err);
-          this._copyFail(data, label);
-        },
-      });
-    });
+    // 2026-09-14：不再用 privacy.guard 包一层（自定义弹窗那条路真机会静默挂起，点了没反应）。
+    // 统一走 utils/clipboard.js：成功弹「已复制」；隐私未授权自动拉官方弹窗重试；
+    // 仍失败（如 scope.clipboard 被关）才交给 _copyFail 引导去设置。
+    clipboard.copy(data, label, () => this._copyFail(data, label));
   },
 
   /** 复制失败后的引导：判断剪贴板权限状态，给出可操作路径（去设置 / 重试） */

@@ -12,6 +12,7 @@ const db = require('../../utils/db.js'); // 公共数据库方法
 const guard = require('../../utils/guard.js'); // 前端保险工具
 const moderate = require('../../utils/moderate.js'); // 内容安全执行器（封禁/解封走云函数）
 const { setField } = require('../../utils/page.js'); // 动态字段名的 setData（避免编译报错）
+const clipboard = require('../../utils/clipboard.js'); // 复制到剪贴板（统一反馈 + 隐私授权兜底）
 
 // 微信默认头像（用户从未上传头像时的占位，与 regist 页一致）
 const DEFAULT_AVATAR = 'https://mmbiz.qpic.cn/mmbiz/icTdbqWNOwNRna42FI242Lcia07jQodd2FJGIYQfG0LAJGFxM4FbnQP6yfMxBgJ0F3YRqJCJ1aPAK2dQagdusBZg/0';
@@ -172,40 +173,9 @@ Page({
     wx.navigateTo({ url: '/pages/bookletDetail/bookletDetail?_id=' + _id + '&admin=1' });
   },
 
-  /** 复制用户 openid / ID。
-   *  2026-08-29 修复：原来走 `privacy.guard`（自定义隐私弹窗）包一层、且 `wx.setClipboardData`
-   *  没有任何回调 —— 真机上表现为「点了完全没反应」，而且成功/失败都没有任何提示。
-   *  现在：直接复制 → 成功弹 toast；失败若因隐私未授权（errno 112）则拉起微信官方隐私弹窗后重试一次；
-   *  其它失败也给明确提示（不再静默）。不再依赖自定义 privacy-popup。 */
+  /** 复制用户 openid / ID（统一走 utils/clipboard.js：成功/失败都有提示 + 隐私授权兜底） */
   copyId(e) {
-    const text = String(e.currentTarget.dataset.userid || '').trim();
-    if (!text) {
-      wx.showToast({ icon: 'none', title: '没有可复制的内容' });
-      return;
-    }
-    this.copyText(text);
-  },
-
-  /** 执行复制到剪贴板。retried 用于「隐私授权后重试」只重试一次，避免失败时无限循环 */
-  copyText(text, retried) {
-    wx.setClipboardData({
-      data: text,
-      success: () => wx.showToast({ icon: 'success', title: '已复制', duration: 1200 }),
-      fail: (err) => {
-        console.warn('[userManage] 复制失败', err);
-        // 隐私未授权（微信 errno 112）→ 拉起官方隐私弹窗，用户同意后重试一次
-        const needPrivacy = err && (err.errno === 112 || /privacy/i.test(err.errMsg || ''));
-        if (!retried && needPrivacy && typeof wx.requirePrivacyAuthorize === 'function') {
-          wx.requirePrivacyAuthorize({
-            success: () => this.copyText(text, true),
-            fail: () => wx.showToast({ icon: 'none', title: '未授权，复制失败' }),
-          });
-          return;
-        }
-        // 其它失败（如剪贴板权限被关）：明确告知，并提示可长按手动选中
-        wx.showToast({ icon: 'none', title: '复制失败，请长按手动选择' });
-      },
-    });
+    clipboard.copy(e.currentTarget.dataset.userid, '用户ID');
   },
 
   /** 用户头像加载失败 → 回退微信默认头像（COS 头像可能失效/被删） */

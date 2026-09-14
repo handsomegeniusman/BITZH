@@ -31,6 +31,8 @@ Page({
     recoverMode: false, // 回收站预览模式：内容来自 Delete 存档，只读，不展示评论区
     catTopicMap: {},    // 话题 -> 是否猫名（是猫的话胶囊前加 🐱，和 catDetail 一致）
     blocked: false,     // 推文已被封禁/下架：非管理入口打开 → 全屏封禁占位（禁止查看）
+    isAdmin: false,     // 当前用户是否管理员（标题长按直达猫咪编辑页用）
+    titleCatId: '',     // 标题就是猫名时那只猫的 _id（空 = 标题不是猫名）
   },
 
   /** 页面加载：从分享链接可直接带 _id 打开；缺 _id 时兜底 */
@@ -67,6 +69,7 @@ Page({
       userId: app.globalData.userId,
       isFeeder: app.globalData.isFeeder,
       userInfo: app.globalData.userInfo,
+      isAdmin: !!app.globalData.isAdministrator,
     });
   },
 
@@ -91,6 +94,7 @@ Page({
         this.setPhoto();      // 生成图片列表
         this.getRelative();   // 解析相关标签
         this.getComment();    // 加载评论
+        this.matchTitleCat(); // 管理员长按标题直达猫咪编辑页：先算标题是不是猫名
       })
       .catch(err => { console.error(err); wx.showToast({ icon: 'none', title: '加载失败' }); });
   },
@@ -211,6 +215,31 @@ Page({
         }
       })
       .catch(err => console.error(err));
+  },
+
+  /** 标题「就是」某只猫的名字？命中则记下那只猫的 _id（管理员长按标题直达猫咪编辑页用）。
+   *  口径：标题要作为独立词出现在猫的 **真实名 / 别名 / 曾用名** 里（独立词 = 边界判定，
+   *  "肥仔" 命中、"肥猪头" 不命中）。所以标题「肥仔」「黄条子」(别名) 都算，
+   *  「肥仔🐱」「肥仔的绝育记」不算——不是猫名就别抢长按。
+   *  这里**不**像话题胶囊那样带 nickname：nickname 是各字段自动拼的搜索关键词（含毛色/
+   *  状况/位置），带上会让标题「狸花」「健康」误命中随机一只猫。
+   *  只有管理员需要这个能力 → 非管理员直接跳过，省一次查询。
+   *  只读查询，失败静默（titleCatId 留空，长按不响应）。 */
+  async matchTitleCat() {
+    if (!app.globalData.isAdministrator) return;
+    const tittle = String((this.data.listData || {}).tittle || '').trim();
+    if (!tittle) { this.setData({ titleCatId: '' }); return; }
+    try {
+      // topicCatFilter 的 $or 比这里更宽（含 nickname），这里当候选集用，最终由 aliasContains 定夺
+      const filter = catForm.topicCatFilter([tittle]);
+      const cats = filter ? await db.find('BITZH', filter, { limit: 5 }) : [];
+      const cat = (cats || []).find((c) => c && catForm.aliasContains(
+        [c.name, c.otherName, c.usedName].filter(Boolean).join(' '), tittle
+      ));
+      this.setData({ titleCatId: cat ? cat._id : '' });
+    } catch (err) {
+      console.error('查询标题猫失败', err);
+    }
   },
 
   // ============ 评论区 ============
@@ -421,6 +450,20 @@ Page({
     if (app.globalData.isAdministrator || userInfo.userId === authorId) {
       wx.navigateTo({ url: '/pages/editBooklet/editBooklet?_id=' + _id });
     }
+  },
+
+  /** 长按标题：标题就是猫名时，管理员直达该猫编辑页（titleCatId 由 matchTitleCat 算好）。
+   *  非管理员 / 标题不是猫名 → 不响应，保留长按选中文本的原行为。
+   *  回收站预览模式下与长按推文一致 → 进恢复模式编辑页（存档的标题不参与猫名匹配）。 */
+  editCatByTitle() {
+    if (this._recoverMode) {
+      this.editRecover();
+      return;
+    }
+    if (!app.globalData.isAdministrator) return;
+    const catId = this.data.titleCatId;
+    if (!catId) return;
+    wx.navigateTo({ url: '/pages/editCat/editCat?_id=' + catId });
   },
 
   /** 点击作者头像放大预览 */

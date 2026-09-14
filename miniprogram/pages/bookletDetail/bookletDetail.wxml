@@ -30,7 +30,9 @@
   <!-- 正文卡片 -->
   <view class="content-card">
     <view class="head">
-      <text class="head-title" user-select="true">{{listData.tittle}}</text>
+      <!-- 标题：管理员长按可直达猫咪编辑页（仅当标题就是猫名，titleCatId 由 matchTitleCat 算好）。
+           此时关掉 user-select，避免「长按选中文本」的菜单和跳转同时触发；其它情况保持可长按选中。 -->
+      <text class="head-title" user-select="{{!(isAdmin && titleCatId)}}" bindlongpress="editCatByTitle">{{listData.tittle}}</text>
       <text wx:if="{{!recoverMode}}" class="report-link" bindtap="reportPage">举报</text>
     </view>
     <!-- 拍摄时间：放在标题正下方，不滑动也能看到 -->

@@ -77,9 +77,23 @@
   line-height: 1.5;
   letter-spacing: 0.5px;
 }
+/* 标题行：外层包一层是为了挂长按（内层 text 需要 user-select，会抢长按事件） */
+.head-title-wrap {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
 .head-title {
   flex: 1;
   min-width: 0;
+}
+/* 标题是猫名时的猫头标识，和话题胶囊的 🐱 一个含义 */
+.head-title-cat {
+  flex-shrink: 0;
+  margin-right: 6rpx;
+  font-size: 17px;
+  line-height: 1;
 }
 .report-link {
   flex-shrink: 0;

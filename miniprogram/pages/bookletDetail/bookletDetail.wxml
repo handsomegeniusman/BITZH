@@ -30,9 +30,14 @@
   <!-- 正文卡片 -->
   <view class="content-card">
     <view class="head">
-      <!-- 标题：管理员长按可直达猫咪编辑页（仅当标题就是猫名，titleCatId 由 matchTitleCat 算好）。
-           此时关掉 user-select，避免「长按选中文本」的菜单和跳转同时触发；其它情况保持可长按选中。 -->
-      <text class="head-title" user-select="{{!(isAdmin && titleCatId)}}" bindlongpress="editCatByTitle">{{listData.tittle}}</text>
+      <!-- 标题：标题就是猫名时前面画 🐱（和话题胶囊一致），管理员长按标题 → 直达那只猫的编辑页。
+           长按必须挂在外面这层 view 上：直接挂在带 user-select 的内层 text 上会和「长按选中文本」
+           抢事件，真机表现就是长按没反应；同时命中猫名时把内层 user-select 关掉，
+           避免选中菜单和跳转同时弹出来。 -->
+      <view class="head-title-wrap" bindlongpress="editCatByTitle">
+        <text wx:if="{{titleCatId && !titleHasCatIcon}}" class="head-title-cat">🐱</text>
+        <text class="head-title" user-select="{{!(isAdmin && titleCatId)}}">{{listData.tittle}}</text>
+      </view>
       <text wx:if="{{!recoverMode}}" class="report-link" bindtap="reportPage">举报</text>
     </view>
     <!-- 拍摄时间：放在标题正下方，不滑动也能看到 -->

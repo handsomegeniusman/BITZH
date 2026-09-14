@@ -17,6 +17,20 @@ const trash = require('../../utils/trash.js'); // 删除存档字段兼容读取
 const topic = require('../../utils/topic.js'); // 话题解析（兼容历史脏格式）
 const catForm = require('../../utils/catForm.js'); // 话题→猫 匹配（别名/曾用名/绰号健壮匹配）
 
+// ============ 标题去装饰（管理员长按标题进猫咪页用） ============
+// 管理员写标题常带猫头和括号（「🐱肥仔」「肥仔🐱」「肥仔（绝育记）」），
+// 直接拿去和猫名比会全不命中。这里只剥「符号」——表情、空白、括号标点，
+// 不拆名字本身：「肥仔的绝育记」剥完仍是「肥仔的绝育记」，不会退化成「肥仔」，
+// 所以「标题就是猫名」这个严格口径不受影响。
+const TITLE_DECOR = /[\s\u3000\u200B-\u200D\uFE0F]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF\u2B00-\u2BFF]/g;
+const TITLE_PUNCT = /[（）()【】\[\]《》〈〉“”"'’‘·・•\-—_~～|/\\,，、;；:：.。!！?？#＃*+＋]+/g;
+function stripTitleDecor(tittle) {
+  return String(tittle == null ? '' : tittle)
+    .replace(TITLE_DECOR, '')   // 表情/空白：直接删（「肥仔🐱」→「肥仔」）
+    .replace(TITLE_PUNCT, ' ')  // 标点：换空格，保留词边界（「肥仔（绝育记）」→「肥仔 绝育记」）
+    .trim();
+}
+
 Page({
   data: {
     url: app.globalData.url + 'page/', // 推文图片目录地址
@@ -32,7 +46,8 @@ Page({
     catTopicMap: {},    // 话题 -> 是否猫名（是猫的话胶囊前加 🐱，和 catDetail 一致）
     blocked: false,     // 推文已被封禁/下架：非管理入口打开 → 全屏封禁占位（禁止查看）
     isAdmin: false,     // 当前用户是否管理员（标题长按直达猫咪编辑页用）
-    titleCatId: '',     // 标题就是猫名时那只猫的 _id（空 = 标题不是猫名）
+    titleCatId: '',     // 标题就是猫名时那只猫的 _id（空 = 标题不是猫名，标题前不画 🐱）
+    titleHasCatIcon: false, // 标题里已经手写了 🐱 → 不重复画（避免出现两个猫头）
   },
 
   /** 页面加载：从分享链接可直接带 _id 打开；缺 _id 时兜底 */
@@ -218,17 +233,20 @@ Page({
   },
 
   /** 标题「就是」某只猫的名字？命中则记下那只猫的 _id（管理员长按标题直达猫咪编辑页用）。
-   *  口径：标题要作为独立词出现在猫的 **真实名 / 别名 / 曾用名** 里（独立词 = 边界判定，
-   *  "肥仔" 命中、"肥猪头" 不命中）。所以标题「肥仔」「黄条子」(别名) 都算，
-   *  「肥仔🐱」「肥仔的绝育记」不算——不是猫名就别抢长按。
+   *  口径：先把标题去装饰（见 stripTitleDecor），再去和猫的 **真实名 / 别名 / 曾用名**
+   *  比独立词（"肥仔" 命中、"肥猪头" 不命中）。所以「肥仔」「🐱肥仔」「肥仔🐱」
+   *  「黄条子」(别名) 都算；「肥仔的绝育记」不算——不是猫名就别抢长按。
    *  这里**不**像话题胶囊那样带 nickname：nickname 是各字段自动拼的搜索关键词（含毛色/
    *  状况/位置），带上会让标题「狸花」「健康」误命中随机一只猫。
    *  只有管理员需要这个能力 → 非管理员直接跳过，省一次查询。
    *  只读查询，失败静默（titleCatId 留空，长按不响应）。 */
   async matchTitleCat() {
     if (!app.globalData.isAdministrator) return;
-    const tittle = String((this.data.listData || {}).tittle || '').trim();
-    if (!tittle) { this.setData({ titleCatId: '' }); return; }
+    const raw = String((this.data.listData || {}).tittle || '');
+    // 标题里已经手写了猫头 → 不再重复画一个（hasCatIcon 只影响显示，不影响匹配）
+    const hasCatIcon = /🐱|🐈/.test(raw);
+    const tittle = stripTitleDecor(raw);
+    if (!tittle) { this.setData({ titleCatId: '', titleHasCatIcon: hasCatIcon }); return; }
     try {
       // topicCatFilter 的 $or 比这里更宽（含 nickname），这里当候选集用，最终由 aliasContains 定夺
       const filter = catForm.topicCatFilter([tittle]);
@@ -236,7 +254,7 @@ Page({
       const cat = (cats || []).find((c) => c && catForm.aliasContains(
         [c.name, c.otherName, c.usedName].filter(Boolean).join(' '), tittle
       ));
-      this.setData({ titleCatId: cat ? cat._id : '' });
+      this.setData({ titleCatId: cat ? cat._id : '', titleHasCatIcon: hasCatIcon });
     } catch (err) {
       console.error('查询标题猫失败', err);
     }

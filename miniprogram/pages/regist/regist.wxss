@@ -1,15 +1,23 @@
+/* 2026-09-14 机型自适应：原来 .page 写死 height:100%、.card 写死 height:1000rpx，
+   小屏 / 大字体 / 不同 rpx 换算的机型上内容会超出卡片高度，flex 子项被压缩，
+   头像图就被挤到和下面「点击头像可从微信选择」的提示文字重叠。
+   改成「按内容撑高 + 可滚动」：任何机型都不会重叠也不会被裁。 */
 .page {
   background-color: #fff0f5;
-  height: 100%;
+  min-height: 100vh;
+  box-sizing: border-box;
   display: flex;
+  flex-direction: column;
   justify-content: center;
   align-items: center;
+  padding: 40rpx 0 240rpx; /* 底部留出悬浮「提交」按钮的位置 */
 }
 
 .card {
   display: flex;
   flex-direction: column; /* 子元素按照列排列 */
-  height: 1000rpx; /* 调整名片高度 */
+  min-height: 900rpx; /* 只做最小高度兜底，不再写死高度：内容多就自然撑高 */
+  box-sizing: border-box;
   padding: 60rpx;
   background-color: #fff;
   border-radius: 10rpx;
@@ -25,9 +33,13 @@
 
 .avatar-button {
   display: flex;
-  top: 80rpx;
+  flex: none; /* 关键：不参与 flex 收缩，内容变高时头像框也不会被压扁 */
+  align-self: center; /* 原来靠 top:80rpx 定位，但没写 position，是无效属性，改回居中 */
   width: 360rpx; /* 头像框变大 */
   height: 320rpx; /* 头像框变大 */
+  padding: 0;
+  overflow: hidden; /* 图片严格裁在框内，不会溢出压到下面的提示文字 */
+  border-radius: 12rpx;
   background-color: #f6daff;
 }
 
@@ -38,9 +50,13 @@
   height: 100%;
 }
 
+/* 2026-09-14 提示文字紧跟头像框，间距固定 24rpx：
+   原来 116rpx 是为了「躲开」溢出压下来的头像图，属于治标；根因（卡片写死高度）已在上方修掉 */
 .avatar-tip {
-  margin-top: 16rpx;
+  flex: none;
+  margin-top: 24rpx;
   font-size: 24rpx;
+  line-height: 1.5;
   color: #999;
   text-align: center;
 }
@@ -48,7 +64,7 @@
 .input-container {
   display: flex;
   align-items: center;
-  margin-top: 130rpx; /* 调整输入框容器与头像容器之间的距离（原 180rpx，让出「头像选填」提示的高度） */
+  margin-top: 90rpx; /* 调整输入框容器与头像容器之间的距离（原 180rpx，让出「头像选填」提示的高度） */
   margin-left: -30rpx;
 }
 

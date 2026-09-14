@@ -1,11 +1,13 @@
 <view wx:if="{{audit}}">
   <view class="page">
     <view class="card">
-      <!-- 头像选择改为普通按钮 bindtap：chooseAvatar 是隐私接口，须先弹合规授权弹窗（open-type 按钮无法前置拦截），
-           同意后再调 wx.chooseAvatar 打开微信头像选择器，行为与 open-type 完全一致 -->
-      <button class="avatar-button" bindtap="pickAvatar">
+      <!-- 头像（选填）：必须用微信官方 open-type="chooseAvatar" 按钮——头像只能由用户点击原生触发，
+           改用 wx.chooseAvatar 之类的 JS API 程序化调用会静默失效（点击完全没反应、且不报错）。
+           bindtap 只做隐私授权前置：用户拒绝过隐私指引后原生入口会失效，同步拉起官方弹窗可恢复。 -->
+      <button class="avatar-button" open-type="chooseAvatar" bind:chooseavatar="onChooseAvatar" bindtap="onAvatarTap">
       <image class="avatar-img" src="{{userInfo.avatarUrl}}" ></image>
       </button>
+      <view class="avatar-tip">点头像可从微信选择，不选则使用默认头像</view>
       <view class="input-container">
         <text class="input-label">昵称：</text>
         <input type="nickname" class="input-field" placeholder="请输入昵称" value="{{userInfo.nickName}}" bindinput="onInput" show-confirm-bar="{{false}}"/>
@@ -28,7 +30,4 @@
 
   <!-- 跟随键盘的「完成」栏：键盘弹起时提供一键收起（部分输入法没有收起键） -->
   <kb-done-bar/>
-
-  <!-- 隐私授权弹窗（选择头像前按需弹出，含原生 agreePrivacyAuthorization 按钮） -->
-  <privacy-popup id="privacyPopup" desc="需要你的授权，才能从微信选择头像。是否同意？"/>
 </view>

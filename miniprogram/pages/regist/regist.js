@@ -9,7 +9,6 @@ const db = require('../../utils/db.js'); // 公共数据库方法
 const cos = require('../../utils/cos.js'); // COS 图片上传/删除/路径公共方法
 const guard = require('../../utils/guard.js'); // 前端保险工具（文件名清洗/限频/限长）
 const secCheck = require('../../utils/secCheck.js'); // 内容安全审核（昵称，写库前拦截）
-const privacy = require('../../utils/privacy.js'); // 隐私授权通用拦截（选择头像前按需弹合规授权弹窗）
 
 // 默认头像（微信官方默认头像）
 const defaultAvatarUrl = 'https://mmbiz.qpic.cn/mmbiz/icTdbqWNOwNRna42FI242Lcia07jQodd2FJGIYQfG0LAJGFxM4FbnQP6yfMxBgJ0F3YRqJCJ1aPAK2dQagdusBZg/0';
@@ -46,6 +45,7 @@ Page({
         const info = await db.findOne('Feeder', { userId });
         if (info) {
           this._originalPhone = info.phoneNum || ''; // 记录原始手机号，提交时判断是否修改
+          this._originalAvatar = info.avatarUrl || ''; // 记录原始头像，改名时判断是否有旧 COS 头像要删
           this.setData({
             userInfo: info,
             usedName: info.nickName,
@@ -110,17 +110,26 @@ Page({
     this.setData({ 'userInfo.phoneNum': e.detail.value });
   },
 
-  /** 选择头像：先做隐私授权拦截（chooseAvatar 是隐私接口），同意后调 wx.chooseAvatar 打开微信头像选择器 */
-  pickAvatar() {
-    privacy.guard(this, () => {
-      wx.chooseAvatar({
-        success: (res) => this.setData({ 'userInfo.avatarUrl': res.avatarUrl }),
-        fail: (err) => {
-          console.error('[regist] 选择头像失败', err);
-          wx.showToast({ title: '头像选择失败，请重试', icon: 'none' });
-        },
-      });
-    });
+  /** 点头像按钮：选头像必须由微信官方的 open-type="chooseAvatar" 按钮原生触发（唯一合规入口），
+   *  这里只做隐私授权前置——用户此前拒绝过隐私指引时，原生入口会静默失效（点了完全没反应），
+   *  同步调用 requirePrivacyAuthorize 拉起官方隐私弹窗即可恢复；已授权 / 无此接口时什么也不做。 */
+  onAvatarTap() {
+    try {
+      if (typeof wx.requirePrivacyAuthorize === 'function') {
+        wx.requirePrivacyAuthorize({
+          fail: (err) => console.warn('[regist] 隐私授权未通过', err),
+        });
+      }
+    } catch (e) {
+      console.warn('[regist] 拉起隐私授权失败', e);
+    }
+  },
+
+  /** 用户选完头像（微信原生 chooseavatar 回调）：拿到的是临时路径（wxfile://），提交时再上传到 COS */
+  onChooseAvatar(e) {
+    const url = e && e.detail && e.detail.avatarUrl;
+    if (!url) return;
+    this.setData({ 'userInfo.avatarUrl': url });
   },
 
   /** 点击"提交" */
@@ -134,14 +143,15 @@ Page({
         // 昵称再兜底清洗一次（防历史数据带入危险字符，昵称会用作头像文件名）
         const nickName = guard.sanitizeFileName(this.data.userInfo.nickName || '', 20);
         this.setData({ 'userInfo.nickName': nickName });
+        // 必填项：昵称。头像改为**选填**（2026-08-29）——未选头像就存默认头像地址，
+        // 不再硬拦「请选择头像」：头像选择接口在部分机型 / 隐私未授权时会静默失效，
+        // 硬拦会把用户永久卡死在注册这一步。
         if (guard.isEmpty(nickName)) {
           wx.showToast({ icon: 'error', title: '请输入昵称' });
         } else if (guard.forbiddenName(nickName)) {
           // 仿冒官方/误导性词兜底拦截（onInput 已实时提示，这里是提交前最后一关）
           this.setData({ forbidWord: guard.forbiddenName(nickName), sameName: false });
           wx.showToast({ icon: 'error', title: '昵称含仿冒/误导词汇，请更换' });
-        } else if (this.data.userInfo.avatarUrl === '' || this.data.userInfo.avatarUrl === defaultAvatarUrl) {
-          wx.showToast({ icon: 'error', title: '请选择头像' });
         } else if (this.data.sameName) {
           wx.showToast({ icon: 'error', title: '请更换名字' });
         } else if (!this.data.userInfo.userId) {
@@ -193,6 +203,11 @@ Page({
     });
   },
 
+  /** 是否「没选过头像」（保持默认头像 / 空）→ 提交时存默认头像地址，不上传 COS（头像选填的备用方案） */
+  isDefaultAvatar(url) {
+    return !url || url === defaultAvatarUrl;
+  },
+
   /** 手机号格式校验（选填；填了就要大致像个手机号） */
   checkPhone() {
     const phone = (this.data.userInfo.phoneNum || '').trim();
@@ -209,7 +224,8 @@ Page({
     wx.showLoading({ title: '更新中...', mask: true });
     const userInfo = this.data.userInfo;
     const nickName = userInfo.nickName;
-    const avatarUrl = cos.profileUrl(nickName);
+    // 未选头像 → 存默认头像地址（不再依赖 COS 头像文件）；选了 → 存 COS 地址
+    const avatarUrl = this.isDefaultAvatar(userInfo.avatarUrl) ? defaultAvatarUrl : cos.profileUrl(nickName);
     const phoneNum = userInfo.phoneNum;
     const userId = userInfo.userId;
     const oldName = this.data.usedName;
@@ -242,8 +258,11 @@ Page({
       // 昵称变了 → 同步更新该用户历史推文的作者名和头像
       if (this.data.usedName && this.data.usedName !== nickName) {
         this.uploadPage();
-        // DB 写成功后再删旧头像（COS 不会自动删旧文件），避免 DB 失败时旧头像已被删 → 头像 404
-        cos.deleteList([cos.profilePng(this.data.usedName)]);
+        // DB 写成功后再删旧头像（COS 不会自动删旧文件），避免 DB 失败时旧头像已被删 → 头像 404。
+        // 仅当原来确实有 COS 头像时才删：一直用默认头像的用户没有旧文件可删
+        if (this._originalAvatar && this._originalAvatar !== defaultAvatarUrl) {
+          cos.deleteList([cos.profilePng(this.data.usedName)]);
+        }
       }
       // 刷新全局状态，并通知其他页面
       this.updateGlobalState({ nickName, avatarUrl, phoneNum });
@@ -264,7 +283,8 @@ Page({
     wx.showLoading({ title: '更新中...', mask: true });
     const userInfo = this.data.userInfo;
     const nickName = userInfo.nickName;
-    const avatarUrl = cos.profileUrl(nickName);
+    // 未选头像 → 存默认头像地址（不再依赖 COS 头像文件）；选了 → 存 COS 地址
+    const avatarUrl = this.isDefaultAvatar(userInfo.avatarUrl) ? defaultAvatarUrl : cos.profileUrl(nickName);
     const phoneNum = userInfo.phoneNum;
     const userId = userInfo.userId;
 
@@ -300,7 +320,8 @@ Page({
       {
         $set: {
           author: this.data.userInfo.nickName,
-          authorImg: cos.profileUrl(this.data.userInfo.nickName),
+          // 头像：未上传头像的用户用默认头像地址，避免历史推文头像 404 回退到占位图
+          authorImg: this.data.userInfo.avatarUrl || defaultAvatarUrl,
         },
       }
     ).catch((err) => console.error(err));
@@ -312,6 +333,8 @@ Page({
     const userInfo = this.data.userInfo;
     const nickName = userInfo.nickName;
     const avatarUrl = userInfo.avatarUrl;
+    // 未选头像（默认头像 / 空）→ 既不上传也不复制，直接存默认头像地址（头像选填）
+    if (this.isDefaultAvatar(avatarUrl)) return;
     const isLocal = typeof avatarUrl === 'string' && (avatarUrl.indexOf('wxfile://') === 0 || avatarUrl.indexOf('http://tmp') === 0);
     const renamed = this.data.usedName && this.data.usedName !== nickName;
     // 选了新头像（本地文件）→ 上传到新文件名下

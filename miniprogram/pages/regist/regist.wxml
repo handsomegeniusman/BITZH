@@ -5,7 +5,7 @@
            改用 wx.chooseAvatar 之类的 JS API 程序化调用会静默失效（点击完全没反应、且不报错）。
            bindtap 只做隐私授权前置：用户拒绝过隐私指引后原生入口会失效，同步拉起官方弹窗可恢复。 -->
       <button class="avatar-button" open-type="chooseAvatar" bind:chooseavatar="onChooseAvatar" bindtap="onAvatarTap">
-      <image class="avatar-img" src="{{userInfo.avatarUrl}}" ></image>
+      <image class="avatar-img" mode="aspectFill" src="{{userInfo.avatarUrl}}"></image>
       </button>
       <view class="avatar-tip">点头像可从微信选择，不选则使用默认头像</view>
       <view class="input-container">

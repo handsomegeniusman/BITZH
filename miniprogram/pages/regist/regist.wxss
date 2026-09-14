@@ -31,18 +31,29 @@
   position: relative;
 }
 
+/* 2026-09-15 头像改圆形：原来 360×320rpx 的长方形太大，且图片只占 80%。
+   圆形必须先方后圆 —— 宽高必须相等，border-radius:50% 才是个正圆而不是椭圆。
+   240rpx ≈ 120px，是常见的资料页头像尺寸。 */
 .avatar-button {
   display: flex;
+  align-items: center;
+  justify-content: center;
   flex: none; /* 关键：不参与 flex 收缩，内容变高时头像框也不会被压扁 */
   align-self: center; /* 原来靠 top:80rpx 定位，但没写 position，是无效属性，改回居中 */
-  width: 360rpx; /* 头像框变大 */
-  height: 320rpx; /* 头像框变大 */
+  width: 240rpx;
+  height: 240rpx; /* 与宽度相等，配合 50% 圆角才是正圆 */
   padding: 0;
-  overflow: hidden; /* 图片严格裁在框内，不会溢出压到下面的提示文字 */
-  border-radius: 12rpx;
+  overflow: hidden; /* 图片严格裁在圆内，不会溢出压到下面的提示文字 */
+  border-radius: 50%;
   background-color: #f6daff;
 }
+/* 去掉 button 自带的 1px 描边（::after 会继承 border-radius，变成环在头像上的一圈灰线） */
+.avatar-button::after {
+  border: none;
+}
 
+/* 图片铺满整个圆形按钮：再靠按钮的 border-radius + overflow:hidden 裁成圆。
+   配合 wxml 上的 mode="aspectFill"，非正方形的头像会被裁掉四边而不是被拉扁。 */
 .avatar-img {
   display: block;
   box-sizing: border-box;
@@ -119,10 +130,21 @@
 
   
 
+/* 2026-09-15 输入框文字垂直居中 + 不再裁字：
+   原来只写了 padding:10rpx 20rpx，没有高度也没有 line-height —— input 的盒子高度
+   由内容行高决定，字号 32rpx 时盒子刚好卡住字形，字母的上下端（g/y/p 的尾巴、
+   拼音声调）就被切掉一截，看着就是「文字没居中、字母显示不全」。
+   改成「显式高度 + 同值 line-height + border-box」：盒高固定 76rpx，行高也是 76rpx，
+   文字上下各留白、稳定居中，任何机型 / 系统字体大小下都不会再被裁。
+   注意：纵向留白已由 height 接管，所以 padding 只留左右，否则行高会溢出盒子。 */
 .input-field {
   flex: 1;
+  min-width: 0; /* 允许在 label 固定宽度的行里正常收缩，不会把输入框顶出卡片 */
+  height: 76rpx;
+  line-height: 76rpx;
+  box-sizing: border-box;
   font-size: 32rpx;
-  padding: 10rpx 20rpx;
+  padding: 0 20rpx;
   border: none;
   border-radius: 4rpx;
   outline: none;

@@ -84,11 +84,35 @@
   word-break: break-all;
 }
 
+.user-id-row {
+  display: flex;
+  align-items: center;
+  margin-top: 4rpx;
+}
+
 .user-id {
+  flex: 1;
+  min-width: 0;
   font-size: 22rpx;
   color: #999;
   word-break: break-all;
-  margin-top: 4rpx;
+}
+
+/* 复制按钮：原来是跟在 openid 后面的灰色小字「复制」，跟 22rpx 的长 ID 混在一起，
+   用户根本看不出能点（存在感太低）。改为带边框的胶囊按钮 + 主色，点击区域也更大。 */
+.copy-btn {
+  flex: none;
+  margin-left: 12rpx;
+  padding: 2rpx 18rpx;
+  font-size: 22rpx;
+  color: #FF405E;
+  background: #fff;
+  border: 1rpx solid #FF405E;
+  border-radius: 999rpx;
+}
+
+.copy-btn:active {
+  background: #FFE5EA;
 }
 
 .user-reason {

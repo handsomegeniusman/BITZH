@@ -24,7 +24,11 @@
         <image class="user-avatar" src="{{item.avatarUrl || defaultAvatar}}" mode="aspectFill" lazy-load="{{true}}" binderror="onAvatarError" data-list="results" data-index="{{index}}"></image>
         <view class="user-info">
           <view class="user-name">{{item.nickName}}</view>
-          <view class="user-id" catchtap="copyId" data-userid="{{item.userId}}">{{item.userId}} 复制</view>
+          <!-- openid 可长按选中（兜底），旁边的「复制」是明显的胶囊按钮（原来只是跟在 ID 后的灰色小字，看不出能点） -->
+          <view class="user-id-row">
+            <text class="user-id" selectable="{{true}}">{{item.userId}}</text>
+            <view class="copy-btn" catchtap="copyId" data-userid="{{item.userId}}">复制</view>
+          </view>
         </view>
         <view class="user-status {{item.isBlack ? 'status-ban' : 'status-ok'}}">{{item.isBlack ? '已拉黑' : '正常'}}</view>
       </view>
@@ -61,7 +65,10 @@
       <image class="user-avatar" src="{{item.avatarUrl || defaultAvatar}}" mode="aspectFill" lazy-load="{{true}}" binderror="onAvatarError" data-list="blackList" data-index="{{index}}"></image>
       <view class="user-info">
         <view class="user-name">{{item.nickName}}{{item.permanent ? '（永久）' : ''}}</view>
-        <view class="user-id" catchtap="copyId" data-userid="{{item.id}}">{{item.id}} 复制</view>
+        <view class="user-id-row">
+          <text class="user-id" selectable="{{true}}">{{item.id}}</text>
+          <view class="copy-btn" catchtap="copyId" data-userid="{{item.id}}">复制</view>
+        </view>
         <view class="user-reason">{{item.timeText}}{{item.reason ? ' · ' + item.reason : ''}}</view>
       </view>
     </view>
@@ -73,7 +80,5 @@
   <!-- 跟随键盘的「完成」栏 -->
   <kb-done-bar/>
 
-  <!-- 隐私授权弹窗（复制用户 openid 到剪贴板前按需弹出，含原生 agreePrivacyAuthorization 按钮） -->
-  <privacy-popup id="privacyPopup" desc="需要你的授权，才能复制用户信息到剪贴板。是否同意？"/>
 
 </view>

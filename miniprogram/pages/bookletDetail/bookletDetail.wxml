@@ -31,14 +31,15 @@
   <view class="content-card">
     <view class="head">
       <!-- 标题：标题是猫名时前面画 🐱（和话题胶囊一致），管理员长按标题 → 直达那只猫的编辑页。
-           写法和长按推文图片的 editBooklet 一致：长按挂在外面这层 view 上，猫的 _id
-           由 data-_id 传进去（titleCatId 由 matchTitleCat 算好）。
-           内层 text 的 user-select 明确写 false —— 只要它开着，长按手势就被微信原生的
-           「选中文本」菜单抢走，菜单照弹、我们的 bindlongpress 根本不触发。
-           （正文 .main 仍然可选中，复制正文的能力没动。） -->
+           写法完全照搬本页里「长按评论」那段（bindlongpress 挂在 view 上、里面只有普通 text）：
+           长按挂在外层 view，_id 由 data-_id 传进来（titleCatId 由 matchTitleCat 算好）。
+           【标题这里不用 <text>，直接纯文本】<text> 带文字选中层，只要它身上出现过 user-select，
+           长按手势就会被微信原生的「选中文本」抢走 —— 菜单照弹、bindlongpress 根本不触发、
+           连一行日志都没有（真机已验证）。纯文本节点没有选中层，长按必然冒泡到外层。
+           正文 .main 的 user-select 没动，复制正文的能力不变。 -->
       <view class="head-title-wrap" bindlongpress="editCat" data-_id="{{titleCatId}}">
         <text wx:if="{{titleCatId && !titleHasCatIcon}}" class="head-title-cat">🐱</text>
-        <text class="head-title" user-select="{{false}}">{{listData.tittle}}</text>
+        <view class="head-title">{{listData.tittle}}</view>
       </view>
       <text wx:if="{{!recoverMode}}" class="report-link" bindtap="reportPage">举报</text>
     </view>

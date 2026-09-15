@@ -491,6 +491,25 @@ Page({
   //   bindlongpress 保留为兜底：万一某个基础库/机型上它能触发，用 _lpDone 去重不跳两次。
   //   滑动超过 10px 视为"在滚动页面"，取消计时，避免翻页时误跳。
 
+  // ---------- 【临时探针，排查完就删】卡片级长按，看触摸落在哪个元素上 ----------
+  // 目的：长按标题时，标题自己的 touchstart 一声不吭。到底是标题没接到触摸（被谁盖住了），
+  // 还是接到了但我的绑定没生效？在整张卡片上再挂一层同样的计时，把 e.target 的 id 弹出来。
+  // 只在按住 600ms 后才弹，正常滚动（一动就取消）不会打扰。
+  onCardTouchStart(e) {
+    const t = e.target || {};
+    this._cardHit = (t.id || '(无id)') + '@' + ((t.offsetTop | 0));
+    clearTimeout(this._cardTimer);
+    this._cardTimer = setTimeout(() => {
+      wx.showToast({ icon: 'none', duration: 3000, title: '长按落在 ' + this._cardHit });
+    }, 600);
+  },
+  onCardTouchMove() {
+    clearTimeout(this._cardTimer);
+  },
+  onCardTouchEnd() {
+    clearTimeout(this._cardTimer);
+  },
+
   /** 手指按下标题：开始 500ms 长按计时 */
   onTitleTouchStart(e) {
     const t = (e.touches && e.touches[0]) || {};
@@ -563,6 +582,8 @@ Page({
   onUnload() {
     clearTimeout(this._lpTimer);
     this._lpTimer = null;
+    clearTimeout(this._cardTimer);
+    this._cardTimer = null;
   },
 
   /** 点击作者头像放大预览 */

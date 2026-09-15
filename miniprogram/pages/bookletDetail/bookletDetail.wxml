@@ -27,9 +27,14 @@
     </swiper>
   </view>
 
-  <!-- 正文卡片 -->
-  <view class="content-card">
-    <view class="head">
+  <!-- 正文卡片：bindtouch* 是【临时探针，排查完就删】——长按标题时到底是哪个元素收到触摸，
+       探针会弹出来告诉我们。ids 同样是探针用的。 -->
+  <view class="content-card"
+        bindtouchstart="onCardTouchStart"
+        bindtouchmove="onCardTouchMove"
+        bindtouchend="onCardTouchEnd"
+        bindtouchcancel="onCardTouchEnd">
+    <view class="head" id="t-head">
       <!-- 标题：标题是猫名时前面画 🐱（和话题胶囊一致），管理员长按标题 → 直达那只猫的编辑页。
            【为什么不用 bindlongpress】真机上标题这块的 bindlongpress 完全不触发（连一行日志
            都没有），而同一页长按评论是好的，换元素结构也救不回来。既然长按事件收不到，
@@ -39,20 +44,20 @@
            _id 仍走 data-_id（titleCatId 由 matchTitleCat 算好）。
            正文 .main 的 user-select 没动，复制正文的能力不变。 -->
       <view class="head-title-wrap"
+            id="t-title"
             bindtouchstart="onTitleTouchStart"
             bindtouchmove="onTitleTouchMove"
             bindtouchend="onTitleTouchEnd"
             bindtouchcancel="onTitleTouchEnd"
-            bindlongpress="editCat"
             data-_id="{{titleCatId}}">
         <text wx:if="{{titleCatId && !titleHasCatIcon}}" class="head-title-cat">🐱</text>
-        <view class="head-title">{{listData.tittle}}</view>
+        <view class="head-title" id="t-title-text">{{listData.tittle}}</view>
       </view>
       <text wx:if="{{!recoverMode}}" class="report-link" bindtap="reportPage">举报</text>
     </view>
     <!-- 拍摄时间：放在标题正下方，不滑动也能看到 -->
     <view wx:if="{{listData.photoTime}}" class="photoTime">拍摄于 {{listData.photoTime}}</view>
-    <view class="main" user-select="true">{{listData.main}}</view>
+    <view class="main" id="t-main" user-select="true">{{listData.main}}</view>
 
     <!-- 话题：胶囊可点，跳到相关猫咪或话题文章 -->
     <view wx:if="{{relativeList.length}}" class="topic-block">

@@ -2,11 +2,18 @@
    内容编辑器（正文 + 话题混写）样式
    - 正文 textarea：小红书式，无下划线、可输入区更高
    - #话题 按钮（正文下方 + 键盘工具栏）：同一粉色描边胶囊（需求 12 统一）
-   - 建议列表：绝对定位贴在正文下方（向下弹出，占用图片压缩腾出的空间），可滚动
+   - 建议列表：两种形态，都是【绝对定位】（相对 .ce-textarea-wrap），可滚动
+       朝下弹（默认）→ top:100%，贴在正文下方；
+       朝上弹（.ce-suggest-up）→ bottom:100%，开在正文上方（键盘占掉正文下方时用，
+       见 layoutSuggest 的 spaceAbove/spaceBelow 比较与该类自己的说明）
    - 键盘上方工具栏：正文聚焦时显示，固定在键盘顶边（bottom=kbH 行内），左「#话题」右「完成」
-   【Bug-A】.ce-kb-bar 用 position:fixed 贴键盘顶，前提是没有任何祖先带 transform/will-change
-   （position:fixed 会被 transform 祖先降级成 absolute）。本组件祖先（.form-card/.page-root）
-   均无 transform，页面上若有新增 transform 需留意。
+   【Bug-A】.ce-kb-bar 用 position:fixed 贴键盘顶，前提是没有任何祖先带
+   transform/will-change（position:fixed 会被 transform 祖先降级成 absolute）。本组件祖先
+   （.form-card/.page-root）均无 transform，页面上若有新增 transform 需留意。
+   【建议列表为什么不用 fixed】列表开在哪个方向只取决于正文有多靠下，用绝对的 bottom:100%
+   就够，且随页面滚动自动跟着正文走，不必在每次滚动时重算 fixed 坐标（见 .ce-suggest-up）。
+   注：addBooklet/editBooklet/addOfficial 的 .image-item 有 will-change:transform，但它在图片区里，
+   与 .ce-wrap 是兄弟不是祖先，不影响。
 ============================================================ */
 .ce-wrap {
   padding: 20rpx 0 0; /* 左右留白由页面白卡片提供，这里只留上下 */
@@ -67,8 +74,11 @@
 }
 
 /* 建议列表：绝对定位在正文【下方】（top:100%，即 # 号所在行的下一行开始展示），
-   实际高度由 JS 按内容算（suggestH，行内 style）：刚好展示几条，封顶「输入框底 → 键盘顶」
-   的剩余空间（suggestMaxH），超出部分内部滚动，底边不越过键盘上方工具栏 */
+   实际高度由 JS 按内容算（suggestH，行内 style）：最多同时展示 5 行（再多会把整个表单盖住），
+   再封顶当前可用空间（suggestMaxH），超出部分内部滚动，底边不越过键盘上方工具栏。
+   【高度朝哪个方向要】朝下弹时才需要先把正文滚上去腾地方（wantListH 是 ensureInputVisible
+   滚页面的依据）；朝上弹（.ce-suggest-up）时空间在正文上方，与键盘无关，不滚动、也不预留。
+   改这里的高度/边距要同步看 layoutSuggest 与 ensureInputVisible（两边共用 kbGeom 的边界）。 */
 .ce-suggest {
   position: absolute;
   left: 0;
@@ -82,7 +92,23 @@
   box-shadow: 0 8rpx 24rpx rgba(0, 0, 0, 0.08);
   overflow: hidden;
 }
-/* 建议列表滚动区：高度由行内 suggestH 提供（内容高、封顶 suggestMaxH），内部滚动（Bug-C 已扣工具栏高度） */
+/* 键盘弹起、正文下方没地方时：建议列表改成朝【上】开（bottom:100% = 正文上边框之上）。
+   【为什么不是"往下弹 + 把页面滚上去腾地方"】那个做法有个硬前提：页面得真的能滚
+   （内容比一屏长）。表单内容不够一屏时，滚多少都腾不出空间，列表只能露出被键盘盖住的那一小截
+   ——真机表现就是"只看得见一行"。
+   【为什么不是"钉在键盘顶边强行 5 行"】那会盖住正文，用户看不见自己打了什么。
+   朝上开两个问题都没有：位置只取决于正文有多靠下，与页面能不能滚无关；盖住的是图片区和标题行，
+   它们此刻不是用户在操作的东西，而正文必须一直看得见。
+   【top: auto 不能省】基类 .ce-suggest 的 top:100% 会一直生效，不清掉的话 bottom 等于白写。 */
+.ce-suggest-up {
+  top: auto;
+  bottom: 100%;
+  margin-top: 0;
+  margin-bottom: 8rpx;
+}
+
+/* 建议列表滚动区：高度由行内 suggestH 提供（最多 5 行、封顶 suggestMaxH），内部滚动（Bug-C 已扣工具栏高度）。
+   需要滚动时由 scroll-y="{{suggestScrollable}}" 打开；装得下就关掉，免得白吃掉上下滑手势 */
 .ce-suggest-scroll {
   width: 100%;
   box-sizing: border-box;
@@ -118,6 +144,64 @@
   text-align: center;
   font-size: 24rpx;
   color: #999;
+}
+/* 状态徽章：与输入完全一致的那条候选会置顶，右侧标明命中类型
+   （已匹配猫咪 / 已有话题 / 直接使用）——对"我输入得到底对不对"的明确回答 */
+.ce-suggest-badge {
+  margin-left: 12rpx;
+  padding: 2rpx 12rpx;
+  font-size: 20rpx;
+  line-height: 1.6;
+  color: #FF405E;
+  background: #FFE5EA;
+  border-radius: 999rpx;
+  flex-shrink: 0;
+}
+
+/* ============ 话题条（正文下方实时彩色胶囊） ============
+   正文里已解析出的每个话题渲染成一个粉色胶囊，让"哪些词已被当成话题"一眼可见。
+   原生 textarea 不支持对部分文字着色（非版本问题，是硬约束），这是与它视觉等价、
+   且真机可靠的方案。配色与 bookletDetail 的 .relative-chip 完全一致。
+   【注意】不要给这里或任何祖先加 transform / will-change：.ce-kb-bar 靠 position:fixed
+   贴键盘顶，有 transform 祖先会让 fixed 降级为 absolute（见文件头 Bug-A 说明）。 */
+.ce-chips {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 4rpx 0 8rpx;
+}
+.ce-chip {
+  display: inline-flex;
+  align-items: center; /* 🐱 与文字垂直居中：emoji 自带基线下沉，基线对齐会显得偏下 */
+  margin: 8rpx 12rpx 0 0;
+  padding: 6rpx 16rpx;
+  background: #FFE5EA;
+  color: #FF405E;
+  font-size: 24rpx;
+  line-height: 1.5;
+  border-radius: 999rpx;
+  max-width: 440rpx;
+}
+.ce-chip-cat {
+  margin-right: 6rpx;
+  flex-shrink: 0;
+}
+.ce-chip-text {
+  min-width: 0; /* flex 子项默认 min-width:auto，不置 0 则 ellipsis 不生效 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* × 删除：负 margin 抵消加大点击热区后多出来的占位，视觉上仍贴紧文字 */
+.ce-chip-x {
+  margin: -8rpx -10rpx -8rpx 6rpx;
+  padding: 8rpx 10rpx;
+  font-size: 28rpx;
+  color: #FF405E;
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+.ce-chip-x:active {
+  opacity: 1;
 }
 
 /* 键盘上方工具栏：正文聚焦时显示，固定在键盘顶边（bottom=kbH 行内），

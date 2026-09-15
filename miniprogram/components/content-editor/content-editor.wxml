@@ -40,8 +40,13 @@
            保证第一次点击就生效。猫名（真实名/别名/曾用名/昵称命中）带 🐱 标识。
            【注意】这里用 bindtouchstart（不是 catchtouchstart）：catch 会阻止 touchstart
            冒泡，scroll-view 收不到触摸就滚不动（Bug-B）。bind 不阻断滚动、onItemTouchStart 照常执行。 -->
-      <view class="ce-suggest" wx:if="{{showSuggest}}">
-        <scroll-view class="ce-suggest-scroll" scroll-y="{{true}}" style="height: {{suggestH}}px;">
+      <!-- suggestUp = 加 .ce-suggest-up 改成朝【上】开（键盘占掉正文下方时用，见 layoutSuggest）；
+           默认朝下开。两种形态只改定位，内容与滚动逻辑完全一样。 -->
+      <view class="ce-suggest {{suggestUp ? 'ce-suggest-up' : ''}}" wx:if="{{showSuggest}}">
+        <!-- scroll-y 绑 suggestScrollable（内容确实装不下才为 true）：候选不多、列表装得下时
+             没有任何可滚内容，若还开着纵向滚动，这个原生容器会把上下滑手势照单全收——
+             用户滑"没反应"，也带不动底下的页面滚。关掉后手势直接落到页面。 -->
+        <scroll-view class="ce-suggest-scroll" scroll-y="{{suggestScrollable}}" style="height: {{suggestH}}px;">
           <block wx:if="{{suggestions.length}}">
             <view
               class="ce-suggest-item"
@@ -56,10 +61,25 @@
             >
               <text wx:if="{{item.isCat}}" class="ce-suggest-cat">🐱</text>
               <text class="ce-suggest-name">{{item.name}}</text>
+              <!-- 状态徽章：与输入完全一致的那条会置顶并标明命中类型（已匹配猫咪 / 已有话题 / 直接使用）。
+                   这是对"我输入得到底对不对"的明确回答，不再靠列表有无来猜。 -->
+              <text wx:if="{{item.exact}}" class="ce-suggest-badge">{{item.exactLabel}}</text>
             </view>
           </block>
           <view wx:elif="{{suggestDone}}" class="ce-suggest-empty">没有匹配，输入任意文字即可当作话题</view>
         </scroll-view>
+      </view>
+    </view>
+
+    <!-- 话题条：正文里解析出的每个话题一个粉色胶囊，实时反映"哪些词已被当成话题"。
+         放在 textarea-wrap【之外】（不影响 layoutSuggest 对输入框的测量）；
+         建议列表展开时会盖住它（建议是瞬态、优先级更高），这是预期层级。
+         × 用 catchtap：不冒泡到根节点、也不会被页面的 onPageTap 当成"点空白处"。 -->
+    <view class="ce-chips" wx:if="{{topics.length}}">
+      <view class="ce-chip" wx:for="{{topics}}" wx:key="name">
+        <text wx:if="{{item.isCat}}" class="ce-chip-cat">🐱</text>
+        <text class="ce-chip-text">#{{item.name}}</text>
+        <text class="ce-chip-x" data-name="{{item.name}}" catchtap="removeTopic">×</text>
       </view>
     </view>
 

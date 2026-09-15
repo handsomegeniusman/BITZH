@@ -162,21 +162,28 @@ Page({
   /**
    * 通用分页加载：按 tab 索引查配置 → 从 BITZH 集合按状态筛选 → 追加到对应列表
    * @param {number} tabIndex — 状态页索引（1=送养 / 2=逃学 / 3=喵星 / 4=待抓）
+   * @returns {Promise<Array>} 查询结果（失败时带 _failed 标记，且不动页面数据）
    */
   loadMoreCatByStatus: function (tabIndex) {
     var cfg = TAB_CFG[tabIndex];
-    if (!cfg) return;
-    var list = this.data[cfg.key];
+    if (!cfg) return Promise.resolve(); // tab 0（在校）是静态入口，不查库
     var sort = {};
     sort[cfg.sort] = -1;
     var self = this;
-    db.paginate('BITZH', { status: cfg.status }, { sort: sort, limit: 20 }, list)
+    return db.paginate('BITZH', { status: cfg.status }, { sort: sort, limit: 20 }, this.data[cfg.key])
       .then(function (result) {
+        // db.paginate 出错时会吞掉异常、返回带 _failed 的原列表：此时不动页面数据。
+        // 失败提示只在这里给：本页【没有】下拉刷新（列表是搜索条件算出来的，下拉语义对不上），
+        // 这里是唯一知道"这次查询挂了"的地方，切换 tab / onShow 重拉 / 触底加载都走它。
+        if (result && result._failed) {
+          wx.showToast({ icon: 'none', title: '加载失败，请重试' });
+          return result;
+        }
         var data = {};
         data[cfg.key] = pageUtil.stampThumbs(result, self.data.url);
         self.setData(data);
-      })
-      .catch(function (err) { console.error('分页加载失败', err); wx.showToast({ icon: 'none', title: '加载失败，下拉重试' }); });
+        return result;
+      });
   },
 
   // ============ 搜索：大名 / 绰号（关键词）/ 关系词 ============
@@ -285,17 +292,19 @@ Page({
     this._handleInput(val);
   },
 
-  // 键盘"搜索/完成"键：明确结束搜索 → 收起搜索结果
+  // 键盘"搜索/完成"键：不再收起结果，而是立即执行当前输入的搜索并保留列表。
+  // 空输入/超长/内容未变的分支交给 _handleInput 统一处理：
+  //   空输入 → 隐藏；内容与上次一致 → 直接恢复已有结果（不重复查库）。
+  // 键盘搜索键不隐藏列表，避免"键盘一缩结果就消失"。
   onConfirm: function () {
-    console.log('[catSearch.onConfirm] 点击搜索/完成，收起搜索结果');
-    clearTimeout(this._searchTimer);
-    this._searchSeq = (this._searchSeq || 0) + 1;
-    this.setData({ showResult: false, showList: false });
+    console.log('[catSearch.onConfirm] 点击键盘搜索，执行搜索并保留结果');
+    this._handleInput(this._searchValue || '');
   },
 
   // 输入框失焦（键盘收起）时【不】收起搜索结果：
   // 真机上滑一下搜索框就会让键盘收起并触发 blur，若 blur 就隐藏结果，搜索收缩太灵敏。
-  // 现在结果保留到用户点空白处 / 按搜索完成 / 清空输入才收起，只取消尚未发出的查询防过期。
+  // 现在结果保留到用户点空白处 / 清空输入才收起（按键盘搜索键只执行搜索、不再收起），
+  // 只取消尚未发出的查询防过期。
   onBlur: function () {
     clearTimeout(this._searchTimer);
     this._searchSeq = (this._searchSeq || 0) + 1;

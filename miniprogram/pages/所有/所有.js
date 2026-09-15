@@ -39,14 +39,28 @@ Page({
     this.loadMoreCat();
   },
 
-  /** 分页加载健康猫咪（可选项：按毛色分类过滤） */
+  /**
+   * 分页加载健康猫咪（可选项：按毛色分类过滤）。
+   * 【重拉第一页走 onShow】本页没开下拉刷新：onShow 已经会在返回本页时先清空列表再重拉
+   *   （见上），下拉只是把它再做一遍。要重拉第一页请走那条路径。
+   * @returns {Promise<Array>} 查询结果（失败时带 _failed 标记，且不动页面数据）
+   */
   loadMoreCat() {
     const filter = { status: "健康" };
     if (this.data.classification) filter.classification = this.data.classification;
-    db.paginate('BITZH', filter, { sort: { lastEditTime: -1 }, limit: 20 }, this.data.cat)
-      // stampThumbs：缩略图带照片版本号，照片变了 URL 变新，避免显示旧缓存图
-      .then(list => this.setData({ cat: pageUtil.stampThumbs(list, this.data.url) }))
-      .catch(err => { console.error('分页加载失败', err); wx.showToast({ icon: 'none', title: '加载失败，下拉重试' }); });
+    return db.paginate('BITZH', filter, { sort: { lastEditTime: -1 }, limit: 20 }, this.data.cat)
+      .then(result => {
+        // db.paginate 出错时会吞掉异常、返回带 _failed 的原列表：此时不动页面数据。
+        // 失败提示只在这里给——本页没有下拉刷新，这里是唯一知道"这次查询挂了"的地方，
+        // onLoad / onShow 重拉 / 触底加载都走它。
+        if (result && result._failed) {
+          wx.showToast({ icon: 'none', title: '加载失败，请重试' });
+          return result;
+        }
+        // stampThumbs：缩略图带照片版本号，照片变了 URL 变新，避免显示旧缓存图
+        this.setData({ cat: pageUtil.stampThumbs(result, this.data.url) });
+        return result;
+      });
   },
 
   /** 猫咪缩略图加载失败时逐级回退：.png → 0.jpg → 占位图 */

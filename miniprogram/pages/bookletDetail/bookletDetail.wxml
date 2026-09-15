@@ -30,13 +30,14 @@
   <!-- 正文卡片 -->
   <view class="content-card">
     <view class="head">
-      <!-- 标题：标题就是猫名时前面画 🐱（和话题胶囊一致），管理员长按标题 → 直达那只猫的编辑页。
-           长按必须挂在外面这层 view 上：直接挂在带 user-select 的内层 text 上会和「长按选中文本」
-           抢事件，真机表现就是长按没反应；同时命中猫名时把内层 user-select 关掉，
-           避免选中菜单和跳转同时弹出来。 -->
-      <view class="head-title-wrap" bindlongpress="editCatByTitle">
+      <!-- 标题：标题是猫名时前面画 🐱（和话题胶囊一致），管理员长按标题 → 直达那只猫的编辑页。
+           长按挂在外面这层 view 上；内层的 user-select 对管理员一律关掉 —— 只要它开着，
+           长按手势就被微信原生的「选中文本」菜单抢走（菜单照样弹、我们的 bindlongpress 不触发），
+           这跟标题是不是猫名无关，所以不能再拿 titleCatId 去做条件。
+           非管理员保持可选中：他们没有长按跳转，选中复制标题的原行为不变。 -->
+      <view class="head-title-wrap" bindlongpress="editCat">
         <text wx:if="{{titleCatId && !titleHasCatIcon}}" class="head-title-cat">🐱</text>
-        <text class="head-title" user-select="{{!(isAdmin && titleCatId)}}">{{listData.tittle}}</text>
+        <text class="head-title" user-select="{{!isAdmin}}">{{listData.tittle}}</text>
       </view>
       <text wx:if="{{!recoverMode}}" class="report-link" bindtap="reportPage">举报</text>
     </view>

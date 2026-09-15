@@ -31,6 +31,29 @@ function stripTitleDecor(tittle) {
     .trim();
 }
 
+/**
+ * 按「可被叫的名字」找那只猫：真实名 / 别名 / 曾用名 / 昵称，独立词命中。
+ * 2026-09-15：话题胶囊的 🐱（markCatTopics）、点话题跳猫（toRelative）、标题长按跳猫
+ *   （editCat）现在共用这一个函数 —— 同一个名字在页面上必须得到同一个答案，
+ *   之前标题自己另写了一套更严的判断（去掉 nickname），就出现「胶囊上有 🐱、
+ *   长按标题却没反应」这种自相矛盾。
+ * @param {string} name 待查名字（标题已去装饰 / 话题原文）
+ * @param {boolean} [trust] true = 不再做 aliasContains 复核，直接取候选集第一只。
+ *        标题自带 🐱 时用：管理员已经亲手标了「这是猫」，不要再判一次是不是猫。
+ * @returns {Promise<Object|null>} 命中的猫（带 _id），没命中 null
+ */
+async function findCatByName(name, trust) {
+  if (!name) return null;
+  const filter = catForm.topicCatFilter([name]);
+  if (!filter) return null;
+  const cats = await db.find('BITZH', filter, { limit: 5 });
+  const list = cats || [];
+  if (trust) return list.find((c) => c && c._id) || null;
+  return list.find((c) => c && catForm.aliasContains(
+    [c.name, c.otherName, c.usedName, c.nickname].filter(Boolean).join(' '), name
+  )) || null;
+}
+
 Page({
   data: {
     url: app.globalData.url + 'page/', // 推文图片目录地址
@@ -217,12 +240,8 @@ Page({
     const name = e.currentTarget.dataset.name;
     if (!name) return;
     // 一次查询：真实名/别名/曾用名/昵称任一字段含该话题独立词 → 取第一只命中猫
-    const filter = catForm.topicCatFilter([name]);
-    db.find('BITZH', filter, { limit: 5 })
-      .then((cats) => {
-        const cat = (cats || []).find((c) => c && catForm.aliasContains(
-          [c.name, c.otherName, c.usedName, c.nickname].filter(Boolean).join(' '), name
-        ));
+    findCatByName(name)
+      .then((cat) => {
         if (cat) {
           wx.navigateTo({ url: '/pages/catDetail/catDetail?_id=' + cat._id });
         } else {
@@ -232,28 +251,18 @@ Page({
       .catch(err => console.error(err));
   },
 
-  /** 标题「就是」某只猫的名字？命中则记下那只猫的 _id（管理员长按标题直达猫咪编辑页用）。
-   *  口径：先把标题去装饰（见 stripTitleDecor），再去和猫的 **真实名 / 别名 / 曾用名**
-   *  比独立词（"肥仔" 命中、"肥猪头" 不命中）。所以「肥仔」「🐱肥仔」「肥仔🐱」
-   *  「黄条子」(别名) 都算；「肥仔的绝育记」不算——不是猫名就别抢长按。
-   *  这里**不**像话题胶囊那样带 nickname：nickname 是各字段自动拼的搜索关键词（含毛色/
-   *  状况/位置），带上会让标题「狸花」「健康」误命中随机一只猫。
-   *  只有管理员需要这个能力 → 非管理员直接跳过，省一次查询。
-   *  只读查询，失败静默（titleCatId 留空，长按不响应）。 */
+  /** 标题是不是某只猫的名字？命中则记下那只猫的 _id，用来在标题前画 🐱。
+   *  判断口径与话题胶囊完全一致（共用 findCatByName），标题带不带猫头都能命中。
+   *  这里只负责「画不画猫头」这一件事：长按跳转不再依赖它的结果（见 editCat）。
+   *  只有管理员需要 → 非管理员直接跳过，省一次查询。只读查询，失败静默。 */
   async matchTitleCat() {
     if (!app.globalData.isAdministrator) return;
     const raw = String((this.data.listData || {}).tittle || '');
-    // 标题里已经手写了猫头 → 不再重复画一个（hasCatIcon 只影响显示，不影响匹配）
-    const hasCatIcon = /🐱|🐈/.test(raw);
+    const hasCatIcon = /🐱|🐈/.test(raw); // 管理员自己手写了猫头 → 不重复画
     const tittle = stripTitleDecor(raw);
     if (!tittle) { this.setData({ titleCatId: '', titleHasCatIcon: hasCatIcon }); return; }
     try {
-      // topicCatFilter 的 $or 比这里更宽（含 nickname），这里当候选集用，最终由 aliasContains 定夺
-      const filter = catForm.topicCatFilter([tittle]);
-      const cats = filter ? await db.find('BITZH', filter, { limit: 5 }) : [];
-      const cat = (cats || []).find((c) => c && catForm.aliasContains(
-        [c.name, c.otherName, c.usedName].filter(Boolean).join(' '), tittle
-      ));
+      const cat = await findCatByName(tittle, hasCatIcon);
       this.setData({ titleCatId: cat ? cat._id : '', titleHasCatIcon: hasCatIcon });
     } catch (err) {
       console.error('查询标题猫失败', err);
@@ -470,18 +479,33 @@ Page({
     }
   },
 
-  /** 长按标题：标题就是猫名时，管理员直达该猫编辑页（titleCatId 由 matchTitleCat 算好）。
-   *  非管理员 / 标题不是猫名 → 不响应，保留长按选中文本的原行为。
-   *  回收站预览模式下与长按推文一致 → 进恢复模式编辑页（存档的标题不参与猫名匹配）。 */
-  editCatByTitle() {
+  /** 长按标题：管理员直达这只猫的编辑页（wxml 上 bindlongpress="editCat"）。
+   *  【为什么在长按的这一刻才查】原来靠页面加载时算好的 titleCatId，它一旦是空的
+   *   （标题不是猫名，或那次查询失败 / 还没返回）长按就彻底没反应、连个提示都没有，
+   *   根本分不清是「没命中的猫」还是「事件压根没触发」。现在长按当场查一次：
+   *   命中就跳，没命中给一条提示 —— 有反馈才诊断得下去。
+   *  【为什么不要求标题带 🐱】带不带都能跳：带着说明管理员已经亲手标过「这是猫」，
+   *   那就直接认候选集里那只（findCatByName 的 trust），不再判一次是不是猫名；
+   *   没带就按话题胶囊那套判断（独立词命中真实名/别名/曾用名/昵称）。
+   *  非管理员不响应。回收站预览模式下与长按推文一致 → 进恢复模式编辑页。 */
+  async editCat() {
     if (this._recoverMode) {
       this.editRecover();
       return;
     }
     if (!app.globalData.isAdministrator) return;
-    const catId = this.data.titleCatId;
-    if (!catId) return;
-    wx.navigateTo({ url: '/pages/editCat/editCat?_id=' + catId });
+    const raw = String((this.data.listData || {}).tittle || '');
+    const tittle = stripTitleDecor(raw);
+    if (!tittle) return;
+    const cat = await findCatByName(tittle, /🐱|🐈/.test(raw));
+    if (cat) {
+      console.log('[bookletDetail.editCat] 长按标题跳猫咪编辑页', tittle, cat._id);
+      wx.navigateTo({ url: '/pages/editCat/editCat?_id=' + cat._id });
+      return;
+    }
+    // 没命中也要有反馈：否则用户看到的就是「长按没反应」，没法判断是没触发还是没匹配上
+    console.log('[bookletDetail.editCat] 长按标题但没找到对应猫咪', tittle);
+    wx.showToast({ icon: 'none', title: '标题不是猫名' });
   },
 
   /** 点击作者头像放大预览 */

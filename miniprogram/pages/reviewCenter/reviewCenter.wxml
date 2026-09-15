@@ -19,7 +19,7 @@
       <view class="content">{{item.content}}</view>
       <view class="author">作者：{{item.authorName || item.authorId}}</view>
       <view class="actions">
-        <button class="btn small danger" size="mini" data-id="{{item._id}}" data-authorid="{{item.authorId}}" bindtap="banReview">封禁作者</button>
+        <button class="btn small danger" size="mini" data-id="{{item._id}}" data-authorid="{{item.authorId}}" data-author="{{item.authorName || item.authorId}}" bindtap="banReview">封禁作者</button>
         <button class="btn small" size="mini" data-id="{{item._id}}" bindtap="ignoreReview">标记处理</button>
       </view>
     </view>
@@ -35,7 +35,7 @@
       <view class="author">目标ID：{{item.targetId}} · 作者ID：{{item.targetAuthorId}}</view>
       <view class="actions">
         <button class="btn small success" size="mini" data-id="{{item._id}}" data-type="{{item.targetType}}" data-targetid="{{item.targetId}}" bindtap="restoreReport">恢复内容</button>
-        <button class="btn small danger" size="mini" data-id="{{item._id}}" data-authorid="{{item.targetAuthorId}}" bindtap="banReport">封禁作者</button>
+        <button class="btn small danger" size="mini" data-id="{{item._id}}" data-authorid="{{item.targetAuthorId}}" data-author="{{item.targetAuthorName || item.targetAuthorId}}" bindtap="banReport">封禁作者</button>
         <button class="btn small" size="mini" data-id="{{item._id}}" bindtap="ignoreReport">忽略</button>
       </view>
     </view>

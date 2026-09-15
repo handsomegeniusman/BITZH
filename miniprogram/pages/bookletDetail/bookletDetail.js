@@ -483,24 +483,77 @@ Page({
    *  写法和长按推文图片的 editBooklet 完全一致：_id 从 data-_id 拿（由 matchTitleCat
    *  算好），函数本身只判断权限 + 跳转，不做任何异步查询 —— 越简单越不会"点了没反应"。
    *  回收站预览模式下与长按推文一致 → 进恢复模式编辑页。 */
+  // ============ 长按标题 → 猫咪编辑页 ============
+  // 【为什么手写 500ms 计时，而不用 bindlongpress】真机上标题这块的 bindlongpress 完全不触发
+  //   （连 editCat 里的第一行日志都没有），而同一页长按评论是好的，换元素结构也没用。
+  //   长按事件既然收不到，就退到最底层的 touchstart / touchmove / touchend 自己计时 ——
+  //   这三个事件一定会触发，是最不可能"点了没反应"的一档。
+  //   bindlongpress 保留为兜底：万一某个基础库/机型上它能触发，用 _lpDone 去重不跳两次。
+  //   滑动超过 10px 视为"在滚动页面"，取消计时，避免翻页时误跳。
+
+  /** 手指按下标题：开始 500ms 长按计时 */
+  onTitleTouchStart(e) {
+    const t = (e.touches && e.touches[0]) || {};
+    this._lpId = e.currentTarget && e.currentTarget.dataset ? e.currentTarget.dataset._id : '';
+    this._lpDone = false;
+    this._lpX = t.clientX || 0;
+    this._lpY = t.clientY || 0;
+    console.log('[bookletDetail] 标题 touchstart, 猫咪_id =', this._lpId);
+    clearTimeout(this._lpTimer);
+    this._lpTimer = setTimeout(() => {
+      this._lpTimer = null;
+      this._lpDone = true; // 标记：这次长按已经由手写计时处理，bindlongpress 若也触发就跳过
+      this.jumpEditCat(this._lpId);
+    }, 500);
+  },
+
+  /** 手指移动：超过 10px 当作滚动，取消长按计时 */
+  onTitleTouchMove(e) {
+    if (!this._lpTimer) return;
+    const t = (e.touches && e.touches[0]) || {};
+    if (Math.abs((t.clientX || 0) - this._lpX) > 10 || Math.abs((t.clientY || 0) - this._lpY) > 10) {
+      clearTimeout(this._lpTimer);
+      this._lpTimer = null;
+    }
+  },
+
+  /** 抬手 / 触摸被打断：取消长按计时 */
+  onTitleTouchEnd() {
+    clearTimeout(this._lpTimer);
+    this._lpTimer = null;
+  },
+
+  /** bindlongpress 兜底入口（部分基础库可能走这条） */
   editCat(e) {
-    // 日志放在所有 return 之前：长按到底有没有进函数、当时是不是管理员、_id 有没有值，
-    // 一行打全。之前日志放在权限判断后面，一旦不是管理员就什么也不打，
-    // 「没反应」和「事件没触发」在控制台里长得一模一样，白排查好几轮。
     const _id = e && e.currentTarget && e.currentTarget.dataset ? e.currentTarget.dataset._id : '';
-    console.log('[bookletDetail.editCat] 长按标题',
+    clearTimeout(this._lpTimer);
+    this._lpTimer = null;
+    if (this._lpDone) { this._lpDone = false; return; } // 手写计时已经跳过了，别跳两次
+    this.jumpEditCat(_id);
+  },
+
+  /** 真正跳转：权限 + _id 校验 + navigateTo（日志放在所有 return 之前，
+   *  一行看清是没进函数、不是管理员、还是标题没匹配上猫） */
+  jumpEditCat(_id) {
+    console.log('[bookletDetail.jumpEditCat] 长按标题',
       'isAdministrator =', app.globalData.isAdministrator,
       'isAdmin(data) =', this.data.isAdmin,
       'titleCatId =', this.data.titleCatId,
-      'data-_id =', _id,
+      '传入_id =', _id,
       'recoverMode =', !!this._recoverMode);
     if (this._recoverMode) {
       this.editRecover();
       return;
     }
     if (!app.globalData.isAdministrator) return;
-    if (!_id) return; // 标题不是猫名时 titleCatId 为空 → data-_id 为空，不跳
+    if (!_id) return; // 标题不是猫名时 titleCatId 为空 → 不跳
     wx.navigateTo({ url: '/pages/editCat/editCat?_id=' + _id });
+  },
+
+  /** 页面卸载：清掉长按计时，避免离开页面后定时器还在跑、对着已销毁页面 navigateTo */
+  onUnload() {
+    clearTimeout(this._lpTimer);
+    this._lpTimer = null;
   },
 
   /** 点击作者头像放大预览 */

@@ -541,6 +541,15 @@ Page({
       'titleCatId =', this.data.titleCatId,
       '传入_id =', _id,
       'recoverMode =', !!this._recoverMode);
+    // 【临时探针，排查完就删】长按到底有没有走到这里，真机上看控制台不方便，
+    // 直接弹出来：看到这条 = 长按事件通了，剩下看文案里的三个状态。
+    wx.showToast({
+      icon: 'none',
+      duration: 3000,
+      title: '长按进来了｜猫id:' + (_id ? String(_id).slice(-4) : '空')
+        + '｜管理:' + (app.globalData.isAdministrator ? '是' : '否')
+        + '｜titleCatId:' + (this.data.titleCatId ? '有' : '空'),
+    });
     if (this._recoverMode) {
       this.editRecover();
       return;

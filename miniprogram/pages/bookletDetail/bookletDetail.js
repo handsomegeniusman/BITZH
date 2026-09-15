@@ -33,10 +33,10 @@ function stripTitleDecor(tittle) {
 
 /**
  * 按「可被叫的名字」找那只猫：真实名 / 别名 / 曾用名 / 昵称，独立词命中。
- * 2026-09-15：话题胶囊的 🐱（markCatTopics）、点话题跳猫（toRelative）、标题长按跳猫
- *   （editCat）现在共用这一个函数 —— 同一个名字在页面上必须得到同一个答案，
- *   之前标题自己另写了一套更严的判断（去掉 nickname），就出现「胶囊上有 🐱、
- *   长按标题却没反应」这种自相矛盾。
+ * 2026-09-15：话题胶囊的 🐱（markCatTopics）、点话题跳猫（toRelative）、长按话题跳猫
+ *   （editCat）共用这一个函数 —— 同一个名字在页面上必须得到同一个答案，
+ *   之前这里另写过一套更严的判断（去掉 nickname），就出现「胶囊上有 🐱、
+ *   长按却没反应」这种自相矛盾。
  * @param {string} name 待查名字（标题已去装饰 / 话题原文）
  * @param {boolean} [trust] true = 不再做 aliasContains 复核，直接取候选集第一只。
  *        标题自带 🐱 时用：管理员已经亲手标了「这是猫」，不要再判一次是不是猫。
@@ -66,9 +66,8 @@ Page({
     audit: false,     // 是否开放评论（管理员后台开关）
     currentImageIndex: 0,
     recoverMode: false, // 回收站预览模式：内容来自 Delete 存档，只读，不展示评论区
-    catTopicMap: {},    // 话题 -> 是否猫名（是猫的话胶囊前加 🐱，和 catDetail 一致）
+    catTopicMap: {},    // 话题 -> 命中那只猫的 _id（有值 = 猫名，胶囊前加 🐱 且长按可编辑）
     blocked: false,     // 推文已被封禁/下架：非管理入口打开 → 全屏封禁占位（禁止查看）
-    isAdmin: false,     // 当前用户是否管理员（标题长按直达猫咪编辑页用）
     titleCatId: '',     // 标题就是猫名时那只猫的 _id（空 = 标题不是猫名，标题前不画 🐱）
     titleHasCatIcon: false, // 标题里已经手写了 🐱 → 不重复画（避免出现两个猫头）
   },
@@ -107,7 +106,6 @@ Page({
       userId: app.globalData.userId,
       isFeeder: app.globalData.isFeeder,
       userInfo: app.globalData.userInfo,
-      isAdmin: !!app.globalData.isAdministrator,
     });
   },
 
@@ -215,7 +213,10 @@ Page({
   /** 标记话题里哪些是猫名（和 catDetail 一致）：真实名 name / 别名 otherName /
    *  曾用名 usedName / 昵称 nickname 任一字段含该话题独立词（支持 "肥猪/饭桶"、
    *  "猫哥 小奶猫" 这类分隔写法）。map 必须按【话题名】做 key——胶囊上显示的是
-   *  话题原文，别名话题（肥猪）要能直接命中发福那只猫。只读查询，失败静默。 */
+   *  话题原文，别名话题（肥猪）要能直接命中发福那只猫。
+   *  值是那只猫的 _id：既当「是不是猫」的布尔用（wxml 判 🐱），
+   *  又直接喂给胶囊的 data-_id 供长按跳编辑页 —— 一次查询两处用，不再重复查。
+   *  只读查询，失败静默。 */
   async markCatTopics(list) {
     const catTopicMap = {};
     if (!list.length) { this.setData({ catTopicMap }); return; }
@@ -223,10 +224,10 @@ Page({
       const filter = catForm.topicCatFilter(list);
       const cats = filter ? await db.find('BITZH', filter, { limit: list.length * 5 }) : [];
       (cats || []).forEach((c) => {
-        if (!c || !c.name) return;
+        if (!c || !c.name || !c._id) return;
         // 该猫所有"可被叫的名字"拼成串：真实名 + 别名 + 曾用名 + 昵称（含关系词/描述词）
         const stack = [c.name, c.otherName, c.usedName, c.nickname].filter(Boolean).join(' ');
-        list.forEach((t) => { if (!catTopicMap[t] && catForm.aliasContains(stack, t)) catTopicMap[t] = true; });
+        list.forEach((t) => { if (!catTopicMap[t] && catForm.aliasContains(stack, t)) catTopicMap[t] = c._id; });
       });
     } catch (err) {
       console.error('查询话题猫失败', err);
@@ -253,7 +254,8 @@ Page({
 
   /** 标题是不是某只猫的名字？命中则记下那只猫的 _id，用来在标题前画 🐱。
    *  判断口径与话题胶囊完全一致（共用 findCatByName），标题带不带猫头都能命中。
-   *  这里只负责「画不画猫头」这一件事：长按跳转不再依赖它的结果（见 editCat）。
+   *  这里只负责「画不画猫头」这一件事——标题本身不响应任何手势（长按编辑猫走
+   *  的是话题胶囊的 editCat），所以算出的 _id 只用于这个 🐱。
    *  只有管理员需要 → 非管理员直接跳过，省一次查询。只读查询，失败静默。 */
   async matchTitleCat() {
     if (!app.globalData.isAdministrator) return;
@@ -479,111 +481,17 @@ Page({
     }
   },
 
-  /** 长按标题：管理员直达这只猫的编辑页（wxml 上 bindlongpress="editCat" data-_id）。
-   *  写法和长按推文图片的 editBooklet 完全一致：_id 从 data-_id 拿（由 matchTitleCat
-   *  算好），函数本身只判断权限 + 跳转，不做任何异步查询 —— 越简单越不会"点了没反应"。
-   *  回收站预览模式下与长按推文一致 → 进恢复模式编辑页。 */
-  // ============ 长按标题 → 猫咪编辑页 ============
-  // 【为什么手写 500ms 计时，而不用 bindlongpress】真机上标题这块的 bindlongpress 完全不触发
-  //   （连 editCat 里的第一行日志都没有），而同一页长按评论是好的，换元素结构也没用。
-  //   长按事件既然收不到，就退到最底层的 touchstart / touchmove / touchend 自己计时 ——
-  //   这三个事件一定会触发，是最不可能"点了没反应"的一档。
-  //   bindlongpress 保留为兜底：万一某个基础库/机型上它能触发，用 _lpDone 去重不跳两次。
-  //   滑动超过 10px 视为"在滚动页面"，取消计时，避免翻页时误跳。
-
-  // ---------- 【临时探针，排查完就删】卡片级长按，看触摸落在哪个元素上 ----------
-  // 目的：长按标题时，标题自己的 touchstart 一声不吭。到底是标题没接到触摸（被谁盖住了），
-  // 还是接到了但我的绑定没生效？在整张卡片上再挂一层同样的计时，把 e.target 的 id 弹出来。
-  // 只在按住 600ms 后才弹，正常滚动（一动就取消）不会打扰。
-  onCardTouchStart(e) {
-    const t = e.target || {};
-    this._cardHit = (t.id || '(无id)') + '@' + ((t.offsetTop | 0));
-    clearTimeout(this._cardTimer);
-    this._cardTimer = setTimeout(() => {
-      wx.showToast({ icon: 'none', duration: 3000, title: '长按落在 ' + this._cardHit });
-    }, 600);
-  },
-  onCardTouchMove() {
-    clearTimeout(this._cardTimer);
-  },
-  onCardTouchEnd() {
-    clearTimeout(this._cardTimer);
-  },
-
-  /** 手指按下标题：开始 500ms 长按计时 */
-  onTitleTouchStart(e) {
-    const t = (e.touches && e.touches[0]) || {};
-    this._lpId = e.currentTarget && e.currentTarget.dataset ? e.currentTarget.dataset._id : '';
-    this._lpDone = false;
-    this._lpX = t.clientX || 0;
-    this._lpY = t.clientY || 0;
-    console.log('[bookletDetail] 标题 touchstart, 猫咪_id =', this._lpId);
-    clearTimeout(this._lpTimer);
-    this._lpTimer = setTimeout(() => {
-      this._lpTimer = null;
-      this._lpDone = true; // 标记：这次长按已经由手写计时处理，bindlongpress 若也触发就跳过
-      this.jumpEditCat(this._lpId);
-    }, 500);
-  },
-
-  /** 手指移动：超过 10px 当作滚动，取消长按计时 */
-  onTitleTouchMove(e) {
-    if (!this._lpTimer) return;
-    const t = (e.touches && e.touches[0]) || {};
-    if (Math.abs((t.clientX || 0) - this._lpX) > 10 || Math.abs((t.clientY || 0) - this._lpY) > 10) {
-      clearTimeout(this._lpTimer);
-      this._lpTimer = null;
-    }
-  },
-
-  /** 抬手 / 触摸被打断：取消长按计时 */
-  onTitleTouchEnd() {
-    clearTimeout(this._lpTimer);
-    this._lpTimer = null;
-  },
-
-  /** bindlongpress 兜底入口（部分基础库可能走这条） */
+  /** 长按话题胶囊：管理员直达那只猫的编辑页（wxml 上 bindlongpress="editCat" data-_id）。
+   *  写法和 catDetail 的 editCat、长按推文图片的 editBooklet 完全一致：_id 直接来自
+   *  data-_id（由 markCatTopics 那次查询一并算好），函数只做「判权限 + 跳转」两件事，
+   *  不做任何异步查询 —— 越简单越不会"按了没反应"。
+   *  话题不是猫名时 data-_id 为空 → 什么都不做（那种话题只有"点击搜文章"的行为）。
+   *  长按触发后微信不会再补一个 tap，所以不会连带打开猫详情页。 */
   editCat(e) {
-    const _id = e && e.currentTarget && e.currentTarget.dataset ? e.currentTarget.dataset._id : '';
-    clearTimeout(this._lpTimer);
-    this._lpTimer = null;
-    if (this._lpDone) { this._lpDone = false; return; } // 手写计时已经跳过了，别跳两次
-    this.jumpEditCat(_id);
-  },
-
-  /** 真正跳转：权限 + _id 校验 + navigateTo（日志放在所有 return 之前，
-   *  一行看清是没进函数、不是管理员、还是标题没匹配上猫） */
-  jumpEditCat(_id) {
-    console.log('[bookletDetail.jumpEditCat] 长按标题',
-      'isAdministrator =', app.globalData.isAdministrator,
-      'isAdmin(data) =', this.data.isAdmin,
-      'titleCatId =', this.data.titleCatId,
-      '传入_id =', _id,
-      'recoverMode =', !!this._recoverMode);
-    // 【临时探针，排查完就删】长按到底有没有走到这里，真机上看控制台不方便，
-    // 直接弹出来：看到这条 = 长按事件通了，剩下看文案里的三个状态。
-    wx.showToast({
-      icon: 'none',
-      duration: 3000,
-      title: '长按进来了｜猫id:' + (_id ? String(_id).slice(-4) : '空')
-        + '｜管理:' + (app.globalData.isAdministrator ? '是' : '否')
-        + '｜titleCatId:' + (this.data.titleCatId ? '有' : '空'),
-    });
-    if (this._recoverMode) {
-      this.editRecover();
-      return;
-    }
     if (!app.globalData.isAdministrator) return;
-    if (!_id) return; // 标题不是猫名时 titleCatId 为空 → 不跳
+    const _id = e.currentTarget.dataset._id;
+    if (!_id) return;
     wx.navigateTo({ url: '/pages/editCat/editCat?_id=' + _id });
-  },
-
-  /** 页面卸载：清掉长按计时，避免离开页面后定时器还在跑、对着已销毁页面 navigateTo */
-  onUnload() {
-    clearTimeout(this._lpTimer);
-    this._lpTimer = null;
-    clearTimeout(this._cardTimer);
-    this._cardTimer = null;
   },
 
   /** 点击作者头像放大预览 */

@@ -484,15 +484,22 @@ Page({
    *  算好），函数本身只判断权限 + 跳转，不做任何异步查询 —— 越简单越不会"点了没反应"。
    *  回收站预览模式下与长按推文一致 → 进恢复模式编辑页。 */
   editCat(e) {
+    // 日志放在所有 return 之前：长按到底有没有进函数、当时是不是管理员、_id 有没有值，
+    // 一行打全。之前日志放在权限判断后面，一旦不是管理员就什么也不打，
+    // 「没反应」和「事件没触发」在控制台里长得一模一样，白排查好几轮。
+    const _id = e && e.currentTarget && e.currentTarget.dataset ? e.currentTarget.dataset._id : '';
+    console.log('[bookletDetail.editCat] 长按标题',
+      'isAdministrator =', app.globalData.isAdministrator,
+      'isAdmin(data) =', this.data.isAdmin,
+      'titleCatId =', this.data.titleCatId,
+      'data-_id =', _id,
+      'recoverMode =', !!this._recoverMode);
     if (this._recoverMode) {
       this.editRecover();
       return;
     }
     if (!app.globalData.isAdministrator) return;
-    const _id = e.currentTarget.dataset._id;
-    // 标题不是猫名时 titleCatId 为空 → data-_id 为空，不跳（也没必要跳）
-    console.log('[bookletDetail.editCat] 长按标题, 猫咪_id =', _id);
-    if (!_id) return;
+    if (!_id) return; // 标题不是猫名时 titleCatId 为空 → data-_id 为空，不跳
     wx.navigateTo({ url: '/pages/editCat/editCat?_id=' + _id });
   },
 

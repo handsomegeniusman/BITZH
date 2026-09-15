@@ -249,8 +249,4 @@ Page({
     };
   },
 
-  /** 下拉刷新 */
-  onPullDownRefresh() {
-    wx.stopPullDownRefresh();
-  },
 });

@@ -28,12 +28,21 @@ Page({
     this.loadList();
   },
 
-  /** 分页加载删除存档（按删除时间倒序，最新在前） */
-  loadList() {
-    db.paginate(DELETE_COLLECTION, {}, { sort: { editTime: -1 }, limit: 20 }, this.data.list)
-      .then((list) => {
+  /**
+   * 分页加载删除存档（按删除时间倒序，最新在前）。
+   * @param {Array} [base] 分页基线：不传则接着当前列表往后翻（触底加载）；
+   *                       传 [] 表示从第一页重拉（下拉刷新用）。
+   * @returns {Promise<Array>} 查询结果（失败时带 _failed 标记，且不动页面数据）
+   */
+  loadList(base) {
+    const list = base || this.data.list;
+    return db.paginate(DELETE_COLLECTION, {}, { sort: { editTime: -1 }, limit: 20 }, list)
+      .then((result) => {
+        // db.paginate 出错时会吞掉异常、返回带 _failed 的原列表：此时不动页面数据，
+        // 把提示交给调用方。原先挂在这里的 .catch 永远不会执行（异常在 db 层就被吞了）。
+        if (result && result._failed) return result;
         // 补上展示字段：照片 URL 用存档目录拼（跳过缩略图 .png，只列照片本体）
-        const items = list.map((r) => {
+        const items = result.map((r) => {
           const data = r.data || {};
           const photoUrls = [];
           if (data.photoArchive && Array.isArray(data.photoKeys)) {
@@ -51,13 +60,34 @@ Page({
           });
         });
         this.setData({ list: items });
-      })
-      .catch((err) => { console.error('加载回收站失败', err); wx.showToast({ icon: 'none', title: '加载失败，下拉重试' }); });
+        return result;
+      });
   },
 
   /** 上拉触底：加载更多 */
   onReachBottom() {
     this.loadList();
+  },
+
+  /**
+   * 下拉刷新：从第一页重拉并整体替换。
+   * 【为什么传 []】db.paginate 以传入列表的 length 作 skip、且只追加不删除，
+   *   传空数组 = 从第一页开始，拿到的就是完整首页，可直接 setData 覆盖。
+   * 【为什么失败时不 setData】失败返回的是带 _failed 的列表，不 setData 则
+   *   原列表留在屏幕上，不会因为一次网络抖动把列表刷成空白。
+   */
+  onPullDownRefresh() {
+    // 权限兜底：本页仅管理员可用。onLoad 已拦过一次，但下拉刷新是【独立入口】——
+    // 非管理员经链接直达本页时 onLoad 提前 return（不加载数据），下拉却仍会触发查询，
+    // 等于绕过 onLoad 的拦截看到删除存档。所以这里必须再挡一次。
+    if (!guard.requireAdmin()) {
+      wx.stopPullDownRefresh();
+      return;
+    }
+    this.loadList([]).then((result) => {
+      if (result && result._failed) wx.showToast({ icon: 'none', title: '加载失败，下拉重试' });
+      wx.stopPullDownRefresh(); // 必须调用，否则下拉转圈不收起
+    });
   },
 
   /** 展开/收起某条存档的照片预览 */

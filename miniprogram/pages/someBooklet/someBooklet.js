@@ -55,8 +55,13 @@ Page({
     });
   },
 
-  /** 分页加载推文列表（两种查询方式共用一套分页逻辑） */
-  getPage() {
+  /**
+   * 分页加载推文列表（两种查询方式共用一套分页逻辑）。
+   * @param {Array} [base] 分页基线：不传则接着当前列表往后翻（触底加载）；
+   *                       传 [] 表示从第一页重拉（下拉刷新用）。
+   * @returns {Promise<Array>} 查询结果（失败时带 _failed 标记，且不动页面数据）
+   */
+  getPage(base) {
     const sortKey = this.data.multiIndex[0] === 0 ? 'photoTime' : 'pageTime';
     const orderBy = this.data.multiIndex[1] === 0 ? -1 : 1;
     // isName=true 按作者名精确匹配；否则按标签匹配完整标签名
@@ -71,20 +76,38 @@ Page({
     sortObj[sortKey] = orderBy;
     // 日期主键再加发布时间降序兜底，保证数据库分页取数稳定
     if (sortKey !== 'pageTime') sortObj.pageTime = -1;
-    db.paginate('Page', filter, { sort: sortObj, limit: 20 }, this.data.listData)
-      .then(list => {
-        list = db.filterHidden(list); // 过滤被封禁用户下架的推文（软删除留存）
+    return db.paginate('Page', filter, { sort: sortObj, limit: 20 }, base || this.data.listData)
+      .then((result) => {
+        // db.paginate 出错时会吞掉异常、返回带 _failed 的原列表：此时不动页面数据，
+        // 把提示交给调用方。原先挂在这里的 .catch 永远不会执行（异常在 db 层就被吞了）。
+        // 注意：必须先判 _failed 再做 filterHidden/applySort —— 它们都会返回新数组，标记会丢。
+        if (result && result._failed) return result;
+        let list = db.filterHidden(result); // 过滤被封禁用户下架的推文（软删除留存）
         // 客户端按真实时间归一化后重排（兼容脏 photoTime），并补卡片时间文案
         list = sort.applySort(list, sortKey, this.data.multiIndex[1] === 0);
         sort.decorateTime(list);
         this.setData({ listData: list, skipCount: list.length, loaded: true });
-      })
-      .catch(err => { console.error('加载推文失败', err); wx.showToast({ icon: 'none', title: '加载失败，下拉重试' }); });
+        return result;
+      });
   },
 
   /** 上拉触底：加载更多 */
   onReachBottom() {
     this.getPage();
+  },
+
+  /**
+   * 下拉刷新：从第一页重拉并整体替换（保持当前排序方式不变）。
+   * 【为什么传 []】db.paginate 以传入列表的 length 作 skip、且只追加不删除，
+   *   传空数组 = 从第一页开始，拿到的就是完整首页，可直接 setData 覆盖。
+   * 【为什么失败时不 setData】失败返回的是带 _failed 的列表，不 setData 则
+   *   原列表留在屏幕上，不会因为一次网络抖动把列表刷成空白。
+   */
+  onPullDownRefresh() {
+    this.getPage([]).then((result) => {
+      if (result && result._failed) wx.showToast({ icon: 'none', title: '加载失败，下拉重试' });
+      wx.stopPullDownRefresh(); // 必须调用，否则下拉转圈不收起
+    });
   },
 
   /** 点击推文进入详情 */

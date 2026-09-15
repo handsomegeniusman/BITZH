@@ -91,6 +91,8 @@
   border-radius: 999rpx;
   line-height: 1.8;
 }
+/* 历史 / 回收站两个分栏的容器：已是普通 view（不再是 scroll-view），
+   不给高度、由内容撑开、交给页面滚动 —— 页面级滚动才能触发下拉刷新与 onReachBottom。 */
 .history-list {
   position: relative;
   display: block;

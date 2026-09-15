@@ -1,3 +1,4 @@
 {
-  "navigationBarTitleText": "官方推文管理"
+  "navigationBarTitleText": "官方推文管理",
+  "enablePullDownRefresh": true
 }

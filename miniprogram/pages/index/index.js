@@ -73,6 +73,28 @@ Page({
     }
   },
 
+  /**
+   * 下拉刷新：重取审核开关后再从第一页重拉当前列表。
+   * 【为什么要重取审核开关】getPage 有闸门「audit 为假且不在搜索态就直接返回」，
+   *   onLoad 时若 getAudit 失败，audit 就一直是假的 → 下拉会变成什么都没发生的空操作。
+   * 【为什么传 []】db.paginate 以传入列表的 length 作 skip、且只追加不删除，
+   *   传空数组 = 从第一页开始；buildColumns 会把左右两列整体覆盖，不是追加。
+   * 【为什么失败时不 setData】失败返回的是带 _failed 的列表，不 setData 则
+   *   原列表留在屏幕上，不会因为一次网络抖动把列表刷成空白。
+   */
+  onPullDownRefresh() {
+    db.getAudit().then((audit) => {
+      this.setData({ audit });
+      return this.getPage([]);
+    }).catch((err) => {
+      console.error('读取审核开关失败', err);
+      return this.getPage([]); // 读失败按开放处理，与 onLoad 一致
+    }).then((result) => {
+      if (result && result._failed) wx.showToast({ icon: 'none', title: '加载失败，下拉重试' });
+      wx.stopPullDownRefresh(); // 必须调用，否则下拉转圈不收起
+    });
+  },
+
   /** 获取当前用户状态（管理员/已注册用户），写入全局并同步到页面 */
   async initUser() {
     await db.initUserState();
@@ -91,11 +113,16 @@ Page({
     });
   },
 
-  /** 分页加载推文：按所选排序规则查询，去重合并；搜索关键词非空时按话题/标题模糊过滤 */
-  getPage() {
+  /**
+   * 分页加载推文：按所选排序规则查询，去重合并；搜索关键词非空时按话题/标题模糊过滤。
+   * @param {Array} [base] 分页基线：不传则接着当前列表往后翻（触底加载）；
+   *                       传 [] 表示从第一页重拉（下拉刷新用）。
+   * @returns {Promise<Array|undefined>} 查询结果（失败时带 _failed 标记，且不动页面数据）
+   */
+  getPage(base) {
     // 审核模式（audit=false）不读小猫书数据：除非用户正在搜索。
     // 避免关闭发布审核时每次进首页都白读一遍 Page 集合。
-    if (!this.data.audit && !this.data.searchMode) return;
+    if (!this.data.audit && !this.data.searchMode) return Promise.resolve();
     const orderBy = this.data.multiIndex[1] === 0 ? -1 : 1; // 降序/升序
     // 排序字段：0=拍摄时间 1=发布时间 2=点赞量
     const sortKey = this.data.multiIndex[0] === 2 ? 'good' :
@@ -109,15 +136,19 @@ Page({
     // 空关键词（无搜索）→ 空过滤，即正常全量瀑布流
     const tokens = topic.parse(this.data.search);
     const filter = tokens.length ? topic.tagFilter(tokens) : {};
-    db.paginate('Page', filter, { sort: sortObj, limit: 20 }, this.data.listData)
-      .then(list => {
-        list = db.filterHidden(list); // 过滤被封禁用户下架的推文（软删除留存）
+    return db.paginate('Page', filter, { sort: sortObj, limit: 20 }, base || this.data.listData)
+      .then((result) => {
+        // db.paginate 出错时会吞掉异常、返回带 _failed 的原列表：此时不动页面数据，
+        // 把提示交给调用方。原先挂在这里的 .catch 永远不会执行（异常在 db 层就被吞了）。
+        // 注意：必须先判 _failed 再做 filterHidden/applySort —— 它们都会返回新数组，标记会丢。
+        if (result && result._failed) return result;
+        let list = db.filterHidden(result); // 过滤被封禁用户下架的推文（软删除留存）
         // 客户端按真实时间归一化后重排（兼容脏 photoTime），并补卡片时间文案
         list = sort.applySort(list, sortKey, this.data.multiIndex[1] === 0);
         sort.decorateTime(list);
-        this.setData(this.buildColumns(list));
-      })
-      .catch(err => { console.error('加载推文失败', err); wx.showToast({ icon: 'none', title: '加载失败，下拉重试' }); });
+        this.setData(this.buildColumns(list)); // buildColumns 整体覆盖左右两列，不是追加
+        return result;
+      });
   },
 
   /** 把推文列表拆成左右两列（瀑布流）：避免整表被 wx:for+wx:if 过滤两遍，渲染工作量减半 */

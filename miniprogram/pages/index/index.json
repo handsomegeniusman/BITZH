@@ -1,5 +1,6 @@
 {
   "navigationBarTitleText": "小猫书",
+  "enablePullDownRefresh": true,
   "usingComponents": {
     "kb-done-bar": "/components/kb-done-bar/kb-done-bar"
   }

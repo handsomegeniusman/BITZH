@@ -101,6 +101,32 @@ Page({
     this.loadTrash();
   },
 
+  /**
+   * 上拉触底：加载当前分栏的更多内容。
+   * 【为什么现在才需要它】原来两个分栏的触底由 scroll-view 的 bindscrolltolower 负责，
+   *   但那个 scroll-view 没有任何高度（见 mydetail.wxml 的说明），永远不触发 ——
+   *   所以"我的帖子"一直停在首批 10 条、"回收站"停在 20 条。改用页面级触底后恢复分页。
+   */
+  onReachBottom() {
+    if (this.data.currentTab === 0) this.loadMyPosts();
+    else this.loadTrash();
+  },
+
+  /**
+   * 下拉刷新：当前分栏从第一页重拉并整体替换（另一个分栏也跟着刷，切过去就是最新的）。
+   * 【为什么传 []】db.paginate 以传入列表的 length 作 skip、且只追加不删除，
+   *   传空数组 = 从第一页开始，拿到的就是完整首页，可直接 setData 覆盖。
+   * 【为什么失败时不 setData】失败返回的是带 _failed 的列表，不 setData 则
+   *   原列表留在屏幕上，不会因为一次网络抖动把列表刷成空白。
+   */
+  onPullDownRefresh() {
+    Promise.all([this.loadMyPosts([]), this.loadTrash([])]).then((results) => {
+      const failed = results.some((r) => r && r._failed);
+      if (failed) wx.showToast({ icon: 'none', title: '加载失败，下拉重试' });
+      wx.stopPullDownRefresh(); // 必须调用，否则下拉转圈不收起
+    });
+  },
+
   /** 页面卸载：移除监听器，防止内存泄漏和向已销毁页面 setData */
   onUnload() {
     if (this._pageDataListener && typeof app.removePageDataListener === 'function') {
@@ -148,25 +174,30 @@ Page({
 
   // ============ 历史分栏：我的帖子 ============
 
-  /** 加载"我发布且仍存在的帖子"（按作者 openid 过滤，最新发布在前） */
-  loadMyPosts() {
+  /**
+   * 加载"我发布且仍存在的帖子"（按作者 openid 过滤，最新发布在前）。
+   * @param {Array} [base] 分页基线：不传则接着当前列表往后翻（触底加载）；
+   *                       传 [] 表示从第一页重拉（下拉刷新用）。
+   * @returns {Promise<Array|undefined>} 查询结果（失败时带 _failed 标记，且不动页面数据）
+   */
+  loadMyPosts(base) {
     const userId = app.globalData.userId;
-    if (!userId) return;
-    db.paginate('Page', { authorId: userId }, { sort: { pageTime: -1 }, limit: 10 }, this.data.myPosts)
-      .then(list => this.setData({
-        myPosts: db.filterHidden(list).map(p => Object.assign({}, p, {
-          // 首图：官方推文（officialLogo）→ 包内 logo；否则按标题拼自有首图
-          picUrl: p.officialLogo ? '/pages/images/logo.png' : this.data.urlPage + p.tittle + '0.jpg',
-          // 张数：logo 不算进 photoNum，展示时补回 1
-          meta: (p.photoTime || '') + ' · ' + ((p.officialLogo ? 1 : 0) + (p.photoNum || 0)) + ' 张',
-        })),
-      }))
-      .catch(err => { console.error('加载我的帖子失败', err); wx.showToast({ icon: 'none', title: '加载失败，下拉重试' }); });
-  },
-
-  /** 历史分栏触底：加载更多 */
-  loadMoreMyPosts() {
-    this.loadMyPosts();
+    if (!userId) return Promise.resolve();
+    return db.paginate('Page', { authorId: userId }, { sort: { pageTime: -1 }, limit: 10 }, base || this.data.myPosts)
+      .then((result) => {
+        // db.paginate 出错时会吞掉异常、返回带 _failed 的原列表：此时不动页面数据，
+        // 把提示交给调用方。原先挂在这里的 .catch 永远不会执行（异常在 db 层就被吞了）。
+        if (result && result._failed) return result;
+        this.setData({
+          myPosts: db.filterHidden(result).map(p => Object.assign({}, p, {
+            // 首图：官方推文（officialLogo）→ 包内 logo；否则按标题拼自有首图
+            picUrl: p.officialLogo ? '/pages/images/logo.png' : this.data.urlPage + p.tittle + '0.jpg',
+            // 张数：logo 不算进 photoNum，展示时补回 1
+            meta: (p.photoTime || '') + ' · ' + ((p.officialLogo ? 1 : 0) + (p.photoNum || 0)) + ' 张',
+          })),
+        });
+        return result;
+      });
   },
 
   /** 单击帖子卡片 → 像小猫书一样查看详情（bookletDetail），不直接编辑 */
@@ -185,23 +216,28 @@ Page({
 
   // ============ 回收站分栏：我删除过的帖子 ============
 
-  /** 加载"我删除过的帖子"（Delete 存档按 operatorId 过滤，最新删除在前） */
-  loadTrash() {
+  /**
+   * 加载"我删除过的帖子"（Delete 存档按 operatorId 过滤，最新删除在前）。
+   * @param {Array} [base] 分页基线：不传则接着当前列表往后翻（触底加载）；
+   *                       传 [] 表示从第一页重拉（下拉刷新用）。
+   * @returns {Promise<Array|undefined>} 查询结果（失败时带 _failed 标记，且不动页面数据）
+   */
+  loadTrash(base) {
     const userId = app.globalData.userId;
-    if (!userId) return;
-    db.paginate(trash.DELETE_COLLECTION, { operatorId: userId }, { sort: { editTime: -1 }, limit: 20 }, this.data.trashList)
-      .then(list => this.setData({
-        trashList: list.map(trash.mapTrashItem).map(r => Object.assign({}, r, {
-          picUrl: r.photoUrls.length ? r.photoUrls[0] : '', // 存档首图（无照片则为空→占位）
-          meta: '删除于 ' + r.timeText + (r.operator ? ' · ' + r.operator : ''),
-        })),
-      }))
-      .catch(err => { console.error('加载我的回收站失败', err); wx.showToast({ icon: 'none', title: '加载失败，下拉重试' }); });
-  },
-
-  /** 回收站分栏触底：加载更多 */
-  loadMoreTrash() {
-    this.loadTrash();
+    if (!userId) return Promise.resolve();
+    return db.paginate(trash.DELETE_COLLECTION, { operatorId: userId }, { sort: { editTime: -1 }, limit: 20 }, base || this.data.trashList)
+      .then((result) => {
+        // db.paginate 出错时会吞掉异常、返回带 _failed 的原列表：此时不动页面数据，
+        // 把提示交给调用方。原先挂在这里的 .catch 永远不会执行（异常在 db 层就被吞了）。
+        if (result && result._failed) return result;
+        this.setData({
+          trashList: result.map(trash.mapTrashItem).map(r => Object.assign({}, r, {
+            picUrl: r.photoUrls.length ? r.photoUrls[0] : '', // 存档首图（无照片则为空→占位）
+            meta: '删除于 ' + r.timeText + (r.operator ? ' · ' + r.operator : ''),
+          })),
+        });
+        return result;
+      });
   },
 
   /** 回收站：单击卡片 → 进入 bookletDetail 回收站预览（只读展示被删内容） */

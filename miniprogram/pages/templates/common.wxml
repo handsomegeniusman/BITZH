@@ -33,8 +33,14 @@
 
 <!-- 推文卡片：index / catDetail 共用。
      数据要求：urlPage, item (含 _id, tittle, authorImg, author, authorId, good)
-     事件要求：toBookletDetail, editBooklet, showAuthorImg, toName, giveGood
-     可选：showTime=true 时在标题下居中显示时间（首页瀑布流不传 → 不显示） -->
+     事件要求：toBookletDetail, editBooklet, showAuthorImg, toName
+              （+ giveGood：仅当 showGood 传 true 的页面必须实现，见下）
+     可选开关（两个调用页都必须显式传，别省）：
+       - showTime=true → 在标题下居中显示时间（首页瀑布流只在搜索态传 true）
+       - showGood=true → 才显示点赞区（爱心 + 数量）。
+         catDetail 传 false：那一页点爱心只是跳详情页（本页没有瀑布流索引，加不了赞），
+         摆一个自己改不动的数字没有意义；且两列窄卡片下心形与数字本就不齐，整块不渲染
+         连对不齐的问题一并消失。传 false 的页面不必实现 giveGood（catDetail 已删）。 -->
 <template name="pageCard">
   <view class="li">
     <view bindtap="toBookletDetail" bindlongpress="editBooklet" data-_id="{{item._id}}" data-authorid="{{item.authorId}}">
@@ -46,10 +52,14 @@
     </view>
     <view class="bottom">
       <view class="toux-name">
-        <image class="toux" lazy-load="true" src="{{item.authorImg}}" mode="aspectFill" bindtap="showAuthorImg" data-authorimg="{{item.authorImg}}"></image>
+        <!-- 头像与昵称是同一个入口（看这个作者的全部推文），行为必须一致：
+             原来头像走 showAuthorImg（预览头像大图），但 authorImg 为空时
+             wx.previewImage 里的 if (url) 直接跳过 → 点了完全没反应。
+             头像预览改到长按上保留（不与上面的卡片长按冲突：那一个只管图片+标题，管不到这一行）。 -->
+        <image class="toux" lazy-load="true" src="{{item.authorImg}}" mode="aspectFill" bindtap="toName" bindlongpress="showAuthorImg" data-author="{{item.author}}" data-authorimg="{{item.authorImg}}"></image>
         <text class="name" bindtap="toName" data-author="{{item.author}}">{{item.author}}</text>
       </view>
-      <view class="love" wx:if="{{item.good !== undefined}}">
+      <view class="love" wx:if="{{showGood && item.good !== undefined}}">
         <image class="toux" lazy-load="true" src="/pages/images/爱心.png" bindtap="giveGood" data-_id="{{item._id}}" data-good="{{item.good}}" data-index="{{item._i}}"></image>
         <text class="love-num" bindtap="giveGood" data-_id="{{item._id}}" data-good="{{item.good}}" data-index="{{item._i}}">{{item.good}}</text>
       </view>

@@ -457,10 +457,9 @@ Page({
     wx.navigateTo({ url: '/pages/bookletDetail/bookletDetail?_id=' + e.currentTarget.dataset._id });
   },
 
-  /** 点赞：本页不支持直接点赞（无瀑布流索引），点击爱心跳转到帖子详情页再点赞 */
-  giveGood(e) {
-    wx.navigateTo({ url: '/pages/bookletDetail/bookletDetail?_id=' + e.currentTarget.dataset._id });
-  },
+  /* 原 giveGood（点爱心跳 bookletDetail）已删除：pageCard 模板的点赞区由 showGood 控制，
+     本页三处调用全传 false，爱心根本不渲染，这个处理器接不到任何点击。
+     要恢复本页点赞得先做瀑布流索引，到时候连 showGood 一起改，别只把这个函数加回来。 */
 
   /** 长按推文：管理员或作者本人可编辑 */
   editBooklet(e) {

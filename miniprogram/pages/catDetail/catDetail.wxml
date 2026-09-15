@@ -336,7 +336,7 @@
   <view wx:if="{{topicArticlesLoading}}" class="topic-articles-loading">加载中...</view>
   <block wx:elif="{{topicArticles.length}}">
     <view wx:for="{{topicArticles}}" wx:key="_id" class="topic-article-item">
-      <template is="pageCard" data="{{item, urlPage, showTime: true}}"></template>
+      <template is="pageCard" data="{{item, urlPage, showTime: true, showGood: false}}"></template>
     </view>
   </block>
   <view wx:else class="topic-articles-empty">所选话题下暂无更多文章</view>
@@ -345,12 +345,12 @@
 <view class="content">
   <view class="left">
     <block wx:for="{{listData}}" wx:key="_id" wx:for-item="item">
-      <template is="pageCard" data="{{item, urlPage, showTime: false}}" wx:if="{{index%2==0}}"></template>
+      <template is="pageCard" data="{{item, urlPage, showTime: false, showGood: false}}" wx:if="{{index%2==0}}"></template>
     </block>
   </view>
   <view class="right">
     <block wx:for="{{listData}}" wx:key="_id" wx:for-item="item">
-      <template is="pageCard" data="{{item, urlPage, showTime: false}}" wx:if="{{index%2==1}}"></template>
+      <template is="pageCard" data="{{item, urlPage, showTime: false, showGood: false}}" wx:if="{{index%2==1}}"></template>
     </block>
   </view>
 </view>

@@ -15,7 +15,7 @@
       class="search-input"
       value="{{search}}"
       bindinput="onSearchInput" show-confirm-bar="{{false}}"
-      placeholder="🔍 搜索话题 / 标题 / 用户名"
+      placeholder="🔍 搜索小猫 / 话题 / 标题 / 用户名"
       confirm-type="search"
       placeholder-class="search-placeholder"
     />
@@ -85,12 +85,12 @@
     <view class="content" >
       <view class="left">
         <block wx:for="{{leftList}}" wx:key="_id" wx:for-item="item">
-          <template is="pageCard" data="{{item, urlPage, showTime: searchMode}}"></template>
+          <template is="pageCard" data="{{item, urlPage, showTime: searchMode, showGood: true}}"></template>
         </block>
       </view>
       <view class="right">
         <block wx:for="{{rightList}}" wx:key="_id" wx:for-item="item">
-          <template is="pageCard" data="{{item, urlPage, showTime: searchMode}}"></template>
+          <template is="pageCard" data="{{item, urlPage, showTime: searchMode, showGood: true}}"></template>
         </block>
       </view>
     </view>

@@ -238,7 +238,12 @@ function paginate(collection, filter, options, list) {
     })
     .catch(function (err) {
       console.error('分页查询失败：' + collection, err);
-      return safeList; // 出错时返回原列表，不影响页面展示
+      // 出错时返回原列表，不影响页面展示；同时挂 _failed 标记，让调用方能区分
+      // 「真的没数据」和「查询失败」——返回值仍是数组（Array.isArray 为真），
+      // 旧调用方无视该属性即可，行为完全不变。
+      const out = safeList.slice();
+      out._failed = true;
+      return out;
     });
 }
 

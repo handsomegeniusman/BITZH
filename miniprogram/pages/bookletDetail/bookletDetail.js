@@ -479,33 +479,21 @@ Page({
     }
   },
 
-  /** 长按标题：管理员直达这只猫的编辑页（wxml 上 bindlongpress="editCat"）。
-   *  【为什么在长按的这一刻才查】原来靠页面加载时算好的 titleCatId，它一旦是空的
-   *   （标题不是猫名，或那次查询失败 / 还没返回）长按就彻底没反应、连个提示都没有，
-   *   根本分不清是「没命中的猫」还是「事件压根没触发」。现在长按当场查一次：
-   *   命中就跳，没命中给一条提示 —— 有反馈才诊断得下去。
-   *  【为什么不要求标题带 🐱】带不带都能跳：带着说明管理员已经亲手标过「这是猫」，
-   *   那就直接认候选集里那只（findCatByName 的 trust），不再判一次是不是猫名；
-   *   没带就按话题胶囊那套判断（独立词命中真实名/别名/曾用名/昵称）。
-   *  非管理员不响应。回收站预览模式下与长按推文一致 → 进恢复模式编辑页。 */
-  async editCat() {
+  /** 长按标题：管理员直达这只猫的编辑页（wxml 上 bindlongpress="editCat" data-_id）。
+   *  写法和长按推文图片的 editBooklet 完全一致：_id 从 data-_id 拿（由 matchTitleCat
+   *  算好），函数本身只判断权限 + 跳转，不做任何异步查询 —— 越简单越不会"点了没反应"。
+   *  回收站预览模式下与长按推文一致 → 进恢复模式编辑页。 */
+  editCat(e) {
     if (this._recoverMode) {
       this.editRecover();
       return;
     }
     if (!app.globalData.isAdministrator) return;
-    const raw = String((this.data.listData || {}).tittle || '');
-    const tittle = stripTitleDecor(raw);
-    if (!tittle) return;
-    const cat = await findCatByName(tittle, /🐱|🐈/.test(raw));
-    if (cat) {
-      console.log('[bookletDetail.editCat] 长按标题跳猫咪编辑页', tittle, cat._id);
-      wx.navigateTo({ url: '/pages/editCat/editCat?_id=' + cat._id });
-      return;
-    }
-    // 没命中也要有反馈：否则用户看到的就是「长按没反应」，没法判断是没触发还是没匹配上
-    console.log('[bookletDetail.editCat] 长按标题但没找到对应猫咪', tittle);
-    wx.showToast({ icon: 'none', title: '标题不是猫名' });
+    const _id = e.currentTarget.dataset._id;
+    // 标题不是猫名时 titleCatId 为空 → data-_id 为空，不跳（也没必要跳）
+    console.log('[bookletDetail.editCat] 长按标题, 猫咪_id =', _id);
+    if (!_id) return;
+    wx.navigateTo({ url: '/pages/editCat/editCat?_id=' + _id });
   },
 
   /** 点击作者头像放大预览 */

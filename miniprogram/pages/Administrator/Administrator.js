@@ -197,11 +197,18 @@ Page({
       guard.resetThrottle('Administrator.addWord');
       this.setData({ newWord: '' });
       await this.loadWords();
-      // res.added=false 表示这个词本来就在 → 只改了档位（服务端幂等）
+      // res.added=false 表示这个词本来就在（服务端幂等），此时还要再分两种：
+      //   res.updated=true  → 真的改了档位
+      //   res.updated 缺失  → 档位和原来一样，**什么都没动**
+      // 【为什么必须区分】原来不分，两种情况都提示"已把档位改为…"。同一个人加两次同一个词
+      //   就会看到"已把档位改为拦下"——而它本来就是拦下，用户会以为哪里出了问题。
+      const tierText = res.tier === 'review' ? '只标记' : '拦下';
       this.setData({
         wordHint: res.added
-          ? '已加入「' + res.word + '」（' + (res.tier === 'review' ? '只标记' : '拦下') + '）。已生效，无需重新发布版本。'
-          : '「' + res.word + '」本来就在词库里，已把档位改为「' + (res.tier === 'review' ? '只标记' : '拦下') + '」。',
+          ? '已加入「' + res.word + '」（' + tierText + '）。已生效，无需重新发布版本。'
+          : (res.updated
+            ? '「' + res.word + '」本来就在词库里，已把档位改为「' + tierText + '」。'
+            : '「' + res.word + '」本来就在词库里，档位就是「' + tierText + '」，没有改动。'),
       });
     } catch (err) {
       const code = (err && err.code) || '';

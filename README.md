@@ -95,7 +95,7 @@
 | 后端 | 阿里云 MPServerless 云开发（`@alicloud/mpserverless-sdk`） |
 | 图片存储 | 腾讯云 COS（`cos-wx-sdk-v5`），支持云函数签发临时密钥（STS） |
 | 云函数 | 共 6 个：`getCosSts`（可选，COS 临时密钥）、`secCheck`（内容安全审核）、`moderate`（封禁/解封执行器）、`adminManage`（在线增删管理员 + 发布申请审批，服务端密码校验）、`postApply`（用户申请发布权限）、`feishuCallback`（飞书指令联动，进阶）。另有一个**一次性**脚本 `backfillCanPost`（回填老用户发布权限，用完即删） |
-| 单元测试 | `tests/` 下 6 个零依赖 Node 脚本（云函数为主，外加一个纯函数工具 `catForm`），`node tests/adminManage.test.js` 直接跑，退出码 `0` 即全部通过 |
+| 单元测试 | `tests/` 下 9 个零依赖 Node 脚本（云函数为主，外加几个纯函数工具），**`node tests/run-all.js` 一条命令跑完**，退出码 `0` 即全部通过。单跑某个用 `node tests/adminManage.test.js` |
 
 > ⚠️ 小程序是纯前端项目，`config.js` 里的前端密钥（MPServerless 客户端密钥、COS 固定密钥）反编译即可看到。**务必**：COS 尽量启用 STS 临时密钥；MPServerless 开启数据库权限校验。所有**云函数密钥**一律走环境变量，**绝不写进代码、绝不提交到仓库**（详见[第七节](#七密钥与云函数环境变量重要必读)）。
 
@@ -148,7 +148,7 @@ BITZH/
 │   ├── postApply/             # 用户申请发布权限（身份由服务端派生）
 │   ├── backfillCanPost/       # 一次性：回填老用户发布权限（纯控制台手动跑，用完即删）
 │   └── feishuCallback/        # 飞书自建应用消息回调（发指令封禁/解封/审批发布申请）
-├── tests/                     # Node 单测（零框架零依赖，直接 node 运行，退出码 0 即通过）
+├── tests/                     # Node 单测（零框架零依赖；`node tests/run-all.js` 跑全部，退出码 0 即通过）
 │   ├── adminManage.test.js      # 管理员增删 + 发布申请审批：密码校验 / 锁定 / 防锁死 / 幂等 / 越权负例
 │   ├── moderateActions.test.js  # 封禁/解封/下架/恢复动作路由
 │   ├── postApply.test.js        # 申请发布权限：身份服务端派生 / 一天一次 / 卡片格式契约
@@ -162,7 +162,7 @@ BITZH/
 └── 万柳猫咪图鉴.jpg           # 项目 Logo
 ```
 
-> 注：`manage/`（旧数据转换脚本）与旧的 `test/` 目录已清理；现在的单测在 `tests/`（6 个零依赖 Node 脚本，直接 `node` 运行）。
+> 注：`manage/`（旧数据转换脚本）与旧的 `test/` 目录已清理；现在的单测在 `tests/`（9 个零依赖 Node 脚本，`node tests/run-all.js` 跑全部）。
 > 注：`backfillCanPost/` 不在上表的「云函数」计数里——它没有任何前端调用方，只在控制台手动跑一次，跑完建议连同部署一起删掉。
 
 ---
@@ -523,8 +523,8 @@ module.exports = {
 2. 在推送消息下方评论「封禁用户」→ 机器人回读原文并回复「✅ 已封禁用户：xxx」。
 3. 去小程序复核中心 / 用户管理确认该用户已封禁。
 4. 评论「解封用户」→ 确认恢复。
-5. 本地命令解析自测：`node tests/feishuCommands.test.js`（78 项全过，覆盖全部命令 + 你给的样例 + 飞书 URL 验证应答 + 发布申请场景守卫的安全负例）；`node tests/moderateActions.test.js`（12 项全过，覆盖封禁/解封/下架/恢复/永久拉黑直接幂等执行 + 联动清复核中心待办）。
-6. 发布申请相关自测：`node tests/postApply.test.js`（35 项）、`node tests/adminManage.test.js`（171 项，含审批正/反例与越权负例）。全量 6 个脚本合计 **385 项**。
+5. 本地命令解析自测：`node tests/feishuCommands.test.js`（95 项全过，覆盖全部命令 + 你给的样例 + 飞书 URL 验证应答 + 发布申请场景守卫的安全负例）；`node tests/moderateActions.test.js`（36 项全过，覆盖封禁/解封/禁言/下架/恢复/永久拉黑直接幂等执行 + 联动清复核中心待办）。
+6. 发布申请相关自测：`node tests/postApply.test.js`（35 项）、`node tests/adminManage.test.js`（253 项，含审批正/反例、越权负例、词库增删与推荐词表导入）。全量 **`node tests/run-all.js`** 一条命令跑完 9 个脚本，合计 **619 项**。
 
 这是**进阶玩法**，不影响小程序基本功能，新手可完全跳过。
 
@@ -847,7 +847,14 @@ identityMode = trusted    实测日期：2026-09-15
 `app.globalData.isAdministrator` 由数据库判断（见 `utils/db.js` 的 `initUserState`）。把你的 openid 写入 `BITZHAdministrator` 集合即可。
 
 **Q6：测试 / 单测在哪、怎么跑？**
-`tests/` 下有 6 个零依赖 Node 脚本（`adminManage` / `moderateActions` / `postApply` / `backfillCanPost` / `feishuCommands` / `catForm`），直接 `node tests/adminManage.test.js` 运行，**退出码 `0` 即全部通过**。它们不连真实数据库（用 mock），改云函数后建议顺手跑一遍。页面类（`pages/`）的单测历史上清理过，那部分回归请按 `测试清单.md` 手动过一遍；`utils/` 下的**纯函数**（如 `catForm.js`）现在有单测了 —— 不带 `wx`、不依赖本机 `config.js` 的工具模块都可以照 `tests/catForm.test.js` 的样子加。
+`tests/` 下有 9 个零依赖 Node 脚本（`adminManage` / `moderateActions` / `postApply` / `backfillCanPost` / `feishuCommands` / `catForm` / `publishGate` / `wordbank` / `secCheckBank`）。**跑全部：`node tests/run-all.js`（一条命令，退出码 `0` 即全部通过）**；单跑某个：`node tests/adminManage.test.js`。它们不连真实数据库（用 mock），改云函数后建议顺手跑一遍。
+
+> ⚠️ **单测全绿 ≠ 线上没问题**。这些脚本只覆盖**纯逻辑**（云函数分支、纯函数工具、词库合并/优先级），
+> 真实数据库、集合权限、云函数部署、界面交互**一律测不到**。所以每次改完还要照 [`测试清单.md`](测试清单.md) 在开发者工具里手动过一遍。
+> 另外注意：MPServerless 控制台的「运行日志」**看不到 `console.log`**（只显示请求入参和响应状态），
+> 排查线上问题时别去那儿找日志，用控制台的「云函数 → 调试/在线测试」直接给函数传 JSON 入参、看**返回值**（同 12.3 里"拿 chat_id 只能走 API 调试"是同一个道理）。
+
+`utils/` 下的**纯函数**（如 `catForm.js`、`publishGate.js`）能 node 直接 require，所以能单测 —— 不带 `wx`、不依赖本机 `config.js` 的工具模块都可以照 `tests/catForm.test.js` 的样子加。页面类（`pages/`）依赖 `wx`，测不了，只能手动过清单。
 
 > ⚠️ `postApply.test.js` 里有一组**跨云函数契约**测试：把 `postApply` 生成的飞书卡片正文原样喂给 `feishuCallback` 的 `extractApplicantId` 解析。这两个函数各自独立打包、代码不共享，卡片格式是它们之间**唯一**的接口——改卡片文案时忘了改解析器（或反过来），两边的单测都还是绿的，但管理员回「同意」会得到"未能解析出申请人ID"。动这一处务必跑这组。
 

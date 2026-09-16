@@ -295,6 +295,13 @@ const BANK_TTL_MS = 60000;
 const BANK_LIMIT = 300;
 let _bankWords = null; // [{word, tier}]；null = 本容器还没读过
 let _bankAt = 0;
+// 本容器最后一次读词库的**结局**：'never' | 'ok' | 'no_db' | 'read_failed'
+// 【为什么必须要它】上面三种失败都会让词库变成"空"，结果一模一样，但原因完全不同：
+//   集合没建 / 集合名写错 → 读成功但 0 条（state=ok）；云函数拿不到 db → no_db；
+//   集合权限或网络报错 → read_failed。没有这个字段时，运维只能看到一个 extraWords:0，
+//   而**控制台看不到 console.log**（只显示入参和响应状态），等于完全没有线索。
+//   见下面 action:'reloadWords' —— 它把这个字段回给调用方，让探针能自己说清原因。
+let _bankState = 'never';
 
 /**
  * 读动态词库，带 TTL 缓存。
@@ -306,7 +313,12 @@ let _bankAt = 0;
 async function loadExtraWords(db) {
   const now = Date.now();
   if (_bankWords && (now - _bankAt) < BANK_TTL_MS) return _bankWords;
-  if (!db || !db.collection) return _bankWords || [];
+  if (!db || !db.collection) {
+    // 【这一条最容易把人卡住】拿不到 db 时静默返回空数组、**连日志都不打**。
+    //   之前它会和"集合是空的"长得一模一样，所以必须记进 _bankState。
+    _bankState = 'no_db';
+    return _bankWords || [];
+  }
   try {
     const r = await db.collection(WORD_COLL).find({}, { limit: BANK_LIMIT });
     const list = Array.isArray(r) ? r : ((r && r.result) || []);
@@ -317,10 +329,12 @@ async function loadExtraWords(db) {
       };
     });
     _bankAt = now;
+    _bankState = 'ok'; // 注意：读到 0 条也是 'ok' —— 读通了，只是库是空的
   } catch (e) {
     console.error('[secCheck] 读动态词库失败，本次只用静态词表：', (e && e.message) || e);
     if (!_bankWords) _bankWords = [];
     _bankAt = now;
+    _bankState = 'read_failed';
   }
   return _bankWords;
 }
@@ -329,6 +343,25 @@ async function loadExtraWords(db) {
 function dropExtraWordsCache() {
   _bankWords = null;
   _bankAt = 0;
+  _bankState = 'never';
+}
+
+/**
+ * 把"读到几个词 + 结局"翻译成一句人话，给 action:'reloadWords' 用。
+ * 【为什么要专门写它】这个探针的调用方正在排查线上问题，而这个函数**看不到日志**。
+ *   一个光秃秃的 extraWords:0 会让人以为是功能坏了，实际可能只是"还没导入过词"。
+ */
+function bankHint(n, state) {
+  if (state === 'no_db') {
+    return '云函数没拿到数据库句柄（ctx.mpserverless.db 为空）——这是平台侧的异常，不是词库的问题；静态词表仍在生效';
+  }
+  if (state === 'read_failed') {
+    return '读词库时报错了，本次只用静态词表。查 ' + WORD_COLL + ' 集合是否存在、以及集合名是否一字不差';
+  }
+  if (n === 0) {
+    return '集合读通了但一条词都没有：确认已经在「管理员 → 审核与安全 → 敏感词库」点过「导入推荐词表」，以及集合名是不是 ' + WORD_COLL;
+  }
+  return '动态词库正常，已读到 ' + n + ' 条';
 }
 
 module.exports = async function (ctx) {
@@ -351,11 +384,19 @@ module.exports = async function (ctx) {
     // 【为什么需要】缓存是每个容器各算各的 60 秒（见 BANK_TTL_MS），管理员刚加完词想立刻验证时，
     //   命中的容器不确定，等一分钟又不像"加完就生效"。这个 action 只清缓存 + 回报词数，
     //   不读内容、不写库、不回显词条本身，所以放在这个无鉴权云函数里也不构成信息泄露口。
+    // 【为什么要回传 bankState】只用 extraWords 一个数字等于没有线索：
+    //   集合没建（读通了但 0 条）/ 拿不到 db / 查库报错，三种都显示 0，而控制台看不到
+    //   console.log。bankState 把结局编码回传，让这个探针能直接指出是哪一种。
+    //   ⚠️ 它**只回标准化的状态词**，不回原始报错串（那可能带集合名等内部信息）。
     if (event.action === 'reloadWords') {
       dropExtraWordsCache();
       const db0 = (ctx && ctx.mpserverless && ctx.mpserverless.db) || null;
       const n = (await loadExtraWords(db0)).length;
-      return { ok: true, requestId: requestId, action: 'reloadWords', extraWords: n };
+      return {
+        ok: true, requestId: requestId, action: 'reloadWords',
+        extraWords: n, bankState: _bankState,
+        bankHint: bankHint(n, _bankState),
+      };
     }
 
     const content = String(event.content || '').slice(0, 2000);
@@ -420,4 +461,8 @@ module.exports.__test = {
   loadExtraWords: loadExtraWords,
   dropExtraWordsCache: dropExtraWordsCache,
   BANK_TTL_MS: BANK_TTL_MS,
+  // bankState 是模块级变量，测试要读它只能通过取值函数（直接读会拿到快照）
+  bankState: function () { return _bankState; },
+  bankHint: bankHint,
+  BANK_LIMIT: BANK_LIMIT,
 };

@@ -138,6 +138,55 @@ function makeDb(rows) {
   check('之前没 db 不影响之后有 db 时读取', (await T.loadExtraWords(later)).length, 1);
   check('确实真去查了库', later.finds, 1);
 
+  // ============================================================
+  console.log('\n[动态词库：bankState —— 让 extraWords:0 能自证原因]');
+  // 【这一组为什么存在】运维口子 action:'reloadWords' 只回一个 extraWords 数字，
+  //   而"集合没建 / 拿不到 db / 查库报错"三种情况都会得到 0，**控制台又看不到
+  //   console.log**，于是在线上就是完全没线索。bankState 把结局编码回给调用方。
+  //   这几条钉住的是"三种 0 必须被区分开"这件事本身。
+  // ============================================================
+
+  T.dropExtraWordsCache();
+  check('还没读过 → never', T.bankState(), 'never');
+
+  const okDb = makeDb([{ word: '猫贩子', tier: 'block' }]);
+  await T.loadExtraWords(okDb);
+  check('读通了 → ok', T.bankState(), 'ok');
+
+  T.dropExtraWordsCache();
+  const emptyDb = makeDb([]);
+  await T.loadExtraWords(emptyDb);
+  check('读通但库是空的 → 仍是 ok（不是错误）', T.bankState(), 'ok');
+  check('  空库的 hint 要指向"还没导入过"而不是报错',
+    T.bankHint(0, 'ok').indexOf('导入') > 0, true);
+
+  T.dropExtraWordsCache();
+  await T.loadExtraWords(null);
+  check('拿不到 db → no_db', T.bankState(), 'no_db');
+
+  T.dropExtraWordsCache();
+  const brokenDb = makeDb([]);
+  brokenDb.fail = true;
+  console.error = function () { };
+  await T.loadExtraWords(brokenDb);
+  console.error = realErr;
+  check('查库报错 → read_failed', T.bankState(), 'read_failed');
+
+  // 三种 0 缺一不可区分：把它们各自的 hint 收集起来看是否互不相同
+  const hints = ['no_db', 'read_failed', 'ok'].map(function (s) { return T.bankHint(0, s); });
+  check('三种原因的 hint 互不相同（否则等于没解释）',
+    hints.length === new Set(hints).size, true);
+  check('三种原因一个都不能是空串',
+    hints.filter(function (h) { return !h || typeof h !== 'string'; }), []);
+
+  // 有词时的 hint 要报出条数，方便和"我导入了 43 条"对照
+  check('读到词时 hint 里带条数', T.bankHint(43, 'ok').indexOf('43') > 0, true);
+
+  // 探针不能回显词条本身（它是无鉴权 action，回显就等于公开词库）
+  const anyHint = ['no_db', 'read_failed', 'ok'].map(function (s) { return T.bankHint(3, s); }).join('|');
+  check('hint 里不含具体词条（无鉴权 action 不得回显词库）',
+    anyHint.indexOf('猫贩子') >= 0, false);
+
   console.log('\n[缓存 → match 端到端]');
 
   // 这一段把"库里存的词"和"最终拦不拦得住"连起来。前面测的是搬运，这里测的是效果。

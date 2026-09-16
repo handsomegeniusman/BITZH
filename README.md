@@ -524,7 +524,7 @@ module.exports = {
 3. 去小程序复核中心 / 用户管理确认该用户已封禁。
 4. 评论「解封用户」→ 确认恢复。
 5. 本地命令解析自测：`node tests/feishuCommands.test.js`（95 项全过，覆盖全部命令 + 你给的样例 + 飞书 URL 验证应答 + 发布申请场景守卫的安全负例）；`node tests/moderateActions.test.js`（36 项全过，覆盖封禁/解封/禁言/下架/恢复/永久拉黑直接幂等执行 + 联动清复核中心待办）。
-6. 发布申请相关自测：`node tests/postApply.test.js`（35 项）、`node tests/adminManage.test.js`（253 项，含审批正/反例、越权负例、词库增删与推荐词表导入）。全量 **`node tests/run-all.js`** 一条命令跑完 9 个脚本，合计 **619 项**。
+6. 发布申请相关自测：`node tests/postApply.test.js`（35 项）、`node tests/adminManage.test.js`（253 项，含审批正/反例、越权负例、词库增删与推荐词表导入）。全量 **`node tests/run-all.js`** 一条命令跑完 9 个脚本，合计 **629 项**。
 
 这是**进阶玩法**，不影响小程序基本功能，新手可完全跳过。
 

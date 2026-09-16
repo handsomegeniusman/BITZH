@@ -33,9 +33,11 @@ miniprogram/.diag_tmp.js
 # 8) 本地部署备忘（含真实群 chat_id / 机器人 ID，仅供本人本地部署对照，勿上传）
 飞书部署-环境变量配置卡.md
 
-# 9) 使用手册的 Word 导出件（正文以「使用手册.md」为准，需要 Word 版请自行导出）
+# 9) 使用手册的 Word 导出件（正文以同名 .md 为准，需要 Word 版请自行导出）
+#    用通配符是为了同时覆盖「使用手册.docx」和「管理员使用手册.docx」，
+#    以后再加分册也不用回来改这里。
 #    忽略的两个理由：① 二进制产物无法 diff / review，不是这个仓库的惯例
 #    （仓库里的二进制只有 pages/images/ 下小程序真正需要的图片）；
 #    ② Word 会把最后修改人的 Office 显示名写进文档元数据
 #    （docProps/core.xml 的 <cp:lastModifiedBy>），推到公开仓库等于公开本机用户名。
-使用手册.docx
+*使用手册.docx

@@ -654,7 +654,12 @@ module.exports = async function (ctx) {
   const cmd = parseCommand(text);
   if (!cmd) {
     console.log('[feishuCallback] 未识别:', text);
-    await respond(message, '⚠️ 未识别：「' + text + '」（来自 ' + fromUser + '）\n可用：封禁 / 封禁帖子 / 封禁用户 / 封禁举报人 / 解封 / 解封帖子 / 解封用户 / 解封举报人 / 全部解封 / 拉黑用户\n发布申请：同意 / 拒绝（在该申请卡片下回复）');
+    // chat_id 跟着这条回执一起发回群里。上面 649 行已经把 chat_id 打进日志，但 EMAS 控制台
+    // **看不到运行日志**（只有入参 + 请求响应状态），建新群时要拿 chat_id 就只能靠这条回执：
+    // 在群里 @ 一次机器人（随便发句话）即可看到本群 chat_id。
+    // 【放最后一行】可用的命令列表在前，别让这行排查信息把它挤下去。
+    const chatIdLine = message.chat_id ? '\n本群 chat_id：' + message.chat_id : '';
+    await respond(message, '⚠️ 未识别：「' + text + '」（来自 ' + fromUser + '）\n可用：封禁 / 封禁帖子 / 封禁用户 / 封禁举报人 / 解封 / 解封帖子 / 解封用户 / 解封举报人 / 全部解封 / 拉黑用户\n发布申请：同意 / 拒绝（在该申请卡片下回复）' + chatIdLine);
     return { code: 0 };
   }
 

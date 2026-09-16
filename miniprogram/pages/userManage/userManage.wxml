@@ -30,13 +30,20 @@
             <view class="copy-btn" catchtap="copyId" data-userid="{{item.userId}}">复制</view>
           </view>
         </view>
-        <view class="user-status {{item.isBlack ? 'status-ban' : 'status-ok'}}">{{item.isBlack ? '已拉黑' : '正常'}}</view>
+        <!-- 三态徽标：已拉黑（重）/ 禁言中（轻）/ 正常。
+             ⚠️ 拉黑与禁言是**正交**的：同时中招时只显示「已拉黑」（重的那档），
+                但下面的按钮仍会各自显示"解除"，不会因为显示了拉黑就藏掉禁言的入口。 -->
+        <view class="user-status {{item.isBlack ? 'status-ban' : (item.isMuted ? 'status-mute' : 'status-ok')}}">{{item.isBlack ? '已拉黑' : (item.isMuted ? '禁言中' : '正常')}}</view>
       </view>
 
-      <!-- 操作：封禁 / 解封；点击"查看发帖/收起发帖"提示文字也可展开/收起（不只点卡片） -->
+      <!-- 操作：封禁/解封 + 禁言/解除禁言；点击"查看发帖/收起发帖"提示文字也可展开/收起（不只点卡片） -->
       <view class="user-actions">
         <button wx:if="{{!item.isBlack}}" class="btn danger small" size="mini" bindtap="banUser" data-userid="{{item.userId}}" data-name="{{item.nickName}}">封禁</button>
         <button wx:else class="btn success small" size="mini" bindtap="unbanUser" data-userid="{{item.userId}}" data-name="{{item.nickName}}">解封</button>
+        <!-- 禁言：只停发帖/评论，**不动已发内容**。与封禁是两个独立按钮，
+             所以"已拉黑但没禁言"、"禁言了但没拉黑"都能表达出来。 -->
+        <button wx:if="{{!item.isMuted}}" class="btn mute small" size="mini" bindtap="muteUser" data-userid="{{item.userId}}" data-name="{{item.nickName}}">禁言</button>
+        <button wx:else class="btn success small" size="mini" bindtap="unmuteUser" data-userid="{{item.userId}}" data-name="{{item.nickName}}">解除禁言</button>
         <view class="expand-hint" bindtap="toggleExpand" data-userid="{{item.userId}}">{{expandedUserId === item.userId ? '收起发帖 ▴' : '查看发帖 ▾'}}</view>
       </view>
 

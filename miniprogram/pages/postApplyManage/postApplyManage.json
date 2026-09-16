@@ -1,4 +1,5 @@
 {
+  "navigationBarTitleText": "发布申请",
   "usingComponents": {
     "kb-done-bar": "/components/kb-done-bar/kb-done-bar"
   }

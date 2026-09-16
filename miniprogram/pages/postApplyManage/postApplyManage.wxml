@@ -1,0 +1,112 @@
+<!-- ============================================================
+     pages/postApplyManage/postApplyManage.wxml —— 发布申请：待办队列 + 最近处理（仅管理员）
+     - 顶部：密码卡（**只在没有缓存密码时出现**，填过一次就再也不显示）
+     - 上半：待审批队列（status='pending'），处理完就从这里消失
+     - 下半：最近处理（已通过/已拒绝），带处理人和处理时间
+     整页用 wx:if="{{ready}}" 包住：ready 为 false 时不渲染任何内容，
+     避免非管理员在 requireAdmin 挡回之前看到一闪而过的界面。
+============================================================ -->
+<view class="root" wx:if="{{ready}}">
+
+  <!-- 身份提醒条：服务端没能独立确认调用者身份时，如实说明"现在只有一道锁"。
+       这不是 bug，是实测结果（见 README 七.5）。宁可把话说清楚，
+       也不能让人以为有两把锁而实际只有密码一把。 -->
+  <view class="warn-bar" wx:if="{{unlocked && !trusted}}">
+    <text class="warn-title">⚠️ 当前实际只有「密码」一道锁</text>
+    <text class="warn-text">服务端未能独立确认你的身份，调用者是谁由客户端自报（理论上可伪造），因此密码是唯一真实门槛。若要让"必须是管理员才能操作"也真正成立，请按 README 第七.5 节实测一次，然后把云函数环境变量 ADMIN_TRUST_CALLER_ID 设为 1。</text>
+  </view>
+
+  <!-- ---------- 操作密码（只在没有缓存密码时出现）----------
+       文案要与 adminManage 页区分开：那边是"设密码的地方"，这边是"密码没记住时的临时入口"，
+       不要让人以为这里填的密码只对本页有效。 -->
+  <view class="card" wx:if="{{needsPassword}}">
+    <view class="pwd-row">
+      <input
+        class="pwd-input"
+        password="{{true}}"
+        value="{{password}}"
+        placeholder="操作密码"
+        confirm-type="done"
+        bindinput="onPasswordInput"
+        bindconfirm="onUnlockTap"
+      />
+      <view class="pwd-btn {{loading ? 'btn-disabled' : ''}}" bindtap="onUnlockTap">{{loading ? '验证中…' : '确定'}}</view>
+    </view>
+    <text class="pwd-hint">在「管理员」页填过一次就不用在这里再填（本次使用期间通用，小程序完全退出后需重填）。没填过也没关系，这里验证通过后会一并记住。连续输错会被暂时锁定。</text>
+  </view>
+
+  <!-- ---------- 待审批 ----------
+       只列 status='pending'：通过/拒绝后它就从队列里消失，是个待办清单而不是历史记录。
+       飞书群里回「同意」/「拒绝」走的是同一条云函数逻辑（adminManage.applyDecision）。 -->
+  <view class="section-title">待审批{{unlocked ? '（' + applies.length + '）' : ''}}</view>
+  <view class="empty small" wx:if="{{!unlocked}}">正在加载…</view>
+  <!-- 空态是**常态**（不是异常），文案按"暂时没有待办"写，别写成像出了问题 -->
+  <view class="empty small" wx:elif="{{!applies.length}}">没有待审批的申请 🎉</view>
+
+  <view class="card" wx:for="{{applies}}" wx:key="applyId">
+    <view class="user-head">
+      <image class="user-avatar" src="{{item.avatarUrl}}" mode="aspectFill" data-list="applies" data-index="{{index}}" binderror="onAvatarError"></image>
+      <view class="user-info">
+        <text class="user-name">{{item.nickName || '（无昵称）'}}</text>
+        <view class="user-id-row">
+          <text class="user-id" selectable="{{true}}" user-select="{{true}}">{{item.userId}}</text>
+          <text class="copy-btn" catchtap="copyId" data-userid="{{item.userId}}">复制</text>
+        </view>
+        <text class="user-sub" wx:if="{{item.appliedAtText}}">申请于 {{item.appliedAtText}}</text>
+      </view>
+    </view>
+    <view class="user-actions">
+      <!-- 禁态用 class 而不是 disabled 属性：本仓库既有做法（userManage.wxml），
+           且 disabled 的默认样式会和这里的 WXSS 打架 -->
+      <view
+        class="btn small success {{actingApply === item.applyId ? 'btn-disabled' : ''}}"
+        bindtap="approvePost"
+        data-userid="{{item.userId}}"
+        data-applyid="{{item.applyId}}"
+        data-name="{{item.nickName}}"
+      >{{actingApply === item.applyId ? '提交中…' : '通过'}}</view>
+      <view
+        class="btn small danger {{actingApply === item.applyId ? 'btn-disabled' : ''}}"
+        bindtap="rejectPost"
+        data-userid="{{item.userId}}"
+        data-applyid="{{item.applyId}}"
+        data-name="{{item.nickName}}"
+      >{{actingApply === item.applyId ? '提交中…' : '拒绝'}}</view>
+      <text class="actions-tip">通过后对方需完全退出小程序再进入才生效</text>
+    </view>
+  </view>
+
+  <!-- ---------- 最近处理（用户点名要的一块）----------
+       【为什么这块有价值】待办队列是"做完了就消失"的，于是"我刚才是不是点过这个人"没有任何地方能回看。
+       处理人姓名是**审批那一刻的快照**（服务端写入），不是实时 join 的昵称 ——
+       这样即使对方后来改了昵称、或管理员被移除，历史里仍然是当时的那个人。 -->
+  <!-- 【标题上刻意不写"共 N 条"】服务端返回的 historyTotal 是**本页取回的条数**，不是全库总数。
+       写成"共 N 条"会让人以为总共就处理过这么多，而实际可能更多。宁可不给数字，
+       也不能给一个看起来精确、实际不是那个意思的数字。 -->
+  <view class="section-title">最近处理</view>
+  <view class="empty small" wx:if="{{!unlocked}}">正在加载…</view>
+  <view class="empty small" wx:elif="{{!history.length}}">还没有处理记录</view>
+  <!-- 列表被条数上限截断时说明一句：否则"再早的记录去哪了"会让人以为数据丢了 -->
+  <view class="empty small" wx:elif="{{history.length >= historyLimit}}">只显示最近 {{historyLimit}} 条，更早的请到控制台查</view>
+
+  <view class="card" wx:for="{{history}}" wx:key="applyId">
+    <view class="user-head">
+      <image class="user-avatar" src="{{item.avatarUrl}}" mode="aspectFill" data-list="history" data-index="{{index}}" binderror="onAvatarError"></image>
+      <view class="user-info">
+        <view class="user-name-row">
+          <text class="user-name">{{item.nickName || '（无昵称）'}}</text>
+          <text class="user-status {{item.approved ? 'status-ok' : 'status-bad'}}">{{item.statusText}}</text>
+        </view>
+        <view class="user-id-row">
+          <text class="user-id" selectable="{{true}}" user-select="{{true}}">{{item.userId}}</text>
+          <text class="copy-btn" catchtap="copyId" data-userid="{{item.userId}}">复制</text>
+        </view>
+        <text class="user-sub" wx:if="{{item.appliedAtText}}">申请于 {{item.appliedAtText}}</text>
+        <text class="user-sub" wx:if="{{item.handledAtText}}">处理于 {{item.handledAtText}}<block wx:if="{{item.handledByName}}"> · 由 {{item.handledByName}}</block></text>
+      </view>
+    </view>
+  </view>
+</view>
+
+<!-- 有输入框的页面都要挂这个（全局完成栏，见 components/kb-done-bar） -->
+<kb-done-bar/>

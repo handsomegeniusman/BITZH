@@ -1,18 +1,23 @@
 // ============================================================
-// pages/adminManage/adminManage.js —— 在线添加 / 移除管理员 + 发布申请审批（仅管理员）
-// 【作用】不打开控制台就能增删管理员、审批发布权限，代价是每次操作都要输服务端密码：
-//   1. 输入操作密码 → 拉取当前管理员列表 + 待审批的发布申请（密码错了会按 IP 锁定，见云函数）
+// pages/adminManage/adminManage.js —— 在线添加 / 移除管理员（仅管理员）
+// 【作用】不打开控制台就能增删管理员：
+//   1. 操作密码 → 拉取当前管理员列表（密码错了会按 IP 锁定，见云函数）
 //   2. 搜索用户（昵称模糊 / 用户ID精确）→ 一键设为管理员
 //   3. 列表内移除管理员（服务端拒绝移除自己、拒绝移除最后一位）
-//   4. 「发布申请」队列：通过 → 该用户永久获得发布权；拒绝 → 只标记这条申请，不动已有权限
+//   4. **只留一张「发布申请」入口卡**（显示待审批条数）—— 申请列表本身搬到了独立页面
+//      pages/postApplyManage，因为两块内容挤在一页里"显示内容太多，超载了"（用户原话）。
 //
 // 【本页只做界面，不做安全判断】"是不是管理员"由云函数独立判定，"密码对不对"也在云函数里比。
 //   客户端读 db.state.isAdministrator 只是为了**提前把页面关掉**（少一次白跑的调用），
 //   它挡不住真想进来的人：miniprogram/config.js 的 clientSecret 随包发出，反编译即可绕过本页
 //   直接写 BITZHAdministrator。真正的收口是云函数 + 集合权限规则（见 README 第六.5 节）。
 //
-// 【密码的存活范围】只在 this.data.password 里，页面销毁即消失。
-//   绝不 wx.setStorage、绝不进 globalData —— 这两处都会落到磁盘/长生命周期对象上。
+// 【密码的存活范围：改了，见 utils/adminManage.js 文件头】
+//   旧约定是"只在页面 data 里存活，离开本页即失效"。现在改为**内存里的会话缓存**：
+//   在「管理员」页或「发布申请」页填一次并验证通过后，本次使用期间不再重复追问。
+//   ⚠️ 两条硬约束没变：**只存内存**（绝不 wx.setStorage / globalData），
+//      且**不主动清**（不清是设计，管理员明确要求"输一次共享"）。
+//   代价：小程序被完全杀掉重进要重填一次，这是刻意接受的。
 // ============================================================
 const app = getApp();
 const db = require('../../utils/db.js'); // 公共数据库方法（这里只用它的身份缓存）
@@ -43,9 +48,7 @@ const ADMIN_NAME_MAX = 20;
 // 【文案里不要写 markdown】wx.showModal 不渲染 ** 之类，会原样显示。
 const RESTART_HINT_ADD = '对方需要完全退出小程序再重新进入（从"最近使用"里划掉，或右上角关闭），管理入口才会出现。\n\n只是返回上一页、或切到后台再回来，都不算重新进入。';
 const RESTART_HINT_REMOVE = '若对方此刻正开着小程序，他手上的管理入口会保留到他重新进入为止 —— 要立刻生效，让他完全退出小程序（从"最近使用"里划掉，或右上角关闭）。';
-// 通过发布申请后要说的话。与上面同理：canPost 和"我是不是管理员"一样缓存在本次运行里，
-// 只有对方冷启动才能读到新值 —— 我们这边做不到，只能把话说明白。
-const RESTART_HINT_POST = '对方需要完全退出小程序再重新进入（从"最近使用"里划掉，或右上角关闭），加号和评论框才会出现。\n\n只是返回上一页、或切到后台再回来，都不算重新进入。';
+// 【发布申请相关的文案已随审批功能一起搬到 pages/postApplyManage】
 
 /**
  * 确认弹窗（Promise 版）。
@@ -73,7 +76,10 @@ Page({
     ready: false,        // 管理员校验通过后才渲染内容（避免非管理员看到一闪而过的界面）
 
     // ---- 密码与解锁状态 ----
-    password: '',        // 操作密码（只在内存里，见文件头说明）
+    // needsPassword=true 表示"要显示密码输入框"。会话缓存里已经有密码时它是 false，
+    // 页面直接静默加载 —— 用户感觉不到"密码"这回事（这是本次改动的主要收益）。
+    needsPassword: false,
+    password: '',        // 现场输入、尚未验证的密码（只在内存里，见文件头说明）
     unlocked: false,     // 是否已成功拉取过一次列表
     adminsLoading: false,
 
@@ -84,10 +90,12 @@ Page({
     // ---- 管理员列表 ----
     admins: [],          // [{userId, name, nickName, avatarUrl, isSelf, grantedTimeText, displayName}]
 
-    // ---- 发布申请（待审批队列）----
-    applies: [],         // [{applyId, userId, nickName, avatarUrl, appliedAtText}]
-    appliesLoading: false,
-    actingApply: '',     // 正在审批的 applyId（两个按钮都显示"提交中…"并置灰）
+    // ---- 发布申请入口卡 ----
+    // 本页只显示**条数**，列表与审批都在 pages/postApplyManage。
+    // null = 还没取到（可能是没密码、也可能是查挂了），界面上显示"—"而不是 0 ——
+    // 显示 0 会让人以为"真的没有待办"，而实际只是没查到。
+    applyCount: null,
+    applyCountLoading: false,
 
     // ---- 搜索添加 ----
     keyword: '',
@@ -107,37 +115,63 @@ Page({
     this.setData({ ready: true });
   },
 
-  /** 密码输入 */
+  /**
+   * 每次显示都刷新一遍。
+   * 【有缓存密码就静默加载】这是"输一次、处处复用"的兑现点 —— 从「发布申请」页返回时，
+   *   列表和待审批条数都该是最新的，而用户不该再被问一次密码。
+   */
+  async onShow() {
+    if (!this.data.ready) return;
+    if (!adminApi.getSessionPassword()) {
+      // 没缓存过：显示密码输入框，等用户填（填完由 onUnlockTap 验证）
+      this.setData({ needsPassword: true });
+      return;
+    }
+    this.setData({ needsPassword: false, password: '' });
+    const ok = await this.loadAdmins();
+    if (ok) await this.loadApplyCount();
+  },
+
+  /** 密码输入（现场输入，尚未验证） */
   onPasswordInput(e) {
     this.setData({ password: e.detail.value });
   },
 
   /**
-   * 点「解锁 / 刷新」：先拉管理员列表，成功了再拉发布申请。
-   * 【为什么是串行而不是 Promise.all】两个请求带的是同一个密码，密码错时会**双双失败**，
-   *   于是弹出两个内容一样的错误弹窗，第二个还把第一个盖掉、看起来像卡了。
-   *   串行则只有先失败的那个会弹，另一路直接不发 —— 密码是这一切的前置条件，本来也该串行。
+   * 点「确定 / 刷新」。
+   * 【只有现场输入的密码才需要 authCheck】缓存里的密码是**验证通过之后**才存进去的
+   *   （adminApi.verifyAndCache 保证），再验一次只会白耗一次"失败计数"额度。
+   * 【为什么不用 list 来验密码】list 是**免密动作**：服务端能独立确认身份时它根本不校验密码，
+   *   拿它验等于永远通过 —— 错密码会被存下来，直到某次审批才炸。所以必须走 authCheck。
    */
   async onUnlockTap() {
+    const typed = (this.data.password || '').trim();
+    if (typed) {
+      this.setData({ adminsLoading: true });
+      const r = await adminApi.verifyAndCache(typed);
+      this.setData({ adminsLoading: false });
+      if (!r.ok) {
+        this.handleError(r.err);
+        return;
+      }
+      this.setData({ needsPassword: false, password: '' });
+    } else if (this.data.needsPassword) {
+      wx.showToast({ title: '请先输入操作密码', icon: 'none' });
+      return;
+    }
+    // 串行：列表先成，再取条数。密码不对时两个请求会双双失败、
+    // 弹出两个内容一样的弹窗（第二个盖掉第一个，看起来像卡住了）。
     const ok = await this.loadAdmins();
     if (!ok) return; // 失败原因 loadAdmins 已经弹过了
-    await this.loadApplies();
+    await this.loadApplyCount();
   },
 
-  /**
-   * 拉取管理员列表（同时充当"验证密码是否正确"的动作）。
-   * @returns {Promise<boolean>} 是否成功 —— 调用方靠它决定要不要继续做后续请求
-   */
+  /** 拉取管理员列表 */
   async loadAdmins() {
-    const pw = this.data.password || '';
-    if (!pw) {
-      wx.showToast({ title: '请先输入操作密码', icon: 'none' });
-      return false;
-    }
     if (this.data.adminsLoading) return false;
     this.setData({ adminsLoading: true });
     try {
-      const res = await adminApi.list(pw);
+      const res = await adminApi.list();
       adminApi.ensureOk(res);
       // 服务端返回 nickname/avatar 是为了页面直接渲染；这里补齐展示用字段
       const admins = (res.admins || []).map((a) => Object.assign({}, a, {
@@ -161,105 +195,39 @@ Page({
     }
   },
 
-  // ============ 发布申请（待审批队列）============
+  // ============ 发布申请入口卡 ============
 
   /**
-   * 拉取待审批的发布申请。
-   * 【只拉 pending】已通过/已拒绝的不再展示 —— 这个区块是待办队列，不是历史记录。
-   *   做完一条它就消失，管理员不用猜"这条我处理过没有"。
+   * 只取待审批**条数**（列表和审批都在 pages/postApplyManage）。
+   * 【为什么复用 listApplies 而不是新加一个 action】它返回的 total 就是 pending 的条数，
+   *   传 historyLimit=1 让"最近处理"那半只取 1 条 —— 代价是查库时多带了一个 limit:1，
+   *   换来的是不必为一个数字新增一个云函数动作（也就没有新的鉴权面要维护）。
+   * 【失败不打扰用户】这里只是个数字，查不到就让它显示"—" ——
+   *   为它弹一个错误弹窗会把「解锁」这个主流程的反馈冲掉，得不偿失。
    */
-  async loadApplies() {
-    if (!this.data.unlocked) return; // 密码还没验过，查了也是白查（且会白弹一个错误）
-    if (this.data.appliesLoading) return;
-    this.setData({ appliesLoading: true });
+  async loadApplyCount() {
+    if (this.data.applyCountLoading) return;
+    this.setData({ applyCountLoading: true });
     try {
-      const res = await adminApi.listApplies(this.data.password || '');
+      const res = await adminApi.listApplies(undefined, 1);
       adminApi.ensureOk(res);
-      const applies = (res.applies || []).map((a) => Object.assign({}, a, {
-        avatarUrl: a.avatarUrl || DEFAULT_AVATAR,
-      }));
-      this.setData({ applies: applies });
+      this.setData({ applyCount: (res.applies || []).length });
     } catch (err) {
-      this.handleError(err);
+      console.warn('[adminManage] 取待审批条数失败（不影响本页其它功能）', (err && err.code) || '', (err && err.message) || err);
+      this.setData({ applyCount: null });
     }
-    this.setData({ appliesLoading: false });
+    this.setData({ applyCountLoading: false });
   },
 
-  /** 通过发布申请 → 该用户永久获得发布权（写入在云函数，这里只发起） */
-  async approvePost(e) {
-    const d = e.currentTarget.dataset;
-    const userId = d.userid;
-    const applyId = d.applyid;
-    const name = d.name || userId;
-    const pw = this.data.password || '';
-    if (!pw) {
-      wx.showToast({ title: '请先输入操作密码并解锁', icon: 'none' });
-      return;
-    }
-    if (this.data.actingApply) return;
-
-    const confirmed = await confirmAction(
-      '通过发布申请',
-      '通过「' + name + '」的发布申请？\n\n通过后对方永久获得发布帖子和评论的权限。',
-      '确认通过'
-    );
-    if (!confirmed) return; // 取消：不做任何操作，也不消耗节流窗口
-    if (!guard.throttle('adminManage.approvePost', 2000)) return;
-
-    this.setData({ actingApply: applyId });
-    try {
-      const res = await adminApi.approvePost(userId, applyId, pw);
-      adminApi.ensureOk(res);
-      guard.resetThrottle('adminManage.approvePost');
-      await this.loadApplies();
-      // 提示放在列表刷新之后：关掉弹窗时这条申请已经从队列里消失了，能立刻看到效果。
-      // 【弹窗文案里不要写 markdown】wx.showModal 不渲染 ** 之类，会原样显示。
-      wx.showModal({
-        title: '已通过',
-        content: '已通过「' + (res.nickName || name) + '」的发布申请。\n\n' + RESTART_HINT_POST,
-        showCancel: false,
-        confirmText: '知道了',
-      });
-    } catch (err) {
-      this.handleError(err);
-    }
-    this.setData({ actingApply: '' });
-  },
-
-  /** 拒绝发布申请 → 只标记这条申请，不收回对方已有的任何权限 */
-  async rejectPost(e) {
-    const d = e.currentTarget.dataset;
-    const userId = d.userid;
-    const applyId = d.applyid;
-    const name = d.name || userId;
-    const pw = this.data.password || '';
-    if (!pw) {
-      wx.showToast({ title: '请先输入操作密码并解锁', icon: 'none' });
-      return;
-    }
-    if (this.data.actingApply) return;
-
-    const confirmed = await confirmAction(
-      '拒绝发布申请',
-      '拒绝「' + name + '」的发布申请？\n\n只会把这条申请标为已拒绝，不会收回对方已有的任何权限。对方今天不能再申请，明天起可以重新申请。',
-      '确认拒绝',
-      '#c0392b'
-    );
-    if (!confirmed) return; // 取消：不做任何操作，也不消耗节流窗口
-    if (!guard.throttle('adminManage.rejectPost', 2000)) return;
-
-    this.setData({ actingApply: applyId });
-    try {
-      const res = await adminApi.rejectPost(userId, applyId, pw);
-      adminApi.ensureOk(res);
-      guard.resetThrottle('adminManage.rejectPost');
-      await this.loadApplies();
-      // 拒绝是非破坏性操作（没动对方任何已有权限），一句 toast 就够，不用弹窗打断
-      wx.showToast({ title: '已拒绝', icon: 'success' });
-    } catch (err) {
-      this.handleError(err);
-    }
-    this.setData({ actingApply: '' });
+  /** 进「发布申请」页。密码已经在会话缓存里，那边不会再问一次 */
+  goApplies() {
+    wx.navigateTo({
+      url: '/pages/postApplyManage/postApplyManage',
+      fail: (e) => {
+        console.error('[adminManage] 跳转发布申请页失败', e);
+        wx.showToast({ title: '页面跳转失败', icon: 'none' });
+      },
+    });
   },
 
   /**
@@ -373,9 +341,8 @@ Page({
   /** 设为管理员（弹窗里同时收「真实姓名」） */
   async grant(e) {
     const userId = e.currentTarget.dataset.userid;
-    const pw = this.data.password || '';
-    if (!pw) {
-      wx.showToast({ title: '请先输入操作密码并解锁', icon: 'none' });
+    if (!adminApi.getSessionPassword()) {
+      wx.showToast({ title: '请先输入操作密码', icon: 'none' });
       return;
     }
     if (this.data.acting) return;
@@ -401,7 +368,8 @@ Page({
     try {
       // 姓名由管理员人工填写并传给服务端；服务端仍会再清洗一遍（去空白/控制字符、按码点截断），
       // 前端这道校验只是"提前告知"，不是权威。
-      const res = await adminApi.grant(userId, realName, pw);
+      // 密码不传：utils/adminManage.js 的 invoke() 会自动挂上会话缓存里的那份。
+      const res = await adminApi.grant(userId, realName);
       adminApi.ensureOk(res);
       guard.resetThrottle('adminManage.grant');
       await this.refreshIdentity();
@@ -430,9 +398,8 @@ Page({
   async revoke(e) {
     const userId = e.currentTarget.dataset.userid;
     const name = e.currentTarget.dataset.name || '';
-    const pw = this.data.password || '';
-    if (!pw) {
-      wx.showToast({ title: '请先输入操作密码并解锁', icon: 'none' });
+    if (!adminApi.getSessionPassword()) {
+      wx.showToast({ title: '请先输入操作密码', icon: 'none' });
       return;
     }
     if (this.data.acting) return;
@@ -448,7 +415,7 @@ Page({
 
     this.setData({ acting: userId });
     try {
-      const res = await adminApi.revoke(userId, pw);
+      const res = await adminApi.revoke(userId);
       adminApi.ensureOk(res);
       guard.resetThrottle('adminManage.revoke');
       await this.refreshIdentity();
@@ -515,11 +482,24 @@ Page({
       });
       return;
     }
+    if (code === 'NEED_PASSWORD' || code === 'BAD_PASSWORD') {
+      // 缓存失效（服务端密码被改过）→ 清掉缓存并把输入框显示出来。
+      // 只改界面状态而**不真清缓存**是不行的：下次进页面时 onShow 会看到缓存还有值、
+      // 又静默地去加载、又失败，用户会卡在一个只报错、没有输入框的页面上。
+      adminApi.clearSessionPassword();
+      this.setData({ needsPassword: true, unlocked: false, admins: [], applyCount: null });
+      wx.showToast({
+        title: code === 'BAD_PASSWORD' ? '密码已失效，请重新输入' : '请先输入操作密码',
+        icon: 'none',
+        duration: 2500,
+      });
+      return;
+    }
     if (MODAL_CODES.indexOf(code) >= 0) {
       wx.showModal({ title: '无法完成', content: msg, showCancel: false, confirmText: '知道了' });
       return;
     }
-    // BAD_PASSWORD 及各种未预料到的失败：短提示即可
+    // 各种未预料到的失败：短提示即可
     wx.showToast({ title: msg, icon: 'none', duration: 2500 });
   },
 });

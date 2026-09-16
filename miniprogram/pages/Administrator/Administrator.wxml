@@ -1,32 +1,112 @@
+<!-- ============================================================
+     pages/Administrator/Administrator.wxml —— 管理员后台
+     【版块顺序：按"多久用一次"排，不是按"当初怎么加的"排】（2026-09-16 重排）
+       1. 操作密码    —— 填一次，后面所有管理操作都不再问（本页新增，置顶）
+       2. 用户管理    —— 日常最高频：搜人、封禁、禁言
+       3. 审核与安全  —— 第二高频：复核中心 + 敏感词库
+       4. 内容管理    —— 公告 / 官方推文 / 回收站
+       5. 基础设置    —— 最低频：审核开关 + 联系方式，**沉到最下面**
+     基础设置原来在最上面，但它是"配一次基本不动"的东西，占着首屏却天天用不到。
+============================================================ -->
 <view class="container">
     <view class="page">
         <text class="title">北理流浪猫管理员后台</text>
 
-        <!-- 基础设置：审核开关 + 联系方式（表单类，独立成卡） -->
+        <!-- ========== 1. 操作密码（可选填，置顶）==========
+             它是后面所有管理动作的"许可证"：填过一次并验证通过后，审批发布申请、
+             增删管理员都不再重复问密码。**可以不填** —— 真正用到时会在对应页面再问你一次。
+             存放位置见 utils/adminManage.js 文件头：只存内存，不落磁盘、不进 globalData。 -->
         <view class="section">
-            <text class="section-title">基础设置</text>
+            <text class="section-title">操作密码</text>
             <view class="card">
                 <view class="card-head">
-                    <text class="feature-title">审核开关</text>
-                    <text class="badge {{audit ? 'badge-on' : 'badge-off'}}">{{audit ? '开放中' : '已关闭'}}</text>
+                    <text class="feature-title">操作密码</text>
+                    <text class="badge {{pwReady ? 'badge-on' : 'badge-off'}}">{{pwReady ? '已就绪' : '未填写'}}</text>
                 </view>
-                <text class="card-desc">控制是否开放注册 / 发布</text>
-                <button bindtap="manage" class="feature-button">切换发布开关</button>
+                <text class="card-desc">审批发布申请、增删管理员时用它。填一次，本次使用期间不再重复输入；不填也能用，只是每次都要现输。</text>
+
+                <block wx:if="{{pwOpen}}">
+                    <input class="contact-input" password="{{true}}" value="{{pwInput}}" bindinput="onPwInput" placeholder="操作密码" placeholder-class="contact-placeholder"/>
+                    <button bindtap="savePassword" class="feature-button contact-save">{{pwChecking ? '验证中…' : '验证并保存'}}</button>
+                </block>
+                <button wx:else bindtap="togglePw" class="feature-button contact-save">{{pwReady ? '更换密码' : '填写密码'}}</button>
+
+                <!-- 保存成功后才显示：说明"存到哪了、什么时候会没"。
+                     这两句话是刻意写具体的，因为"要不要重新填"完全取决于它。 -->
+                <text class="pwd-tip" wx:if="{{pwReady}}">已记住，本次使用期间通用。只存在内存里，不写缓存、不进全局变量 —— 小程序完全退出后需要重填。连续输错会被暂时锁定。</text>
             </view>
+        </view>
+
+        <!-- ========== 2. 用户管理（整段上移）========== -->
+        <view class="section">
+            <text class="section-title">用户管理</text>
+            <view class="row" bindtap="manageUsers" hover-class="row-hover">
+                <text class="row-title">搜索用户 / 封禁解封 / 禁言 / 黑名单</text>
+                <text class="row-arrow">›</text>
+            </view>
+            <!-- 管理员管理：增删管理员需要服务端密码校验（走 adminManage 云函数）。
+                 密码在本页顶部填过之后，进那边不会再要一次。 -->
+            <view class="row" bindtap="manageAdmins" hover-class="row-hover">
+                <text class="row-title">管理员管理 / 添加 / 移除</text>
+                <text class="row-arrow">›</text>
+            </view>
+            <!-- 发布申请：原先挤在"管理员管理"页里，内容太多超载了，已拆成独立页面。
+                 密码同样复用本页顶部填的那份。 -->
+            <view class="row" bindtap="manageApplies" hover-class="row-hover">
+                <text class="row-title">发布申请 / 审批 / 处理记录</text>
+                <text class="row-arrow">›</text>
+            </view>
+        </view>
+
+        <!-- ========== 3. 审核与安全（复核中心 + 词库）========== -->
+        <view class="section">
+            <text class="section-title">审核与安全</text>
+            <view class="row" bindtap="manageReview" hover-class="row-hover">
+                <text class="row-title">举报 / 申诉 / 内容复核</text>
+                <text class="row-arrow">›</text>
+            </view>
+
+            <!-- 敏感词库：管理员追加的词，加进去**立刻生效**（不需要重新部署云函数）。
+                 ⚠️ 与"静态词表"是两回事：静态表在 cloudfunctions/secCheck/sensitiveWords.js 里，
+                    随云函数发布，改它必须重新部署。这里加的是动态那部分。 -->
             <view class="card">
-                <view class="card-head" bindtap="toggleContact" hover-class="row-hover">
-                    <text class="feature-title">联系方式</text>
-                    <text class="contact-toggle {{contactOpen ? 'contact-toggle-open' : ''}}">›</text>
+                <view class="card-head" bindtap="toggleWords" hover-class="row-hover">
+                    <text class="feature-title">敏感词库</text>
+                    <view class="row-right">
+                        <text class="row-sub">{{words.length}} 个自定义词</text>
+                        <text class="contact-toggle {{wordsOpen ? 'contact-toggle-open' : ''}}">›</text>
+                    </view>
                 </view>
-                <block wx:if="{{contactOpen}}">
-                    <input class="contact-input" type="text" value="{{phone}}" bindinput="onPhoneInput" placeholder="联系电话（手机号）" placeholder-class="contact-placeholder"/>
-                    <input class="contact-input" type="text" value="{{email}}" bindinput="onEmailInput" placeholder="联系邮箱" placeholder-class="contact-placeholder"/>
-                    <button bindtap="saveContact" class="feature-button contact-save">保存联系方式</button>
+                <text class="card-desc">这里加的词立刻生效（不用重新发布版本）。基础词表随云函数发布，不在此列。</text>
+
+                <block wx:if="{{wordsOpen}}">
+                    <input class="contact-input" type="text" value="{{newWord}}" bindinput="onWordInput" placeholder="新词（2-20 字，如：网络虐猫）" placeholder-class="contact-placeholder"/>
+                    <!-- 两个档位的区别要写在界面上：这是"拦下"和"只标记"的全部差别，
+                         选错了要么误伤正常内容，要么该拦的没拦。 -->
+                    <view class="tier-row">
+                        <view class="tier-chip {{newTier === 'block' ? 'tier-chip-on' : ''}}" bindtap="onTierTap" data-tier="block">
+                            <text class="tier-name">拦下</text>
+                            <text class="tier-desc">含此词直接拒绝发布</text>
+                        </view>
+                        <view class="tier-chip {{newTier === 'review' ? 'tier-chip-on' : ''}}" bindtap="onTierTap" data-tier="review">
+                            <text class="tier-name">只标记</text>
+                            <text class="tier-desc">照常发布，推给管理员复核</text>
+                        </view>
+                    </view>
+                    <button bindtap="addWord" class="feature-button contact-save">{{wordActing ? '提交中…' : '加入词库'}}</button>
+                    <text class="pwd-tip" wx:if="{{wordHint}}">{{wordHint}}</text>
+
+                    <view class="word-item" wx:for="{{words}}" wx:key="word">
+                        <text class="word-text">{{item.word}}</text>
+                        <text class="word-tag {{item.tier === 'review' ? 'word-tag-review' : ''}}">{{item.tier === 'review' ? '只标记' : '拦下'}}</text>
+                        <text class="word-del" catchtap="delWord" data-word="{{item.word}}">删除</text>
+                    </view>
+                    <text class="pwd-tip" wx:if="{{!words.length}}">还没有自定义词。上面的基础词表已经在生效，这里是给它打补丁的地方。</text>
                 </block>
             </view>
         </view>
 
-        <!-- 内容管理：行式导航入口 -->
+        <!-- ========== 4. 内容管理 ========== -->
         <view class="section">
             <text class="section-title">内容管理</text>
             <view class="row" bindtap="manageNotice" hover-class="row-hover">
@@ -46,30 +126,43 @@
             </view>
         </view>
 
-        <!-- 审核与安全 -->
+        <!-- ========== 5. 基础设置（沉底：配一次基本不动）========== -->
         <view class="section">
-            <text class="section-title">审核与安全</text>
-            <view class="row" bindtap="manageReview" hover-class="row-hover">
-                <text class="row-title">举报 / 申诉 / 内容复核</text>
-                <text class="row-arrow">›</text>
-            </view>
-        </view>
+            <text class="section-title">基础设置</text>
 
-        <!-- 用户管理 -->
-        <view class="section">
-            <text class="section-title">用户管理</text>
-            <view class="row" bindtap="manageUsers" hover-class="row-hover">
-                <text class="row-title">搜索用户 / 封禁解封 / 黑名单</text>
-                <text class="row-arrow">›</text>
+            <!-- 审核开关：从原来的**全宽大按钮**缩成一个小按钮（toggle-mini）。
+                 它只是"开/关一个开关"，和"保存联系方式"那种一次性提交长表单不是一个量级，
+                 占一整行会让人以为它比用户管理更重要。
+                 ⚠️ 特意**不复用** .feature-button —— 那个类和"保存联系方式"等按钮共用，
+                    改它会连带改掉别处（见 wxss 注释）。 -->
+            <view class="card">
+                <view class="card-head">
+                    <text class="feature-title">审核开关</text>
+                    <text class="badge {{audit ? 'badge-on' : 'badge-off'}}">{{audit ? '开放中' : '已关闭'}}</text>
+                </view>
+                <view class="card-row">
+                    <text class="card-desc">控制是否开放注册 / 发布</text>
+                    <view class="toggle-mini" bindtap="manage">{{audit ? '关闭' : '开启'}}</view>
+                </view>
             </view>
-            <!-- 管理员管理：增删管理员需要服务端密码校验（走 adminManage 云函数），
-                 不是点进去就能改，页面里会再要一次密码 -->
-            <view class="row" bindtap="manageAdmins" hover-class="row-hover">
-                <text class="row-title">管理员管理 / 添加 / 移除</text>
-                <text class="row-arrow">›</text>
+
+            <view class="card">
+                <view class="card-head" bindtap="toggleContact" hover-class="row-hover">
+                    <text class="feature-title">联系方式</text>
+                    <text class="contact-toggle {{contactOpen ? 'contact-toggle-open' : ''}}">›</text>
+                </view>
+                <block wx:if="{{contactOpen}}">
+                    <input class="contact-input" type="text" value="{{phone}}" bindinput="onPhoneInput" placeholder="联系电话（手机号）" placeholder-class="contact-placeholder"/>
+                    <input class="contact-input" type="text" value="{{email}}" bindinput="onEmailInput" placeholder="联系邮箱" placeholder-class="contact-placeholder"/>
+                    <button bindtap="saveContact" class="feature-button contact-save">保存联系方式</button>
+                </block>
             </view>
         </view>
 
         <view class="footer-space"></view>
     </view>
 </view>
+
+<!-- 有输入框的页面都要挂这个（全局完成栏，见 components/kb-done-bar）。
+     本页原本有联系方式两个输入框却没挂 —— 本次新增了密码框和词库输入框，一并补上。 -->
+<kb-done-bar/>

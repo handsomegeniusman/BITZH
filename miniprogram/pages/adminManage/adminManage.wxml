@@ -16,8 +16,12 @@
     <text class="warn-text">服务端未能独立确认你的身份，调用者是谁由客户端自报（理论上可伪造），因此密码是唯一真实门槛。若要让"必须是管理员才能操作"也真正成立，请按 README 第七.5 节实测一次，然后把云函数环境变量 ADMIN_TRUST_CALLER_ID 设为 1。</text>
   </view>
 
-  <!-- ---------- 操作密码 ---------- -->
-  <view class="card">
+  <!-- ---------- 操作密码（**只在会话里没有密码时出现**）----------
+       密码在「管理员」页顶部或「发布申请」页填过一次并验证通过后，会存进
+       utils/adminManage.js 的**内存**会话缓存（不落磁盘、不进 globalData），
+       之后进本页直接静默加载，不会再显示这张卡 —— 这是"输一次、处处复用"的兑现点。
+       真正失效时（服务端密码被改）handleError 会清掉缓存并让这张卡重新出现。 -->
+  <view class="card" wx:if="{{needsPassword}}">
     <view class="pwd-row">
       <input
         class="pwd-input"
@@ -28,9 +32,9 @@
         bindinput="onPasswordInput"
         bindconfirm="onUnlockTap"
       />
-      <view class="pwd-btn {{adminsLoading ? 'btn-disabled' : ''}}" bindtap="onUnlockTap">{{adminsLoading ? '查询中…' : (unlocked ? '刷新' : '解锁')}}</view>
+      <view class="pwd-btn {{adminsLoading ? 'btn-disabled' : ''}}" bindtap="onUnlockTap">{{adminsLoading ? '验证中…' : '确定'}}</view>
     </view>
-    <text class="pwd-hint">密码只存在本页内存里，不写缓存、不进全局变量，离开本页即失效。连续输错会被暂时锁定（按 IP 计）。</text>
+    <text class="pwd-hint">密码只存在内存里，不写缓存、不进全局变量，小程序完全退出后即失效。连续输错会被暂时锁定（按 IP 计）。</text>
   </view>
 
   <!-- ---------- 添加管理员 ---------- -->
@@ -74,8 +78,30 @@
   <view class="empty small" wx:if="{{searched && !results.length}}">没有找到这个用户</view>
   <view class="empty small" wx:if="{{searched && results.length}}">点「设为管理员」后会让你填写对方的真实姓名（显示在下方列表里），填完对方重新进入小程序即可看到管理入口</view>
 
+  <!-- ---------- 发布申请（入口卡）----------
+       申请列表本身在独立页面 pages/postApplyManage（这块内容在本页时"太多了，超载了"）。
+       这里只留一张入口卡 + 待审批条数：既是入口，也是个提醒 —— 有条数时文字变红加粗。
+       ⚠️ applyCount 为 null 表示"没取到"，显示"—"而不是 0：
+          显示 0 会让人以为真的没有待办，而实际只是没查到。 -->
+  <view class="entry-card" bindtap="goApplies">
+    <view class="entry-main">
+      <text class="entry-title">发布申请</text>
+      <text class="entry-sub">审批待办 + 最近处理记录</text>
+    </view>
+    <view class="entry-count {{applyCount > 0 ? 'entry-count-active' : ''}}">
+      <text wx:if="{{applyCount === null}}">—</text>
+      <text wx:elif="{{applyCount > 0}}">{{applyCount}} 条待批</text>
+      <text wx:else>无待办</text>
+    </view>
+    <text class="entry-arrow">›</text>
+  </view>
+
   <!-- ---------- 当前管理员 ---------- -->
-  <view class="section-title">当前管理员{{unlocked ? '（' + admins.length + '）' : ''}}</view>
+  <view class="section-title">
+    <text>当前管理员{{unlocked ? '（' + admins.length + '）' : ''}}</text>
+    <!-- 手动刷新：进入本页会自动加载，但停在页面上时（比如刚在别处改过名单）需要一个重新拉的口子 -->
+    <text class="refresh-btn" wx:if="{{unlocked}}" catchtap="onUnlockTap">{{adminsLoading ? '刷新中…' : '刷新'}}</text>
+  </view>
   <view class="empty small" wx:if="{{!unlocked}}">输入操作密码后点「解锁」查看</view>
   <!-- 列表为空是不正常的：至少应该有一位（能进来的人自己就是管理员）。
        这种情况多半是刚发生了并发移除，或者集合读不到 —— 明说出来，别只显示个空白。 -->
@@ -110,46 +136,7 @@
     </view>
   </view>
 
-  <!-- ---------- 发布申请（待审批队列）----------
-       发布权限收紧成"申请-审批制"后的审批入口。这里只列 status='pending' 的申请：
-       通过/拒绝后它就从队列里消失，是个待办清单而不是历史记录。
-       飞书群里回「同意」/「拒绝」走的是同一条云函数逻辑（adminManage.applyDecision）。 -->
-  <view class="section-title">发布申请{{unlocked ? '（' + applies.length + '）' : ''}}</view>
-  <view class="empty small" wx:if="{{!unlocked}}">输入操作密码后点「解锁」查看</view>
-  <!-- 空态是**常态**（不是异常），文案按"暂时没有待办"写，别写成像出了问题 -->
-  <view class="empty small" wx:elif="{{!applies.length}}">没有待审批的申请</view>
-
-  <view class="card" wx:for="{{applies}}" wx:key="applyId">
-    <view class="user-head">
-      <image class="user-avatar" src="{{item.avatarUrl}}" mode="aspectFill" data-list="applies" data-index="{{index}}" binderror="onAvatarError"></image>
-      <view class="user-info">
-        <text class="user-name">{{item.nickName || '（无昵称）'}}</text>
-        <view class="user-id-row">
-          <text class="user-id" selectable="{{true}}" user-select="{{true}}">{{item.userId}}</text>
-          <text class="copy-btn" catchtap="copyId" data-userid="{{item.userId}}">复制</text>
-        </view>
-        <text class="user-sub" wx:if="{{item.appliedAtText}}">申请于 {{item.appliedAtText}}</text>
-      </view>
-    </view>
-    <view class="user-actions">
-      <!-- 同上面的既有做法：禁态用 class 而不是 disabled 属性 -->
-      <view
-        class="btn small success {{actingApply === item.applyId ? 'btn-disabled' : ''}}"
-        bindtap="approvePost"
-        data-userid="{{item.userId}}"
-        data-applyid="{{item.applyId}}"
-        data-name="{{item.nickName}}"
-      >{{actingApply === item.applyId ? '提交中…' : '通过'}}</view>
-      <view
-        class="btn small danger {{actingApply === item.applyId ? 'btn-disabled' : ''}}"
-        bindtap="rejectPost"
-        data-userid="{{item.userId}}"
-        data-applyid="{{item.applyId}}"
-        data-name="{{item.nickName}}"
-      >{{actingApply === item.applyId ? '提交中…' : '拒绝'}}</view>
-      <text class="actions-tip">通过后对方需完全退出小程序再进入才生效</text>
-    </view>
-  </view>
+  <!-- 发布申请列表（待审批队列 + 最近处理）已搬到 pages/postApplyManage —— 见上面的入口卡。 -->
 </view>
 
 <!-- 有输入框的页面都要挂这个（全局完成栏，见 components/kb-done-bar） -->

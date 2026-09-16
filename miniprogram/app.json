@@ -28,7 +28,8 @@
     "pages/addOfficial/addOfficial",
     "pages/manageOfficial/manageOfficial",
     "pages/userManage/userManage",
-    "pages/adminManage/adminManage"
+    "pages/adminManage/adminManage",
+    "pages/postApplyManage/postApplyManage"
   ],
   "window": {
     "backgroundTextStyle": "dark",

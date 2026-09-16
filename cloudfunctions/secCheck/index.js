@@ -14,6 +14,9 @@
  *
  * 【安全】appid/secret 只存环境变量，绝不下放前端。
  * 【降级】审核服务异常时返回 pass（放行），不让审核故障阻塞正常发布。
+ * 【动态词库】除静态词表外，本函数还会读 `SensitiveWord` 集合里管理员运行时追加的词
+ *        （写入端在 adminManage，需过密码 —— 本函数**只读**，见下方 loadExtraWords）。
+ *        该集合**不存在或没权限时按"没有动态词"处理**，静态词表照常工作，不影响发布。
  */
 const https = require('https');
 const { URL } = require('url');
@@ -277,6 +280,57 @@ function buildPush(kind, categoryLabel, keywords, content, author, userId, reque
   return lines.join('\n');
 }
 
+// ============================================================
+// 动态词库（管理员在小程序里追加的词）
+// ============================================================
+// 【与静态词表的分工】sensitiveWords.js 是随包发布的，改一次要重新部署；
+//   动态词库存在 SensitiveWord 集合里，管理员加进去**不需要重新部署**就能生效。
+//   静态表仍然保留：它不依赖数据库可用性，动态表读不到时会回落到它。
+const WORD_COLL = 'SensitiveWord';
+// 缓存时长。secCheck 在发布热路径上（每次发帖/评论都要过一次），不能每次调用都查库；
+// 但也不能太长 —— 管理员刚加完词，体感上要"基本立刻生效"。
+// 【60 秒是每个容器各自计的】线上有多个容器实例，所以是"最迟约一分钟后全覆盖"，
+//   不是"精确 60 秒后同时生效"。要立刻验证，用下面的 action:'reloadWords'。
+const BANK_TTL_MS = 60000;
+const BANK_LIMIT = 300;
+let _bankWords = null; // [{word, tier}]；null = 本容器还没读过
+let _bankAt = 0;
+
+/**
+ * 读动态词库，带 TTL 缓存。
+ * 【失败一律 fail-open】读不到只是"少了一层动态防护"，静态词表还在。若这里抛出去，
+ *   整个内容审核会走进外层的降级放行分支 —— 为了让一个词生效而让审核整体哑掉，
+ *   代价方向是反的。
+ * 【失败也刷新时间戳】否则数据库持续不可用时会变成"每次发布都去撞一次失败的查询"。
+ */
+async function loadExtraWords(db) {
+  const now = Date.now();
+  if (_bankWords && (now - _bankAt) < BANK_TTL_MS) return _bankWords;
+  if (!db || !db.collection) return _bankWords || [];
+  try {
+    const r = await db.collection(WORD_COLL).find({}, { limit: BANK_LIMIT });
+    const list = Array.isArray(r) ? r : ((r && r.result) || []);
+    _bankWords = list.map(function (d) {
+      return {
+        word: String((d && (d.word || d._id)) || ''),
+        tier: (d && d.tier) === 'review' ? 'review' : 'block',
+      };
+    });
+    _bankAt = now;
+  } catch (e) {
+    console.error('[secCheck] 读动态词库失败，本次只用静态词表：', (e && e.message) || e);
+    if (!_bankWords) _bankWords = [];
+    _bankAt = now;
+  }
+  return _bankWords;
+}
+
+/** 清掉本容器的词库缓存（管理员加完词想立刻验证时用） */
+function dropExtraWordsCache() {
+  _bankWords = null;
+  _bankAt = 0;
+}
+
 module.exports = async function (ctx) {
   // MPServerless 云函数：客户端参数在 ctx.args，返回值成为 res.result（不能用 callback）
   const event = (ctx && ctx.args) || {};
@@ -293,12 +347,29 @@ module.exports = async function (ctx) {
       return { ok: true, requestId: requestId, channel: viaApp ? 'app' : 'webhook', target: target };
     }
 
+    // ---- 运维口子：清掉本容器的动态词库缓存，让下次匹配重新查库 ----
+    // 【为什么需要】缓存是每个容器各算各的 60 秒（见 BANK_TTL_MS），管理员刚加完词想立刻验证时，
+    //   命中的容器不确定，等一分钟又不像"加完就生效"。这个 action 只清缓存 + 回报词数，
+    //   不读内容、不写库、不回显词条本身，所以放在这个无鉴权云函数里也不构成信息泄露口。
+    if (event.action === 'reloadWords') {
+      dropExtraWordsCache();
+      const db0 = (ctx && ctx.mpserverless && ctx.mpserverless.db) || null;
+      const n = (await loadExtraWords(db0)).length;
+      return { ok: true, requestId: requestId, action: 'reloadWords', extraWords: n };
+    }
+
     const content = String(event.content || '').slice(0, 2000);
     if (!content.trim()) return { ok: true, suggest: 'pass', requestId: requestId };
 
     // 1) 本地敏感词预检（先于 msgSecCheck，拦赌博暗语延迟）
     //    传 scene 给词库：仿冒官方昵称等 scene=1 专属类别只在昵称场景生效
-    const local = sensitive.match(content, { scene: event.scene || 3 });
+    //    动态词库（管理员在小程序里追加的）在这里并入。一个词都没有时**不传 categories**，
+    //    让 match 直接用静态表原引用 —— 走同一条零额外开销的路径，而不是每次复制一遍类别表。
+    const db = (ctx && ctx.mpserverless && ctx.mpserverless.db) || null;
+    const extraWords = await loadExtraWords(db);
+    const local = sensitive.match(content, extraWords.length
+      ? { scene: event.scene || 3, categories: sensitive.withExtraWords(sensitive.CATEGORIES, extraWords) }
+      : { scene: event.scene || 3 });
     if (local.severity) {
       const suggest = local.severity === 'block' ? 'risky' : 'review';
       await feishuPush(buildPush(
@@ -340,4 +411,13 @@ module.exports = async function (ctx) {
     console.error('[secCheck] 异常，降级放行', e && e.message);
     return { ok: true, suggest: 'pass', degrade: true, msg: String((e && e.message) || e), requestId: requestId };
   }
+};
+
+// 【测试钩子】把动态词库缓存函数挂到导出上，供 tests/secCheckBank.test.js 直接调。
+// 本文件只依赖 Node 内置模块，所以能被 node require。
+// 不构成线上风险：运行时只把 module.exports 当函数调用，不会读这两个属性。
+module.exports.__test = {
+  loadExtraWords: loadExtraWords,
+  dropExtraWordsCache: dropExtraWordsCache,
+  BANK_TTL_MS: BANK_TTL_MS,
 };

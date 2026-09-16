@@ -4,18 +4,38 @@
 //   1. 按昵称（模糊）或用户ID（精确）搜索用户，展示头像、昵称、完整 openid（可复制）
 //   2. 展示该用户发过的帖子（含已下架的，标注 hidden）
 //   3. 一键封禁（可填原因）/ 一键解封
-//   4. 展示全部黑名单，列表内可一键解封（防误删/误封）
-// 【说明】封禁/解封统一走 moderate 云函数（软删+拉黑，取证留存）。
+//   4. 一键禁言 / 解除禁言（只停发帖评论，**不动已发内容**）
+//   5. 展示全部黑名单，列表内可一键解封（防误删/误封）
+// 【说明】封禁/解封/禁言统一走 moderate 云函数（软删+拉黑，取证留存）。
+// 【封禁与禁言的区别，界面上别混】封禁 = 拉黑 + 软删其全部内容（重）；
+//   禁言 = 只掐掉发帖/评论能力，内容一条不动、也不进黑名单（轻）。
+//   两者正交，可以只禁言不拉黑。判定式在 utils/publishGate.js。
 // ============================================================
 const app = getApp();
 const db = require('../../utils/db.js'); // 公共数据库方法
 const guard = require('../../utils/guard.js'); // 前端保险工具
 const moderate = require('../../utils/moderate.js'); // 内容安全执行器（封禁/解封走云函数）
+const adminApi = require('../../utils/adminManage.js'); // 动态词库（封禁后问到的关键词写这里）
 const { setField } = require('../../utils/page.js'); // 动态字段名的 setData（避免编译报错）
 const clipboard = require('../../utils/clipboard.js'); // 复制到剪贴板（统一反馈 + 隐私授权兜底）
 
 // 微信默认头像（用户从未上传头像时的占位，与 regist 页一致）
 const DEFAULT_AVATAR = 'https://mmbiz.qpic.cn/mmbiz/icTdbqWNOwNRna42FI242Lcia07jQodd2FJGIYQfG0LAJGFxM4FbnQP6yfMxBgJ0F3YRqJCJ1aPAK2dQagdusBZg/0';
+
+/**
+ * moderate 云函数返回 ok:false 时抛异常，交给调用方的 catch 统一提示。
+ * 【为什么需要】moderate.invoke 只把 res.result 解包出来，**不会因为 ok:false 而 reject** ——
+ *   不检查的话，"禁言自己"这种被服务端明确拒绝（SELF_MUTE）的操作，界面照样会弹「已禁言」，
+ *   管理员会以为生效了，直到对方还能发帖才发现。
+ */
+function ensureModOk(res) {
+  if (res && res.ok === false) {
+    const err = new Error(res.msg || '操作失败');
+    err.code = res.code || '';
+    throw err;
+  }
+  return res;
+}
 
 /** 时间格式化（Date → "YYYY-MM-DD HH:mm"），脏值返回空串 */
 function fmtTime(t) {
@@ -61,6 +81,8 @@ Page({
   applySeed(seed) {
     const user = Object.assign({}, seed, {
       isBlack: false,
+      // seed 是整篇 Feeder 文档（index 那边查出来的），mutePost 就在里面，不必额外查一次
+      isMuted: !!seed.mutePost,
       postsLoaded: true,  // 帖子已查好，无需再拉
       postsLoading: false,
     });
@@ -120,6 +142,9 @@ Page({
       }
       users.forEach((u) => {
         u.isBlack = !!blackMap[u.userId];
+        // 禁言状态直接读 Feeder.mutePost —— 搜索结果本身就是 Feeder 文档，零额外查询。
+        // （黑名单要额外查 BlackNum，因为它是另一个集合；禁言不是。）
+        u.isMuted = !!u.mutePost;
         u.posts = [];
         u.postsLoaded = false;
         u.postsLoading = false;
@@ -204,14 +229,117 @@ Page({
     });
     if (!confirmed.ok) return;
     try {
-      await moderate.ban(userId, confirmed.reason || '管理员手动封禁');
+      ensureModOk(await moderate.ban(userId, confirmed.reason || '管理员手动封禁'));
       wx.showToast({ title: '已封禁', icon: 'success' });
       // 刷新搜索结果的黑名单状态 + 刷新黑名单列表
       this.searchUsers(this.data.keyword);
       this.loadBlackList();
     } catch (err) {
       console.error('[userManage] 封禁失败', err);
-      wx.showToast({ title: '封禁失败', icon: 'none' });
+      wx.showToast({ title: (err && err.message) || '封禁失败', icon: 'none' });
+      return; // 🔴 封禁没成功就**不要**再问关键词：词是从这次违规里来的，动作没落地就不该入库
+    }
+    // 封禁已生效，之后才问关键词（顺序刻意，见 askKeyword 注释）
+    await this.askKeyword();
+  },
+
+  /**
+   * 一键禁言：只停发帖 / 评论，**已发内容一条不动**，也不进黑名单。
+   * 与「封禁」是两个独立按钮 —— 刷屏/吵架用这个，恶意/违法才用封禁。
+   */
+  async muteUser(e) {
+    const userId = e.currentTarget.dataset.userid;
+    const name = e.currentTarget.dataset.name || '';
+    if (!guard.throttle('userManage.mute', 2000)) return;
+    const confirmed = await new Promise((resolve) => {
+      wx.showModal({
+        title: '确认禁言',
+        // 【文案里不要写 markdown】wx.showModal 不渲染 ** 之类，会原样显示出来
+        content: '禁言用户：' + (name || userId) + '\n他将不能再发帖 / 评论，已发的内容全部保留，也不进黑名单。',
+        editable: true,
+        placeholderText: '禁言原因（可选）',
+        success: (r) => resolve({ ok: !!r.confirm, reason: (r.content || '').trim() }),
+        fail: () => resolve({ ok: false }),
+      });
+    });
+    if (!confirmed.ok) return;
+    try {
+      ensureModOk(await moderate.mute(userId, confirmed.reason || '管理员手动禁言'));
+      wx.showToast({ title: '已禁言', icon: 'success' });
+      this.searchUsers(this.data.keyword);
+    } catch (err) {
+      console.error('[userManage] 禁言失败', err);
+      // SELF_MUTE 是服务端刻意的守卫（否则管理员能把自己永久锁死），它的 msg 已经写清楚了
+      wx.showToast({ title: (err && err.message) || '禁言失败', icon: 'none', duration: 2500 });
+      return;
+    }
+    await this.askKeyword();
+  },
+
+  /** 解除禁言：只把 mutePost 拿掉，不恢复也不授予任何发布权（canPost 全程没被动过） */
+  async unmuteUser(e) {
+    const userId = e.currentTarget.dataset.userid;
+    const name = e.currentTarget.dataset.name || '';
+    if (!guard.throttle('userManage.unmute', 2000)) return;
+    const confirmed = await new Promise((resolve) => {
+      wx.showModal({
+        title: '解除禁言',
+        content: '解除对 ' + (name || userId) + ' 的禁言？\n\n解除后他可以重新发帖 / 评论（前提是他本来就有发布权限）。',
+        success: (r) => resolve(!!r.confirm),
+        fail: () => resolve(false),
+      });
+    });
+    if (!confirmed) return;
+    try {
+      ensureModOk(await moderate.unmute(userId));
+      wx.showToast({ title: '已解除禁言', icon: 'success' });
+      this.searchUsers(this.data.keyword);
+    } catch (err) {
+      console.error('[userManage] 解除禁言失败', err);
+      wx.showToast({ title: (err && err.message) || '解除禁言失败', icon: 'none' });
+    }
+  },
+
+  /**
+   * 问一句「这次的违规关键词是什么」，答了就把词加进动态词库（立刻生效）。
+   * 🔴 **调用时机是刻意的：必须在封禁/禁言已经落地之后。**
+   *    关键词是可选的（用户明确要求「不回答也继续封禁」），如果先问，
+   *    "不答"就变成了"动作卡住"。所以本函数自己的任何失败 —— 包括没填密码 ——
+   *    最多让关键词没入库，**绝不能影响已经生效的封禁**，因此它只 toast 不抛。
+   * 【为什么要问】事后管理员在词库里想不起来该加什么词：违规现场就在眼前时问，最省事。
+   */
+  async askKeyword() {
+    const typed = await new Promise((resolve) => {
+      wx.showModal({
+        title: '加入敏感词库？',
+        content: '如果这次是因为某个词 / 说法违规（如「网络虐猫」），填在这里就一并入库，'
+          + '以后含它的内容会被直接拒绝发布。\n\n留空跳过也行，封禁 / 禁言已经生效了。',
+        editable: true,
+        placeholderText: '违规关键词（可留空跳过）',
+        confirmText: '确定',
+        success: (r) => resolve(r.confirm ? (r.content || '').trim() : ''),
+        fail: () => resolve(''),
+      });
+    });
+    if (!typed) return; // 留空或取消：什么都不做，动作照旧
+    try {
+      const res = await adminApi.addWord(typed, 'block');
+      adminApi.ensureOk(res);
+      // res.added=false 表示这个词本来就在（服务端是幂等的），措辞要区分开
+      wx.showToast({
+        title: res.added ? ('已入库：' + typed) : ('词库已有「' + typed + '」'),
+        icon: 'none',
+        duration: 2500,
+      });
+    } catch (err) {
+      const code = (err && err.code) || '';
+      console.warn('[userManage] 关键词入库失败', code, (err && err.message) || err);
+      // 最可能的情况是**管理员还没在「管理员」页填过操作密码**（词库写入是密码门禁的）。
+      // 这里要把"动作成功、只有词没进去"说清楚，否则管理员会以为封禁也失败了。
+      const tip = (code === 'NEED_PASSWORD' || code === 'BAD_PASSWORD')
+        ? '关键词未入库：请先在「管理员」页填写操作密码'
+        : ('关键词未入库：' + ((err && err.message) || '可在「管理员」→「敏感词库」里手动添加'));
+      wx.showToast({ title: tip, icon: 'none', duration: 3000 });
     }
   },
 
@@ -230,13 +358,13 @@ Page({
     });
     if (!confirmed) return;
     try {
-      await moderate.unban(userId);
+      ensureModOk(await moderate.unban(userId));
       wx.showToast({ title: '已解封', icon: 'success' });
       this.searchUsers(this.data.keyword);
       this.loadBlackList();
     } catch (err) {
       console.error('[userManage] 解封失败', err);
-      wx.showToast({ title: '解封失败', icon: 'none' });
+      wx.showToast({ title: (err && err.message) || '解封失败', icon: 'none' });
     }
   },
 

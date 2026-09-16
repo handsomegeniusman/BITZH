@@ -84,8 +84,10 @@ function makeDb(opt) {
     data: data,
     collection: function (name) {
       return {
-        find: async function (f) {
-          calls.push({ name: name, m: 'find', filter: f });
+        // options（sort / limit）只记录不执行：本文件要断言的正是"查询有没有被限制住"
+        //   （如 historyLimit 有没有真的传到 find 上），而不是模拟排序本身。
+        find: async function (f, o) {
+          calls.push({ name: name, m: 'find', filter: f, options: o });
           maybeFail(name + '.find');
           const seq = findSeq[name];
           if (seq && seqAt[name] === undefined) seqAt[name] = 0;
@@ -421,7 +423,16 @@ const ADMIN_ENV = { ADMIN_PASSWORD: PW, ADMIN_PASSWORD_SHA256: undefined, ADMIN_
       db: db, args: { action: 'list', callerId: AID },
       getInfo: async function () { throw new Error('x'); },
     }));
-    check('身份不可信 + 没带密码 → 拒绝（密码在这种情况下是唯一门槛）', r.code, 'BAD_PASSWORD');
+    check('身份不可信 + 没带密码 → NEED_PASSWORD（不是 BAD_PASSWORD）', r.code, 'NEED_PASSWORD');
+    // 【为什么区分这两个码】客户端要据此决定弹什么：NEED_PASSWORD → 弹密码输入框；
+    //   BAD_PASSWORD → 报"密码错误"。混成一个码，用户第一次进页面看到的会是"密码错误"。
+    check('  且提示文案指向"去填密码"而不是"密码错"',
+      /密码/.test(r.msg) && !/错误/.test(r.msg), true);
+    // 【更承重的一条】"没带密码"绝不能消耗失败额度 —— 否则每进一次页面算一次错，
+    //   连点几次就把管理员自己锁在门外了（锁是共用的 AdminAuthFail 计数）。
+    check('  且没有增加 AdminAuthFail 计数（空密码不算一次失败）',
+      db.of('AdminAuthFail', 'updateOne').length, 0);
+    check('  也没有写 lockUntil', db.of('AdminAuthFail', 'find').length, 0);
 
     r = await mod(mkCtx({
       db: db, args: { action: 'list', password: PW, callerId: AID },
@@ -472,7 +483,7 @@ const ADMIN_ENV = { ADMIN_PASSWORD: PW, ADMIN_PASSWORD_SHA256: undefined, ADMIN_
       db: db, args: { action: 'grant', userId: TID, callerId: AID },
       getInfo: async function () { throw new Error('x'); },
     }));
-    check('身份不可信 + 无密码 → 拒绝', r.code, 'BAD_PASSWORD');
+    check('身份不可信 + 无密码 → NEED_PASSWORD', r.code, 'NEED_PASSWORD');
     check('  且没有写库', db.of('BITZHAdministrator', 'insertOne').length, 0);
 
     r = await mod(mkCtx({
@@ -811,6 +822,235 @@ const ADMIN_ENV = { ADMIN_PASSWORD: PW, ADMIN_PASSWORD_SHA256: undefined, ADMIN_
     check('  applyId 就是 PostApply 的 _id（审批时要原样回传）', r.applies[0].applyId, 'x1');
     check('  过滤条件为 status:pending', db.of('PostApply', 'find')[0].filter, { status: 'pending' });
     check('  identityMode 如实回传', r.identityMode, 'trusted');
+  });
+
+  // ============================================================
+  console.log('\n[authCheck：只验密码，不读业务数据]');
+  // 存在的意义：让「管理员」页在"填的时候就告诉用户密码对不对"。
+  // 不能用 list 代替 —— list 是免密动作，身份可信时根本不校验密码，拿它验等于永远通过。
+  // ============================================================
+  await withEnv(ADMIN_ENV, async function () {
+    let db = makeDb({ data: baseData() });
+    let r = await mod(mkCtx({ db: db, args: { action: 'authCheck', callerId: AID, password: PW } }));
+    check('对的密码 → ok', { ok: r.ok, action: r.action }, { ok: true, action: 'authCheck' });
+    check('  不回传任何业务数据（免得变成新的信息泄露口）',
+      Object.keys(r).sort(), ['action', 'identityMode', 'ok']);
+
+    db = makeDb({ data: baseData() });
+    r = await mod(mkCtx({ db: db, args: { action: 'authCheck', callerId: AID, password: 'wrong' } }));
+    check('错的密码 → BAD_PASSWORD', r.code, 'BAD_PASSWORD');
+
+    // 【承重】authCheck 永远不能免密。若有人"顺手"把它加进 PASSWORD_OPTIONAL，
+    //   它就会变成永远返回 ok —— 于是错密码被存进客户端缓存，等到真审批时才炸。
+    db = makeDb({ data: baseData() });
+    r = await mod(mkCtx({ db: db, args: { action: 'authCheck', callerId: AID } }));
+    check('没带密码 → NEED_PASSWORD（authCheck 不得进入免密名单）', r.code, 'NEED_PASSWORD');
+
+    // 身份可信也一样要密码 —— 这正是它跟 list 的区别
+    db = makeDb({ data: baseData(), trustId: AID });
+    r = await mod(mkCtx({ db: db, args: { action: 'authCheck', callerId: AID } }));
+    check('身份可信 + 没带密码 → 仍要密码（它跟 list 的区别就在这）', r.code, 'NEED_PASSWORD');
+
+    // 非管理员连验密码的资格都没有（省得外人拿它当密码探测器刷）
+    // 【必须让 getInfo 抛错】否则默认桩会返回可信身份 AID，自报的 TID 根本不会被采信
+    //   （老用例同样这么写，见上面"自报一个非管理员 ID → NOT_ADMIN"）。
+    db = makeDb({ data: baseData() });
+    r = await mod(mkCtx({
+      db: db, args: { action: 'authCheck', callerId: TID, password: PW },
+      getInfo: async function () { throw new Error('x'); },
+    }));
+    check('非管理员 → NOT_ADMIN（不给外人当密码探测器用）', r.code, 'NOT_ADMIN');
+  });
+
+  // ============================================================
+  console.log('\n[listApplies：待办 + 最近处理历史]');
+  // ============================================================
+  await withEnv(ADMIN_ENV, async function () {
+    const applied = new Date('2026-09-16T02:00:00Z');
+    const handled = new Date('2026-09-16T03:00:00Z');
+    const rows = [
+      { _id: 'U1_2026-09-16', userId: 'U1', nickName: '快照甲', status: 'pending', appliedAt: applied },
+      { _id: 'U2_2026-09-15', userId: 'U2', nickName: '快照乙', status: 'approved', appliedAt: applied,
+        handledAt: handled, handledByName: '管理员丙', handledBy: BID, source: 'miniapp' },
+      { _id: 'U3_2026-09-14', userId: 'U3', nickName: '快照丙', status: 'rejected', appliedAt: applied,
+        handledAt: handled, handledBy: '', source: 'feishu' },
+    ];
+    const db = makeDb({ data: { BITZHAdministrator: [ADMIN_A], Feeder: [{ userId: 'U1', nickName: '实时甲' }], PostApply: rows, BlackNum: [], AdminAuthFail: [] } });
+    const r = await mod(mkCtx({ db: db, args: { action: 'listApplies', callerId: AID, password: PW } }));
+
+    check('待办只收 pending', r.applies.map(function (x) { return x.userId; }), ['U1']);
+    check('  昵称用实时资料覆盖快照', r.applies[0].nickName, '实时甲');
+    check('历史收两种终态、倒序由服务端 sort 决定', r.historyTotal, 2);
+    check('  已通过的那条 approved=true', r.history[0].approved, true);
+    check('  处理人姓名快照被带出来', r.history[0].handledByName, '管理员丙');
+    check('  快照缺失时回落到 id 掩码', r.history[1].handledByMasked, '');
+    check('  历史行也补了头像/昵称字段（页面直接渲染）',
+      r.history[0].userId, 'U2');
+
+    // 待办永远是 pending；历史查询必须显式限定终态，
+    // 用 $ne:'pending' 会把"没有 status 的畸形行"也捞进历史里。
+    const findCalls = db.of('PostApply', 'find');
+    check('历史查询限定为两种终态',
+      findCalls.some(function (c) { return JSON.stringify(c.filter) === JSON.stringify({ status: { $in: ['approved', 'rejected'] } }); }), true);
+
+    // historyLimit 要真的传到 find 上（默认 20、封顶 50）
+    const db2 = makeDb({ data: { BITZHAdministrator: [ADMIN_A], Feeder: [], PostApply: rows, BlackNum: [], AdminAuthFail: [] } });
+    await mod(mkCtx({ db: db2, args: { action: 'listApplies', callerId: AID, password: PW, historyLimit: 5 } }));
+    const hist = db2.of('PostApply', 'find').filter(function (c) { return c.options && c.options.limit === 5; });
+    check('historyLimit 透传到 find.limit', hist.length, 1);
+    check('  且带了 handledAt 倒序', hist[0].options.sort, { handledAt: -1 });
+
+    const db3 = makeDb({ data: { BITZHAdministrator: [ADMIN_A], Feeder: [], PostApply: rows, BlackNum: [], AdminAuthFail: [] } });
+    await mod(mkCtx({ db: db3, args: { action: 'listApplies', callerId: AID, password: PW, historyLimit: 9999 } }));
+    check('historyLimit 封顶 50（客户端不能把函数拖垮）',
+      db3.of('PostApply', 'find').filter(function (c) { return c.options && c.options.limit === 50; }).length, 1);
+
+    const db4 = makeDb({ data: { BITZHAdministrator: [ADMIN_A], Feeder: [], PostApply: rows, BlackNum: [], AdminAuthFail: [] } });
+    await mod(mkCtx({ db: db4, args: { action: 'listApplies', callerId: AID, password: PW } }));
+    check('不传 historyLimit → 默认 20',
+      db4.of('PostApply', 'find').filter(function (c) { return c.options && c.options.limit === 20; }).length, 1);
+  });
+
+  // ============================================================
+  console.log('\n[审批写入处理人姓名快照]');
+  // 「最近处理」历史里要显示"谁批的"，而这条历史必须在处理人后来被移出管理员名单后
+  // 仍然读得出来 —— 所以要在审批当时把名字抄下来，不能靠事后 join。
+  // ============================================================
+  await withEnv(ADMIN_ENV, async function () {
+    // 申请人必须是**形态合法**的 24 位 id —— applyDecision 第一步就是 badUserId 校验，
+    // 用 'U1' 这种短串会直接被 BAD_USER_ID 挡在门口（不会走到写申请行那一步）。
+    const APPLICANT = '64fa07d6a09a9bd68b13a8a9';
+    const APPLY_ID = APPLICANT + '_2026-09-16';
+    const db = makeDb({ data: {
+      BITZHAdministrator: [ADMIN_A], AdminAuthFail: [],
+      Feeder: [{ userId: APPLICANT, nickName: '申请人' }, { userId: AID, nickName: '批的人' }],
+      BlackNum: [], PostApply: [{ _id: APPLY_ID, userId: APPLICANT, status: 'pending' }],
+    } });
+    await mod(mkCtx({ db: db, args: { action: 'approvePost', userId: APPLICANT, applyId: APPLY_ID, callerId: AID, password: PW } }));
+    const set = db.of('PostApply', 'updateOne')[0].update.$set;
+    check('handledByName 写入的是处理人昵称', set.handledByName, '批的人');
+    check('handledBy 仍然存 id（审计用）', set.handledBy, AID);
+
+    // 处理人没有 Feeder 资料（手工在控制台加的管理员）→ 空串，不报错
+    const db2 = makeDb({ data: {
+      BITZHAdministrator: [ADMIN_A], AdminAuthFail: [],
+      Feeder: [{ userId: APPLICANT, nickName: '申请人' }],
+      BlackNum: [], PostApply: [{ _id: APPLY_ID, userId: APPLICANT, status: 'pending' }],
+    } });
+    const r2 = await mod(mkCtx({ db: db2, args: { action: 'approvePost', userId: APPLICANT, applyId: APPLY_ID, callerId: AID, password: PW } }));
+    check('处理人查不到资料时审批照样成功', r2.ok, true);
+    check('  姓名落空串而不是 undefined', db2.of('PostApply', 'updateOne')[0].update.$set.handledByName, '');
+  });
+
+  // ============================================================
+  console.log('\n[动态词库：增 / 删 / 查]');
+  // 词库是全局生效的（一个「的」字就能把所有人的发布打死），所以写入必须过密码。
+  // ============================================================
+  await withEnv(ADMIN_ENV, async function () {
+    // ---- 查 ----
+    let db = makeDb({ data: {
+      BITZHAdministrator: [ADMIN_A], AdminAuthFail: [], BlackNum: [], Feeder: [], PostApply: [],
+      SensitiveWord: [
+        { _id: '猫贩子', word: '猫贩子', raw: '猫贩子', tier: 'block', by: AID, time: new Date('2026-09-16T01:00:00Z') },
+        { _id: '火钳子', word: '火钳子', raw: '火钳子', tier: 'review', by: AID, time: new Date('2026-09-16T02:00:00Z') },
+      ],
+    } });
+    let r = await mod(mkCtx({ db: db, args: { action: 'listWords', callerId: AID, password: PW } }));
+    check('列出词条', r.total, 2);
+    // 用 map 而不是数组顺序断言 —— mock 的 find 刻意不实现 sort（真实排序由数据库做），
+    // 按顺序断言会变成在测 mock。排序意图单独断言在下面。
+    check('  tier 如实带出', r.words.map(function (x) { return x.word + '=' + x.tier; }),
+      ['猫贩子=block', '火钳子=review']);
+    check('  查词库时按加入时间倒序（新的在前）',
+      db.of('SensitiveWord', 'find')[0].options, { sort: { time: -1 }, limit: 300 });
+    check('  统计拦截档条数（页面要显示）', r.blocked, 1);
+    check('  上限值带回给页面', r.max, 300);
+    check('  作者 id 打掩码，不原样吐 openid', /^.{4}\*+.{0,4}$/.test(r.words[0].by) || r.words[0].by === '', true);
+
+    // ---- 增 ----
+    db = makeDb({ data: { BITZHAdministrator: [ADMIN_A], AdminAuthFail: [], BlackNum: [], Feeder: [], PostApply: [], SensitiveWord: [] } });
+    r = await mod(mkCtx({ db: db, args: { action: 'addWord', word: '  猫 贩子  ', callerId: AID, password: PW } }));
+    check('新增成功', { ok: r.ok, added: r.added, tier: r.tier }, { ok: true, added: true, tier: 'block' });
+    check('  默认档位是 block', r.tier, 'block');
+    check('  入库前去掉空白（去重键）', db.of('SensitiveWord', 'insertOne')[0].doc._id, '猫贩子');
+    check('  原文另存一份备查', db.of('SensitiveWord', 'insertOne')[0].doc.raw, '猫 贩子');
+    check('  记下是谁加的', db.of('SensitiveWord', 'insertOne')[0].doc.by, AID);
+
+    db = makeDb({ data: { BITZHAdministrator: [ADMIN_A], AdminAuthFail: [], BlackNum: [], Feeder: [], PostApply: [], SensitiveWord: [] } });
+    r = await mod(mkCtx({ db: db, args: { action: 'addWord', word: '火钳子', tier: 'review', callerId: AID, password: PW } }));
+    check('可以指定 review 档（放行但标记）', { tier: r.tier, added: r.added }, { tier: 'review', added: true });
+
+    // ---- 边界：单字 / 空 / 超长 ----
+    db = makeDb({ data: { BITZHAdministrator: [ADMIN_A], AdminAuthFail: [], BlackNum: [], Feeder: [], PostApply: [], SensitiveWord: [] } });
+    r = await mod(mkCtx({ db: db, args: { action: 'addWord', word: '毒', callerId: AID, password: PW } }));
+    check('单字词被拒（会把所有人的发布打死）', r.code, 'WORD_TOO_SHORT');
+    check('  且没写库', db.of('SensitiveWord', 'insertOne').length, 0);
+
+    db = makeDb({ data: { BITZHAdministrator: [ADMIN_A], AdminAuthFail: [], BlackNum: [], Feeder: [], PostApply: [], SensitiveWord: [] } });
+    r = await mod(mkCtx({ db: db, args: { action: 'addWord', word: '   ', callerId: AID, password: PW } }));
+    check('纯空白被拒', r.code, 'WORD_EMPTY');
+
+    db = makeDb({ data: { BITZHAdministrator: [ADMIN_A], AdminAuthFail: [], BlackNum: [], Feeder: [], PostApply: [], SensitiveWord: [] } });
+    r = await mod(mkCtx({ db: db, args: { action: 'addWord', word: new Array(30).join('词'), callerId: AID, password: PW } }));
+    check('超长被拒（要填词组不是整句话）', r.code, 'WORD_TOO_LONG');
+
+    // ---- 已存在 → 改档位，而不是报错 ----
+    db = makeDb({ data: {
+      BITZHAdministrator: [ADMIN_A], AdminAuthFail: [], BlackNum: [], Feeder: [], PostApply: [],
+      SensitiveWord: [{ _id: '猫贩子', word: '猫贩子', tier: 'review' }],
+    } });
+    r = await mod(mkCtx({ db: db, args: { action: 'addWord', word: '猫贩子', tier: 'block', callerId: AID, password: PW } }));
+    check('已存在且档位不同 → 改档而不是报错', { ok: r.ok, added: r.added, updated: r.updated }, { ok: true, added: false, updated: true });
+    check('  真的写了库', db.of('SensitiveWord', 'updateOne')[0].update.$set.tier, 'block');
+
+    db = makeDb({ data: {
+      BITZHAdministrator: [ADMIN_A], AdminAuthFail: [], BlackNum: [], Feeder: [], PostApply: [],
+      SensitiveWord: [{ _id: '猫贩子', word: '猫贩子', tier: 'block' }],
+    } });
+    r = await mod(mkCtx({ db: db, args: { action: 'addWord', word: '猫贩子', callerId: AID, password: PW } }));
+    check('已存在且档位相同 → 幂等成功，不重复写', { ok: r.ok, added: r.added }, { ok: true, added: false });
+    check('  没有多余的写', db.of('SensitiveWord', 'updateOne').length, 0);
+
+    // ---- 容量上界 ----
+    const full = [];
+    for (let i = 0; i < 300; i++) full.push({ _id: 'x' + i, word: 'x' + i, tier: 'block' });
+    db = makeDb({ data: { BITZHAdministrator: [ADMIN_A], AdminAuthFail: [], BlackNum: [], Feeder: [], PostApply: [], SensitiveWord: full } });
+    r = await mod(mkCtx({ db: db, args: { action: 'addWord', word: '新词条', callerId: AID, password: PW } }));
+    check('词库满 → 拒绝并提示去删', r.code, 'WORD_BANK_FULL');
+    check('  且没写库', db.of('SensitiveWord', 'insertOne').length, 0);
+
+    // ---- 删除 ----
+    db = makeDb({ data: {
+      BITZHAdministrator: [ADMIN_A], AdminAuthFail: [], BlackNum: [], Feeder: [], PostApply: [],
+      SensitiveWord: [{ _id: '猫贩子', word: '猫贩子', tier: 'block' }],
+    } });
+    r = await mod(mkCtx({ db: db, args: { action: 'delWord', word: '猫贩子', callerId: AID, password: PW } }));
+    check('删除成功', { ok: r.ok, word: r.word }, { ok: true, word: '猫贩子' });
+    check('  按 _id 删', db.of('SensitiveWord', 'deleteOne')[0].filter, { _id: '猫贩子' });
+
+    db = makeDb({ data: { BITZHAdministrator: [ADMIN_A], AdminAuthFail: [], BlackNum: [], Feeder: [], PostApply: [], SensitiveWord: [] } });
+    r = await mod(mkCtx({ db: db, args: { action: 'delWord', word: '  ', callerId: AID, password: PW } }));
+    check('删空词被拒', r.code, 'WORD_EMPTY');
+
+    // ---- 写动作必须过密码 + 必须是管理员 ----
+    // 词库全局生效 → 写入是本文件里"影响面最大"的动作，这两条是它的全部门槛。
+    db = makeDb({ data: { BITZHAdministrator: [ADMIN_A], AdminAuthFail: [], BlackNum: [], Feeder: [], PostApply: [], SensitiveWord: [] } });
+    r = await mod(mkCtx({ db: db, args: { action: 'addWord', word: '猫贩子', callerId: AID } }));
+    check('addWord 不带密码 → NEED_PASSWORD', r.code, 'NEED_PASSWORD');
+    check('  且没写库', db.of('SensitiveWord', 'insertOne').length, 0);
+
+    db = makeDb({ data: { BITZHAdministrator: [ADMIN_A], AdminAuthFail: [], BlackNum: [], Feeder: [], PostApply: [], SensitiveWord: [] } });
+    r = await mod(mkCtx({ db: db, args: { action: 'delWord', word: '猫贩子', callerId: AID } }));
+    check('delWord 不带密码 → NEED_PASSWORD', r.code, 'NEED_PASSWORD');
+    check('  且没删', db.of('SensitiveWord', 'deleteOne').length, 0);
+
+    db = makeDb({ data: { BITZHAdministrator: [ADMIN_A], AdminAuthFail: [], BlackNum: [], Feeder: [], PostApply: [], SensitiveWord: [] } });
+    r = await mod(mkCtx({
+      db: db, args: { action: 'addWord', word: '猫贩子', callerId: TID, password: PW },
+      getInfo: async function () { throw new Error('x'); },
+    }));
+    check('非管理员即使带对密码也写不了', r.code, 'NOT_ADMIN');
+    check('  且没写库', db.of('SensitiveWord', 'insertOne').length, 0);
   });
 
   // ============================================================

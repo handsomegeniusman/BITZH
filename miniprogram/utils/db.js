@@ -12,6 +12,8 @@
  * ============================================================
  */
 const config = require('../config.js');
+// 「能不能发帖/评论」的纯判断式（可 node 单测，见 utils/publishGate.js 文件头）
+const publishGate = require('./publishGate.js');
 
 // ---------- 1. 统一增删改查 ----------
 
@@ -79,6 +81,7 @@ const state = {
   feederChecked: false,        // 用户资料是否已查询过
   audit: null,                 // 审核开关（是否开放注册/发布），null 表示未加载
   canPost: false,              // 是否已获批发布权限（Feeder.canPost；管理员另算，见 canPublish）
+  mutePost: false,             // 是否被禁言（Feeder.mutePost；与 canPost 正交，见 publishGate.js）
 };
 
 /**
@@ -135,9 +138,12 @@ async function initUserState() {
       if (res.result && res.result.length > 0) {
         state.isFeeder = true;
         state.userInfo = res.result[0];
-        // 【零额外查询】Feeder 文档刚刚就查回来了，canPost 直接读它。
+        // 【零额外查询】Feeder 文档刚刚就查回来了，canPost / mutePost 直接读它。
         // 用 !! 而非 === true：控制台手工改数据时可能写成 1；云函数一律写布尔。
         state.canPost = !!(res.result[0] && res.result[0].canPost);
+        // 禁言标志（moderate 的 mute 写入）。与 canPost 同批读、同批在 resetUserState 里清 ——
+        // 漏清会残留上一次用户的 true，那是最难查的一类 bug（换账号后莫名其妙发不出帖）。
+        state.mutePost = !!(res.result[0] && res.result[0].mutePost);
       }
     } catch (e) {
       console.error('查询用户资料失败', e);
@@ -160,16 +166,18 @@ async function initUserState() {
 }
 
 /**
- * 能否发布 / 评论：管理员，或已获批发布权的普通用户。
- * 【为什么要有这个函数】4 个入口（底部加号 / someBooklet 浮动按钮 / addBooklet 页守卫 /
- *   评论区输入栏）都要问同一件事，判断式写 4 遍迟早漂移 —— 尤其是"加号没了但评论还能发"
- *   这种漏一处才发现的 bug。所有入口只认这一个答案。
+ * 能否发布 / 评论：管理员，或已获批发布权的普通用户，且**当前没有被禁言**。
+ * 【为什么要有这个函数】8 个入口（底部加号 ×2 / someBooklet 浮动按钮 ×2 / addBooklet 页守卫 /
+ *   bookletDetail ×2 / mydetail）都要问同一件事，判断式写 8 遍迟早漂移 —— 尤其是
+ *   "加号没了但评论还能发"这种漏一处才发现的 bug。所有入口只认这一个答案。
  * 【必须在 await db.initUserState() 之后调用】它读的是模块级 state 缓存。
- * 【注意命名】DB 字段叫 canPost（只表示"被批准过"），本函数叫 canPublish（多含"管理员也算"）。
+ * 【注意命名】DB 字段叫 canPost（只表示"被批准过"），本函数叫 canPublish（多含"管理员也算"+"没被禁言"）。
+ * 【判断式本身在 utils/publishGate.js】纯函数、可 node 单测。这里只做委托，
+ *   本文件依赖 wx 所以测不了它自己 —— 这也是把公式挪出去的原因。
  * @returns {Boolean}
  */
 function canPublish() {
-  return !!(state.isAdministrator || state.canPost);
+  return publishGate.canPublish(state);
 }
 
 /**
@@ -281,6 +289,9 @@ function resetUserState() {
   // 【必须清】漏了会残留上一次的 true —— 管理员刚批准完自己再切号，
   // 新账号会带着"已获批"的状态继续用，加号和评论框都误开。
   state.canPost = false;
+  // 同理，而且更隐蔽：漏了 mutePost 会让"解禁后仍发不出帖"
+  //（本人在自己手机上永远是禁言前的状态，换号才复现）。
+  state.mutePost = false;
 }
 
 /**

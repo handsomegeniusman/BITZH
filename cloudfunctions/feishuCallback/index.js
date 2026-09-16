@@ -234,6 +234,15 @@ function resolveAction(cmd, context, parentText) {
     };
   }
 
+  // 禁言 / 解除禁言：全场景可用（与「拉黑用户」同形，都是明确作用于用户且不会误伤帖子的命令）
+  // 【为什么要和 ban 分开】禁言**保留既有内容**、不进黑名单，是比封禁轻一档的处置 ——
+  //   群里看到刷屏但不能一上来就把人拉黑时用它。目标用户同样从推送的「被举报人ID」行解析。
+  if (verb === 'mute' || verb === 'unmute') {
+    const userId = cmd.userId || extractOpenid(parentText);
+    if (!userId) return { error: '❌ 未能解析出用户ID（可回复「' + (verb === 'mute' ? '禁言用户' : '解除禁言') + ' <用户ID>」）' };
+    return { action: verb, userId: userId, reason: '飞书指令' };
+  }
+
   if (verb === 'reject') { // 拉黑用户：全场景可用
     const userId = cmd.userId || extractOpenid(parentText);
     return userId ? { action: 'reject', userId: userId, reason: '永久拉黑' } : { error: '❌ 未能解析出用户ID' };
@@ -295,11 +304,15 @@ function resolveAction(cmd, context, parentText) {
 
 /**
  * 解析文本命令 → { verb, object, userId? }
- *   verb:   'ban' | 'unban' | 'reject' | 'grantPost' | 'denyPost'
+ *   verb:   'ban' | 'unban' | 'reject' | 'mute' | 'unmute' | 'grantPost' | 'denyPost'
  *   object: 'user' | 'post' | null（null=裸命令，默认对象由 resolveAction 定为「帖子」）
  *   私聊带 openid：封禁 <openid> / 解封 <openid> / 拉黑用户 <openid> / 同意 <申请人ID>
- * 【注意】「同意」/「拒绝」用的 verb 是 grantPost/denyPost，**不能复用 'reject'** ——
+ *                 禁言用户 <ID> / 解除禁言 <ID>
+ * 【注意 1】「同意」/「拒绝」用的 verb 是 grantPost/denyPost，**不能复用 'reject'** ——
  *   那个词已经被「拉黑用户」占了，复用会让「拒绝」变成把申请人拉进黑名单。
+ * 【注意 2】mute/unmute 的 verb 名**必须与 moderate 的 action 名逐字相同**：上面
+ *   `if (cmd.userId)` 那条分支会把 cmd.verb 原样当 action 丢给 moderate（见入口函数），
+ *   名字对不上就会得到一个"未知 action"。这两处一起改。
  */
 function parseCommand(content) {
   const c = String(content || '').trim();
@@ -309,6 +322,11 @@ function parseCommand(content) {
   if (m) return { verb: 'unban', object: 'user', userId: m[1] };
   m = c.match(new RegExp('^拉黑用户\\s+(' + ID_PAT + ')$'));
   if (m) return { verb: 'reject', object: 'user', userId: m[1] };
+  // 禁言（剥夺发帖/评论权，但保留既有内容、不进黑名单）的"带 ID"形式
+  m = c.match(new RegExp('^禁言用户\\s+(' + ID_PAT + ')$'));
+  if (m) return { verb: 'mute', object: 'user', userId: m[1] };
+  m = c.match(new RegExp('^解除禁言\\s+(' + ID_PAT + ')$'));
+  if (m) return { verb: 'unmute', object: 'user', userId: m[1] };
   m = c.match(new RegExp('^全部解封\\s+(' + ID_PAT + ')$'));
   if (m) return { verb: 'unban', object: 'all', userId: m[1] };
   // 发布权限审批的"带 ID"形式：回读不到父消息（比如卡片是 webhook 发的）时唯一可用的写法
@@ -326,6 +344,8 @@ function parseCommand(content) {
   if (c === '解封帖子') return { verb: 'unban', object: 'post' };
   if (c === '全部解封') return { verb: 'unban', object: 'all' };
   if (c === '拉黑用户') return { verb: 'reject', object: 'user' };
+  if (c === '禁言用户') return { verb: 'mute', object: 'user' };
+  if (c === '解除禁言') return { verb: 'unmute', object: 'user' };
   if (c === '封禁') return { verb: 'ban', object: null };   // 裸封禁 → 帖子
   if (c === '解封') return { verb: 'unban', object: null }; // 裸解封 → 帖子
   return null;
@@ -659,7 +679,7 @@ module.exports = async function (ctx) {
     // 在群里 @ 一次机器人（随便发句话）即可看到本群 chat_id。
     // 【放最后一行】可用的命令列表在前，别让这行排查信息把它挤下去。
     const chatIdLine = message.chat_id ? '\n本群 chat_id：' + message.chat_id : '';
-    await respond(message, '⚠️ 未识别：「' + text + '」（来自 ' + fromUser + '）\n可用：封禁 / 封禁帖子 / 封禁用户 / 封禁举报人 / 解封 / 解封帖子 / 解封用户 / 解封举报人 / 全部解封 / 拉黑用户\n发布申请：同意 / 拒绝（在该申请卡片下回复）' + chatIdLine);
+    await respond(message, '⚠️ 未识别：「' + text + '」（来自 ' + fromUser + '）\n可用：封禁 / 封禁帖子 / 封禁用户 / 封禁举报人 / 解封 / 解封帖子 / 解封用户 / 解封举报人 / 全部解封 / 拉黑用户 / 禁言用户 / 解除禁言\n发布申请：同意 / 拒绝（在该申请卡片下回复）\n（拉黑 = 隐藏其全部内容；禁言 = 只停发帖评论，内容保留）' + chatIdLine);
     return { code: 0 };
   }
 

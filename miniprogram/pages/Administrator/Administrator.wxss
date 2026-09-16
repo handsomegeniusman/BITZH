@@ -117,6 +117,117 @@
   color: #c9aab6;
 }
 
+/* 说明行：卡片底部的小字（密码存哪、词库加完要等多久之类）。
+   用比 .card-desc 更小更淡的字：它是"备注"，不是要读的内容。 */
+.pwd-tip {
+  font-size: 22rpx;
+  color: #b08498;
+  line-height: 1.6;
+}
+
+/* 一行里左边说明、右边一个操作。用于「审核开关」——
+   开关从整行大按钮缩成右侧一个小按钮后，说明文字与它同一行。 */
+.card-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+}
+
+/* ---------- 审核开关的小按钮 ----------
+   ⚠️ 刻意**不复用** .feature-button：那个类是 88rpx 高的全宽主色渐变按钮，
+      和「保存联系方式」等长表单提交按钮共用。审核开关只是"开/关一个开关"，
+      占一整行会让人以为它比用户管理还重要。改这里不会影响别处。 */
+.toggle-mini {
+  flex-shrink: 0;
+  padding: 14rpx 40rpx;
+  font-size: 26rpx;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(90deg, #FF8FA3 0%, #E63A57 100%);
+  border-radius: 999rpx;
+  box-shadow: 0 6rpx 16rpx rgba(255, 128, 178, 0.28);
+}
+
+.toggle-mini:active {
+  opacity: 0.9;
+}
+
+/* ---------- 敏感词库 ---------- */
+.tier-row {
+  display: flex;
+  gap: 16rpx;
+}
+
+/* 档位选择：两个并排的卡片式单选。把说明写在选项里，
+   因为"拦下 / 只标记"这两个词本身说不清后果，选错了才会发现。 */
+.tier-chip {
+  flex: 1;
+  padding: 18rpx 20rpx;
+  border-radius: 14rpx;
+  background: #f7f2f4;
+  border: 2rpx solid transparent;
+}
+
+.tier-chip-on {
+  background: #fff0f4;
+  border-color: #E63A57;
+}
+
+.tier-name {
+  display: block;
+  font-size: 26rpx;
+  font-weight: 600;
+  color: #6b2140;
+}
+
+.tier-desc {
+  display: block;
+  margin-top: 4rpx;
+  font-size: 20rpx;
+  color: #b08498;
+  line-height: 1.4;
+}
+
+/* 词条行：词 + 档位标签 + 删除 */
+.word-item {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 16rpx 0;
+  border-top: 1rpx solid #f4e9ee;
+}
+
+.word-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 28rpx;
+  color: #6b2140;
+  word-break: break-all;
+}
+
+.word-tag {
+  flex-shrink: 0;
+  font-size: 20rpx;
+  padding: 4rpx 14rpx;
+  border-radius: 999rpx;
+  color: #9c3a2e;
+  background: #fde9e6;
+}
+
+/* 「只标记」比「拦下」轻，用灰绿色区分；两者一眼可辨但又都不抢眼 */
+.word-tag-review {
+  color: #1f7a3d;
+  background: #e5f6ea;
+}
+
+.word-del {
+  flex-shrink: 0;
+  font-size: 24rpx;
+  color: #c0392b;
+  padding: 4rpx 12rpx;
+}
+
 /* 行式导航入口 */
 .row {
   background: #ffffff;

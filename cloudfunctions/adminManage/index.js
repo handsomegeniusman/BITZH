@@ -62,8 +62,23 @@ const AUTHFAIL_COLL = 'AdminAuthFail';
 const APPLY_COLL = 'PostApply';
 // 黑名单集合
 const BLACK_COLL = 'BlackNum';
+// 动态敏感词库集合（管理员运行时追加的词；由 secCheck 读出后并进静态词表）
+const WORD_COLL = 'SensitiveWord';
 // 管理员列表一次最多取多少条（也是 revoke 的"最后一位"判据所依赖的上界）
 const ADMIN_LIST_LIMIT = 200;
+// 「最近处理」历史一次最多返回多少条（发布申请页下半部）
+const APPLY_HISTORY_LIMIT = 20;
+const APPLY_HISTORY_MAX = 50;
+
+// ---- 动态词库的边界 ----
+// 【为什么这几个数在这里又写了一遍】adminManage 与 secCheck 是两个独立部署包，
+//   require 不到对方的 sensitiveWords.js（跨云函数 require 在本项目不可用），
+//   而词表只有那边有。所以这里只做**结构性**校验（长度/容量/去重键），
+//   真正的归一化与"和静态词重复就丢弃"在 sensitiveWords.withExtraWords 里做。
+//   ⚠️ MAX_WORD_BANK 要与 sensitiveWords.MAX_EXTRA_WORDS 保持一致，改的时候两边一起改。
+const MAX_WORD_BANK = 300;
+const WORD_MIN_LEN = 2;
+const WORD_MAX_LEN = 20;
 
 // ---- 动作清单 ----
 // 【为什么要有这两张表】原先 action 名单在 handle() 里手写了两遍（白名单一次、密码豁免一次），
@@ -72,10 +87,13 @@ const ADMIN_LIST_LIMIT = 200;
 const ADMIN_ACTIONS = {
   list: 1, grant: 1, revoke: 1,
   listApplies: 1, approvePost: 1, rejectPost: 1,
+  authCheck: 1, listWords: 1, addWord: 1, delWord: 1,
 };
 // 身份可信时可免密码的动作（只读）。
-// 【注意】approvePost / rejectPost 刻意**不在**这里 —— 它们是写操作，永远要密码。
-const PASSWORD_OPTIONAL = { list: 1, listApplies: 1 };
+// 【注意】approvePost / rejectPost / addWord / delWord 刻意**不在**这里 —— 写操作永远要密码。
+// 【注意】authCheck 也**不在**这里，而且它必须是"永远要密码"的：它存在的意义就是
+//   「验一下这个密码对不对」，放进豁免名单等于永远返回对。
+const PASSWORD_OPTIONAL = { list: 1, listApplies: 1, listWords: 1 };
 
 // ============================================================
 // 配置：优先控制台环境变量 process.env，EMAS 无环境变量入口时用随函数部署的 config.js 兜底
@@ -225,6 +243,13 @@ async function resolveCallerId(ctx) {
 // 密码校验（第二道锁）
 // ============================================================
 
+const MSG_NO_PW_CONFIG = '服务端未配置管理员密码（ADMIN_PASSWORD），请在云函数环境变量或同目录 config.js 里配置后重新部署';
+// 【为什么"没填密码"要单独一个码】客户端要据此决定**弹什么**：NEED_PASSWORD → 弹密码输入框；
+//   BAD_PASSWORD → 弹「密码错误」。混成一个码的话，用户第一次进页面看到的就是"密码错误"。
+//   也正因为它只是"你没给"，**不计入 AdminAuthFail** —— 否则每进一次页面就消耗一次失败额度，
+//   几次误触就把管理员锁了（见 handle() 的门禁）。
+const MSG_NEED_PASSWORD = '该操作需要管理员密码，请先在「管理员」页填写操作密码';
+
 /** 服务端配置的密码摘要（64 位 hex）；没配返回空串。
  *  二选一：ADMIN_PASSWORD（明文）或 ADMIN_PASSWORD_SHA256（摘要，可让明文只存在于密码管理器里）。 */
 function passwordDigestConfigured() {
@@ -244,7 +269,7 @@ function passwordDigestConfigured() {
 function verifyPassword(input) {
   const want = passwordDigestConfigured();
   if (!want) {
-    return { ok: false, code: 'NO_PASSWORD_CONFIG', msg: '服务端未配置管理员密码（ADMIN_PASSWORD），请在云函数环境变量或同目录 config.js 里配置后重新部署' };
+    return { ok: false, code: 'NO_PASSWORD_CONFIG', msg: MSG_NO_PW_CONFIG };
   }
   const a = Buffer.from(want, 'hex');
   const b = Buffer.from(sha256Hex(input == null ? '' : String(input)), 'hex');
@@ -331,7 +356,7 @@ async function failReset(db, keys) {
 /** 带锁定的密码校验。**先查锁再比对** —— 锁定期内即使密码正确也拒绝，否则锁定形同虚设。 */
 async function checkPassword(ctx, db, input, caller) {
   if (!passwordDigestConfigured()) {
-    return { ok: false, code: 'NO_PASSWORD_CONFIG', msg: '服务端未配置管理员密码（ADMIN_PASSWORD），请在云函数环境变量或同目录 config.js 里配置后重新部署' };
+    return { ok: false, code: 'NO_PASSWORD_CONFIG', msg: MSG_NO_PW_CONFIG };
   }
   const keys = lockKeys(ctx, caller);
   const lockMs = numCfg('PW_LOCK_MS', 600000); // 默认 10 分钟
@@ -631,12 +656,28 @@ async function applyDecision(db, opt) {
     console.warn('[adminManage] 读申请行失败（不影响授予）', (e && e.message) || e);
   }
   if (row) {
+    // 【为什么要存处理人姓名快照】「最近处理」历史要把"谁批的"显示出来。只存 handledBy
+    //   （一个 openid）的话，列表就得再 join 一次管理员/Feeder 才显示得出来 —— 而这条历史
+    //   恰恰要在**处理人自己后来被移出管理员名单**之后仍然读得出来，join 会变成空白。
+    //   与 PostApply 申请时就快照 nickName/avatarUrl 是同一手法。
+    //   【顺序】只在确实有申请行时才去查，没用上的查询一次都不做（审批是低频操作，
+    //   多一次读无所谓，但没必要白读）。
+    let actorName = String(opt.actorName || '');
+    if (!actorName && opt.actorId) {
+      try {
+        const af = toList(await col(db, FEEDER_COLL).find({ userId: String(opt.actorId) }, { limit: 1 }));
+        actorName = (af[0] && af[0].nickName) || '';
+      } catch (e) {
+        console.warn('[adminManage] 查处理人昵称失败（历史里改显示 id 掩码）', (e && e.message) || e);
+      }
+    }
     try {
       await col(db, APPLY_COLL).updateOne({ _id: applyId }, {
         $set: {
           status: approve ? 'approved' : 'rejected',
           handledAt: now,
           handledBy: String(opt.actorId || ''),
+          handledByName: actorName,
           handledByTrusted: !!opt.actorTrusted,
           source: String(opt.source || 'miniapp'),
         },
@@ -661,8 +702,24 @@ async function applyDecision(db, opt) {
   };
 }
 
-/** 待处理的发布申请（补上用户资料，页面直接渲染） */
-async function doListApplies(db, identityMode) {
+/** 「最近处理」条数：非法/缺失用默认值，并封顶（防止客户端传个 10000 把函数拖垮） */
+function clampHistoryLimit(v) {
+  const n = Number(v);
+  if (!isFinite(n) || n <= 0) return APPLY_HISTORY_LIMIT;
+  return Math.min(Math.floor(n), APPLY_HISTORY_MAX);
+}
+
+/**
+ * 待处理的发布申请 + 最近处理历史（补上用户资料，页面直接渲染）。
+ *
+ * 【为什么两批一起返回】发布申请页上半部是待办、下半部是「最近处理」，同一个页面同一次刷新，
+ *   拆成两个 action 只会让页面多一次往返、还可能两次结果互相不一致。
+ * 【为什么历史读失败不整体失败】待办列表才是这个页面的主功能 —— 历史查挂了不该连带
+ *   让管理员批不了申请。
+ * 【为什么 event 是从 handle 传进来的】原先这个函数不收 event，取不到任何客户端参数；
+ *   historyLimit 要能由页面控制（第一屏少取点），所以签名改了。
+ */
+async function doListApplies(db, identityMode, event) {
   let rows = [];
   try {
     rows = toList(await col(db, APPLY_COLL).find(
@@ -674,8 +731,25 @@ async function doListApplies(db, identityMode) {
     return { ok: false, code: 'LOOKUP_FAILED', msg: '发布申请读取失败，请重试' };
   }
 
-  // 申请行里已有昵称快照，但用户可能改过昵称 —— 用实时资料覆盖，快照只作兜底
-  const ids = rows.map(function (r) { return r && r.userId; }).filter(Boolean);
+  // 已处理的行。只认明确的两种终态 —— 用 $ne:'pending' 会把"没有 status 的畸形行"也捞进来。
+  let handled = [];
+  try {
+    handled = toList(await col(db, APPLY_COLL).find(
+      { status: { $in: ['approved', 'rejected'] } },
+      { sort: { handledAt: -1 }, limit: clampHistoryLimit(event && event.historyLimit) }
+    ));
+  } catch (e) {
+    console.warn('[adminManage] 读取处理历史失败（不影响待办列表）', (e && e.message) || e);
+  }
+
+  // 申请行里已有昵称快照，但用户可能改过昵称 —— 用实时资料覆盖，快照只作兜底。
+  // 待办 + 历史两批人**去重后一次查完**，不要查两遍。
+  const ids = [];
+  const seenIds = {};
+  rows.concat(handled).forEach(function (r) {
+    const u = r && r.userId;
+    if (u && !seenIds[u]) { seenIds[u] = 1; ids.push(u); }
+  });
   let fmap = {};
   if (ids.length) {
     try {
@@ -686,7 +760,7 @@ async function doListApplies(db, identityMode) {
     }
   }
 
-  const out = rows.map(function (r) {
+  function toRow(r) {
     const uid = (r && r.userId) || '';
     const f = fmap[uid] || {};
     return {
@@ -696,8 +770,31 @@ async function doListApplies(db, identityMode) {
       avatarUrl: f.avatarUrl || (r && r.avatarUrl) || '',
       appliedAtText: fmtTime(r && r.appliedAt),
     };
+  }
+
+  const applies = rows.map(toRow);
+  const history = handled.map(function (r) {
+    const row = toRow(r);
+    row.status = (r && r.status) || '';
+    row.approved = (r && r.status) === 'approved';
+    row.handledAtText = fmtTime(r && r.handledAt);
+    // 处理人姓名是审批时写下的**快照**（见 applyDecision），不是 join 出来的 —— 快照取不到
+    // 才回落到 id 的掩码形态，再取不到就是飞书通道（那边没有终端用户身份）。
+    row.handledByName = (r && r.handledByName) || '';
+    row.handledByMasked = maskId((r && r.handledBy) || '');
+    row.source = (r && r.source) || '';
+    return row;
   });
-  return { ok: true, action: 'listApplies', applies: out, total: out.length, identityMode };
+
+  return {
+    ok: true,
+    action: 'listApplies',
+    applies: applies,
+    total: applies.length,
+    history: history,
+    historyTotal: history.length,
+    identityMode: identityMode,
+  };
 }
 
 /** 通过发布申请 */
@@ -756,6 +853,149 @@ async function doDecidePostApply(db, event) {
 }
 
 // ============================================================
+// 动态敏感词库（管理员追加的词）
+// ============================================================
+//
+// 【为什么写入放在这里，而不是 moderate / secCheck】
+//   词库是**全局生效**的：往里面塞一个「的」字就等于把所有人的发布功能打死。
+//   而 moderate 按契约是任何人都能调的函数（前端直接 invoke，无鉴权），
+//   secCheck 同理。所以写入必须挂在 adminManage 上 —— 它是本项目唯一
+//   "谁有权改用户权限"的函数，有管理员名单 + 密码两道锁。
+//   （授予发布权 grantPost 出于同样的理由也刻意不放 moderate，见 moderate/index.js 头注释。）
+//
+// 【读取不在这里】secCheck 在每次发布前预检时把词读出来并进静态词表，见
+//   sensitiveWords.withExtraWords。这里的三个 action 只负责增删查。
+
+/**
+ * 去重键：把用户输入压成一个稳定的 _id。
+ * 【注意它跟"归一化"不是一回事】真正的归一化（全角→半角 / 繁体→简体 / 去标点分隔符）
+ *   在 sensitiveWords.normalize 里做，因为那边才有词表、也要和静态词比对。
+ *   这里只需要一个"同一个人反复加同一个词不会产生两行"的键，所以只去空白与控制字符。
+ *   （跨云函数 require 在本项目不可用，adminManage 看不到 sensitiveWords.js。）
+ */
+function wordKey(raw) {
+  // 只去空白与控制字符，**刻意不动标点** —— 标点在某些变体里是语义的一部分（如「猫·贩」），
+  // 真要去标点是归一化该干的事，而那边才有词表（见 sensitiveWords.normalize）。
+  // 【为什么写成字符码循环而不是正则】不需要反斜杠，也就不存在"转义被吃掉"的空间。
+  const s = String(raw == null ? '' : raw);
+  let out = '';
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c <= 32 || c === 127) continue; // 空格/制表/换行等空白 + 控制字符
+    out += s.charAt(i);
+  }
+  return out;
+}
+
+function doListWords(db) {
+  return col(db, WORD_COLL).find({}, { sort: { time: -1 }, limit: MAX_WORD_BANK }).then(function (r) {
+    const rows = toList(r);
+    const words = rows.map(function (d) {
+      return {
+        word: (d && d.word) || '',
+        raw: (d && d.raw) || '',
+        tier: wordTier(d && d.tier),
+        by: maskId((d && d.by) || ''),
+        timeText: fmtTime(d && d.time),
+      };
+    });
+    return {
+      ok: true,
+      action: 'listWords',
+      words: words,
+      total: words.length,
+      max: MAX_WORD_BANK,
+      blocked: words.filter(function (x) { return x.tier === 'block'; }).length,
+    };
+  }).catch(function (e) {
+    console.error('[adminManage] 读取词库失败', (e && e.message) || e);
+    return { ok: false, code: 'LOOKUP_FAILED', msg: '词库读取失败，请重试' };
+  });
+}
+
+/** 档位归一化：只有 'review' 是特殊的，其余（含缺失/非法）一律按 'block' */
+function wordTier(v) {
+  return v === 'review' ? 'review' : 'block';
+}
+
+/** 追加一个词。加到词库里立刻生效（secCheck 侧有 60 秒缓存，最迟一分钟后全覆盖） */
+async function doAddWord(db, caller, event) {
+  const raw = String(event.word == null ? '' : event.word).trim();
+  const key = wordKey(raw);
+  if (!key) return { ok: false, code: 'WORD_EMPTY', msg: '请输入要加入词库的词' };
+  if (key.length < WORD_MIN_LEN) {
+    return { ok: false, code: 'WORD_TOO_SHORT', msg: '至少 ' + WORD_MIN_LEN + ' 个字（单字会误伤几乎所有正常内容）' };
+  }
+  if (key.length > WORD_MAX_LEN) {
+    return { ok: false, code: 'WORD_TOO_LONG', msg: '最多 ' + WORD_MAX_LEN + ' 个字，请填精炼的词组而不是整句话' };
+  }
+  const tier = wordTier(event.tier);
+
+  // 容量上界：先数一遍。词库是要在每次发布预检时全量遍历的，不能无限长。
+  let existing = [];
+  try {
+    existing = toList(await col(db, WORD_COLL).find({}, { limit: MAX_WORD_BANK }));
+  } catch (e) {
+    console.error('[adminManage] 读取词库失败，拒绝写入', (e && e.message) || e);
+    return { ok: false, code: 'LOOKUP_FAILED', msg: '词库读取失败，请重试' };
+  }
+
+  const hit = existing.filter(function (d) { return d && d._id === key; })[0] || null;
+  if (hit) {
+    // 【已存在就改档位，而不是报错】"这个词先按 review 收着、之后确认了再升成 block"
+    //   是管理员会给的典型判断路径；要能原地改档，而不必先删再加（删掉的那一瞬间
+    //   它是不设防的）。同一个词被两个人先后加一次也不该报错，所以这仍是幂等的。
+    const old = wordTier(hit.tier);
+    if (old === tier) {
+      return { ok: true, action: 'addWord', word: key, tier: tier, added: false, msg: '该词已在词库中' };
+    }
+    try {
+      await col(db, WORD_COLL).updateOne({ _id: key }, { $set: { tier: tier, raw: raw, by: String(caller && caller.id || ''), time: new Date() } });
+    } catch (e) {
+      console.error('[adminManage] 改词库档位失败', (e && e.message) || e);
+      return { ok: false, code: 'WRITE_FAILED', msg: '修改档位失败，请重试' };
+    }
+    console.log('[adminManage] addWord 改档 ' + old + '→' + tier + ' by=' + maskId(caller && caller.id));
+    return { ok: true, action: 'addWord', word: key, tier: tier, added: false, updated: true, msg: '已改为' + (tier === 'block' ? '拦截' : '复核') };
+  }
+
+  if (existing.length >= MAX_WORD_BANK) {
+    return { ok: false, code: 'WORD_BANK_FULL', msg: '词库已满（' + MAX_WORD_BANK + ' 条），请先删掉一些不再需要的词' };
+  }
+
+  try {
+    // _id 用去重键 —— 与 ModerateOps / PostApply 同一手法：唯一键冲突即天然去重
+    await col(db, WORD_COLL).insertOne({
+      _id: key,
+      word: key,
+      raw: raw,
+      tier: tier,
+      by: String(caller && caller.id || ''),
+      time: new Date(),
+    });
+  } catch (e) {
+    console.error('[adminManage] 写入词库失败', (e && e.message) || e);
+    return { ok: false, code: 'WRITE_FAILED', msg: '写入词库失败，请重试' };
+  }
+  console.log('[adminManage] addWord by=' + maskId(caller && caller.id) + ' tier=' + tier + ' len=' + key.length);
+  return { ok: true, action: 'addWord', word: key, tier: tier, added: true };
+}
+
+/** 从词库删掉一个词（手滑加错的唯一补救入口） */
+async function doDelWord(db, event) {
+  const key = wordKey(event.word);
+  if (!key) return { ok: false, code: 'WORD_EMPTY', msg: '缺少要删除的词' };
+  try {
+    const r = await col(db, WORD_COLL).deleteOne({ _id: key });
+    const n = (r && (r.deletedCount != null ? r.deletedCount : r.modifiedCount)) || 0;
+    return { ok: true, action: 'delWord', word: key, deleted: n };
+  } catch (e) {
+    console.error('[adminManage] 删除词库词条失败', (e && e.message) || e);
+    return { ok: false, code: 'WRITE_FAILED', msg: '删除失败，请重试' };
+  }
+}
+
+// ============================================================
 // 路由
 // ============================================================
 
@@ -788,16 +1028,36 @@ async function handle(ctx, event) {
   const identityMode = caller.trusted ? 'trusted' : 'untrusted';
 
   // ---- 第二道锁：密码 ----
-  // 只读动作（list / listApplies）在身份可信时才免密码：可信时"是不是管理员"已由服务端独立
-  // 确认，读个名单不必再输一次；不可信时那道锁是自报的，所以必须用密码补上。
-  // 写动作（grant / revoke / approvePost / rejectPost）永远要密码 —— 见 PASSWORD_OPTIONAL。
+  // 只读动作（list / listApplies / listWords）在身份可信时才免密码：可信时"是不是管理员"已由
+  // 服务端独立确认，读个名单不必再输一次；不可信时那道锁是自报的，所以必须用密码补上。
+  // 写动作（grant / revoke / approvePost / rejectPost / addWord / delWord）永远要密码
+  //   —— 见 PASSWORD_OPTIONAL。
+  // authCheck 也永远要密码，这是它存在的意义（见 PASSWORD_OPTIONAL 的注释）。
   if (!PASSWORD_OPTIONAL[action] || !caller.trusted) {
-    const pw = await checkPassword(ctx, db, event.password, caller);
+    // 顺序是承重的：先看服务端到底配没配密码，再看调用方给没给。
+    //   反过来的话，「忘了配 ADMIN_PASSWORD」会被报成 NEED_PASSWORD，管理员就会一直
+    //   被提示"请填写密码"而永远查不出真正的原因。
+    if (!passwordDigestConfigured()) {
+      return { ok: false, code: 'NO_PASSWORD_CONFIG', msg: MSG_NO_PW_CONFIG };
+    }
+    // 【空密码单独一个码，且不消耗失败额度】见 MSG_NEED_PASSWORD 的注释。
+    const supplied = (event.password == null) ? '' : String(event.password);
+    if (!supplied) {
+      return { ok: false, code: 'NEED_PASSWORD', msg: MSG_NEED_PASSWORD };
+    }
+    const pw = await checkPassword(ctx, db, supplied, caller);
     if (!pw.ok) return pw;
   }
 
   if (action === 'list') return await doList(db, admins, caller, identityMode);
-  if (action === 'listApplies') return await doListApplies(db, identityMode);
+  if (action === 'listApplies') return await doListApplies(db, identityMode, event);
+  // 走到这里密码必然已经验过了 —— 这就是本 action 的全部工作：
+  // 让客户端能"先验一次、存起来、后续复用"，而不用等某个真实写操作失败才发现存错了密码。
+  // 刻意不返回任何业务数据，免得它变成一个新的信息泄露口。
+  if (action === 'authCheck') return { ok: true, action: 'authCheck', identityMode: identityMode };
+  if (action === 'listWords') return await doListWords(db);
+  if (action === 'addWord') return await doAddWord(db, caller, event);
+  if (action === 'delWord') return await doDelWord(db, event);
   if (action === 'approvePost') return await doApprovePost(db, caller, identityMode, event);
   if (action === 'rejectPost') return await doRejectPost(db, caller, identityMode, event);
   if (action === 'grant') return await doGrant(db, admins, caller, identityMode, event);

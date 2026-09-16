@@ -1,8 +1,8 @@
-/* 管理员管理页样式
-   —— 卡片/头像/ID/按钮这套词汇表照抄 userManage.wxss，两页观感一致；
-      多出来的是密码行、那条身份提醒条，以及「发布申请」入口卡。
-   —— 本页样式是**页面级**的，@import 在这里用不了（试过，不生效），
-      pages/postApplyManage 里用的是同一套词汇表的副本。改按钮/卡片样式时要一起改。 */
+/* 发布申请页样式
+   —— 本项目的页面样式是**页面级**的，@import 在这里用不了（试过，不生效），
+      所以这套卡片/头像/ID/按钮/密码行的词汇表是从 adminManage.wxss 整段抄过来的，
+      保证两页观感一致。改按钮或卡片样式时，三处（userManage / adminManage / 本页）要一起改。
+      多出来的只有 .status-bad（"已拒绝"徽标）。 */
 .root {
   padding: 24rpx;
   box-sizing: border-box;
@@ -70,34 +70,6 @@
   line-height: 1.6;
 }
 
-/* ---------- 搜索区 ---------- */
-.search-bar {
-  display: flex;
-  align-items: center;
-  gap: 16rpx;
-  background: #fff;
-  border-radius: 16rpx;
-  padding: 16rpx;
-  margin-bottom: 24rpx;
-}
-
-.search-input {
-  flex: 1;
-  font-size: 28rpx;
-  padding: 8rpx 16rpx;
-  background: #f5f5f5;
-  border-radius: 8rpx;
-}
-
-.search-btn {
-  flex-shrink: 0;
-  padding: 8rpx 24rpx;
-  font-size: 26rpx;
-  background: #FF405E;
-  color: #fff;
-  border-radius: 8rpx;
-}
-
 /* ---------- 通用卡片 / 空态 ---------- */
 .card {
   background: #fff;
@@ -124,71 +96,6 @@
   font-weight: bold;
   color: #333;
   margin: 8rpx 0 16rpx;
-}
-
-/* 段标题右侧的「刷新」：本页进入时已自动加载，这是给"停在页面上时想重新拉一次"用的。
-   用小字号主色，避免和段标题抢注意力（它不是主操作）。 */
-.refresh-btn {
-  float: right;
-  font-size: 24rpx;
-  font-weight: normal;
-  color: #FF405E;
-  padding: 0 8rpx;
-}
-
-/* ---------- 发布申请入口卡 ----------
-   它不是一张内容卡（里面没有内容，只有"去哪、还有多少待办"），所以不复用 .card 的内边距，
-   而是做成一行可点的条：左边标题、右边条数、最右一个箭头 —— 一眼就知道能点进去。 */
-.entry-card {
-  display: flex;
-  align-items: center;
-  gap: 16rpx;
-  background: #fff;
-  border-radius: 16rpx;
-  padding: 28rpx 24rpx;
-  margin-bottom: 24rpx;
-}
-
-.entry-card:active {
-  background: #fafafa;
-}
-
-.entry-main {
-  flex: 1;
-  min-width: 0;
-}
-
-.entry-title {
-  display: block;
-  font-size: 30rpx;
-  font-weight: bold;
-  color: #333;
-}
-
-.entry-sub {
-  display: block;
-  margin-top: 4rpx;
-  font-size: 22rpx;
-  color: #999;
-}
-
-/* 条数徽标。有待办时用主色 + 加粗：这是一件"等你去处理的事"，不是普通说明文字 */
-.entry-count {
-  flex-shrink: 0;
-  font-size: 24rpx;
-  color: #bbb;
-}
-
-.entry-count-active {
-  color: #FF405E;
-  font-weight: bold;
-}
-
-.entry-arrow {
-  flex-shrink: 0;
-  font-size: 40rpx;
-  line-height: 1;
-  color: #ccc;
 }
 
 /* ---------- 用户头部（头像 + 昵称 + ID + 状态） ---------- */
@@ -275,6 +182,12 @@
   color: #27ae60;
 }
 
+/* 「已拒绝」徽标。用灰色而不是红色：拒绝是正常的审批结果，不是出错或被处罚的状态 */
+.status-bad {
+  background: #f0f0f0;
+  color: #888;
+}
+
 /* ---------- 操作行 ---------- */
 .user-actions {
   display: flex;
@@ -293,7 +206,7 @@
   line-height: 1.5;
 }
 
-/* 这三行用 view 而不是 button（userManage 用的是 button），
+/* 这三个按钮用 view 而不是 button（userManage 用的是 button），
    所以内边距要自己给：button 自带默认内边距，view 没有 */
 .btn {
   flex-shrink: 0;

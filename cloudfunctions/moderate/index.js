@@ -4,19 +4,27 @@
  * 【作用】把封禁/解封/下架/恢复的写库逻辑收口到服务端（ctx.mpserverless.db），
  *         前端复核中心、举报流程、飞书评论区指令统一调本函数。
  *
- * 【刻意不放的东西：发布权限授予】
+ * 【刻意不放的东西：发布权限授予、敏感词库写入】
  *   本函数是**契约上任何人都能调**的：前端 utils/moderate.js 直接 invoke 它，没有身份校验、
- *   没有密码。所以绝不能往这里加「批准发布权限」之类的**授予**动作 ——
+ *   没有密码。所以绝不能往这里加**授予**类动作 ——
  *   那等于开了一个客户端可直接调用的自助提权接口：
  *       invoke('moderate', { action:'grantPost', userId:'我自己' })
  *   就拿到发布权了。本函数今天已经能被任意调用去封禁别人（同样是灾难），但那是"破坏"，
  *   而自授利益是**零成本、且会以"这功能怎么用不了"的形式扩散**的 —— 性质不同，不是程度不同。
- *   发布权审批在 adminManage（有"调用者必须是管理员 + 密码"两道锁），写入逻辑是
- *   applyDecision()，两条审批路径都调它。真要动这块，去 adminManage，不要在这里开新 action。
+ *     · 发布权审批 → adminManage（"调用者必须是管理员 + 密码"两道锁），写入逻辑 applyDecision()。
+ *     · 敏感词库写入 → adminManage 的 addWord/delWord（同样两道锁）。词库是**全局生效**的，
+ *       往里面塞一个「的」字就等于把所有人的发布功能打死，比封禁一个人严重得多，
+ *       所以哪怕本函数已经能"破坏"了，也不给它这个能力。
+ *
+ * 【mute/unmute 为什么可以在这里】它与既有的 ban/unban 是**同一类**：剥夺 / 恢复**既有**权限。
+ *   这里禁掉的是"封禁类的授予"，而 unmute 只是把 mutePost 拿回来，canPost 原值全程没被动过 ——
+ *   解除禁言永远不等于"给了发布权"。判断依据是"这个动作能不能凭空多出一个权限"，不是"危险不危险"。
  *
  * 【接口】ctx.args：
  *   { action:'ban',      userId, reason }                          → 封禁用户（软删其全部推文/评论）
  *   { action:'unban',    userId }                                  → 解封用户（恢复其内容可见）
+ *   { action:'mute',     userId, reason, by }                      → 禁言（停发帖/评论，**不动既有内容**）
+ *   { action:'unmute',   userId, by }                              → 解除禁言（只清 mutePost，不授予发布权）
  *   { action:'hide',     targetType:'page'|'comment', targetId }   → 封禁帖子（下架单条内容，无阈值）
  *   { action:'restore',  targetType, targetId }                    → 解封帖子（恢复单条内容）
  *   { action:'reject',   userId }                                  → 永久拉黑（标记 BlackNum.permanent，不再受理申诉）
@@ -152,6 +160,70 @@ async function unblacklist(db, userId) {
   }
   await cascadeHandled(db, { userId: id }); // 联动关闭该用户相关的待复核/举报/申诉
   return { ok: true, action: 'unblacklist', userId: id };
+}
+
+const MSG_SELF_MUTE = '不能禁言自己，请让另一位管理员操作';
+
+/**
+ * 解析调用者 userId —— **只用于「不许禁言自己」这一条保护**，不是安全门槛。
+ * 【为什么可以接受不可信来源】这道守卫防的是**手滑**：管理员在自己那一行点「禁言」，
+ *   把自己锁死后只能找另一位管理员解除。它不是防越权的 —— 能调本函数的攻击者本来就能禁言
+ *   任何人（见文件头），伪造成"我是自己"只会让请求被拒，拿不到任何新能力。
+ *   所以身份取不到时**放行**：宁可不拦手滑，也不能让禁言功能整体不可用。
+ * 【飞书路径】调用方是飞书 open_id，与本项目 userId 不同源，天然不等于目标 → 守卫自动失效。
+ *   即"飞书里可以禁言自己"，刻意接受（操作者是人，被操作对象是账号，不必同一）。
+ */
+async function resolveCallerId(ctx, event) {
+  const user = ctx && ctx.mpserverless && ctx.mpserverless.user;
+  if (user && typeof user.getInfo === 'function') {
+    try {
+      const r = await user.getInfo();
+      const cands = [r && r.result && r.result.user, r && r.result, r && r.user, r];
+      for (let i = 0; i < cands.length; i++) {
+        const c = cands[i];
+        if (c && typeof c.userId === 'string' && c.userId) return c.userId;
+      }
+    } catch (e) { /* 取不到就走下面的自报 id */ }
+  }
+  return String((event && event.callerId) || '').trim();
+}
+
+/**
+ * 禁言用户：剥夺「发帖 + 评论」权限，但**不动任何既有内容**，也不写黑名单。
+ * 【与 ban 的区别】ban = 拉黑 + 软删全部内容；mute = 只掐发布能力，人还能看、还能点赞。
+ *   两者正交：可以只禁言不拉黑（初犯、吵架、刷屏），也可以先拉黑再禁言。
+ * 【为什么写 updateMany 而不是 updateOne】同一 userId 可能存在重复 Feeder 文档
+ *   （与 backfillCanPost / applyDecision 同理由：客户端读到哪条不确定），只改一条会出现
+ *   "禁言了但还是能发"这种最难查的假成功。
+ * 【绝不能碰 Page / Comment】用户明确要求被禁言者"已发过的内容保留不动"。
+ *   这是本功能唯一容易写错的地方 —— 从 ban 顺手复制一行过来就会清掉人的历史内容。
+ *   tests/moderateActions.test.js 有一条断言盯着这个函数的 Page/Comment 写次数为 0。
+ * 【解禁不授权】unmute 只把 mutePost 置回 false，canPost 的原值一直没被动过 ——
+ *   所以"解除禁言"永远不等于"给了发布权"，这也是它能放在本函数（无鉴权）里的原因。
+ */
+async function mute(db, userId, reason, by) {
+  const id = String(userId || '').trim();
+  if (!id) return { ok: false, msg: '缺 userId' };
+  const now = new Date();
+  await col(db, 'Feeder').updateMany({ userId: id }, {
+    $set: {
+      mutePost: true, muteTime: now,
+      muteBy: String(by || ''), muteReason: String(reason || ''),
+    },
+  });
+  return { ok: true, action: 'mute', userId: id };
+}
+
+/** 解除禁言：只清 mutePost（canPost 原值不动）。muteTime/muteBy 保留 —— 那是审计，不该抹掉 */
+async function unmute(db, userId, by) {
+  const id = String(userId || '').trim();
+  if (!id) return { ok: false, msg: '缺 userId' };
+  // 用 $set false 而不是 $unset：本仓既有的"撤销"写法就是置回 false（见 hide/restore），
+  // 且保留字段名能让线上数据里"有过禁言"这件事仍可查。
+  await col(db, 'Feeder').updateMany({ userId: id }, {
+    $set: { mutePost: false, unmuteTime: new Date(), unmuteBy: String(by || '') },
+  });
+  return { ok: true, action: 'unmute', userId: id };
 }
 
 /** 封禁帖子：下架单条内容（管理员手动，无阈值，区别于举报 takedown） */
@@ -379,9 +451,12 @@ async function confirmResult(event, r) {
     else if (r.action === 'restore') text = '✅ 已解封该帖子：' + r.targetId;
     else if (r.action === 'unblacklist') text = '✅ 已解封用户：' + r.userId + '（内容仍隐藏，恢复全部内容请回复「全部解封」）';
     else if (r.action === 'reject') text = '✅ 已永久拉黑用户：' + r.userId + '（不再受理申诉）';
+    else if (r.action === 'mute') text = '✅ 已禁言用户：' + r.userId + '（不能再发帖/评论，已发内容保留）';
+    else if (r.action === 'unmute') text = '✅ 已解除禁言：' + r.userId;
     else text = '✅ 已执行 ' + r.action;
   } else {
-    text = '❌ 操作失败：' + (r.msg || '未知');
+    // 失败回执带上 code：SELF_MUTE / 缺 userId 这类要让人一眼知道是"没执行"还是"执行了但被挡"
+    text = '❌ 操作失败：' + (r.msg || '未知') + (r.code ? ' [' + r.code + ']' : '');
   }
   if (event.replyTo) {
     try {
@@ -460,6 +535,19 @@ module.exports = async function (ctx) {
         break;
       case 'restore':
         r = await restore(db, event.targetType, event.targetId);
+        break;
+      case 'mute': {
+        // 「不许禁言自己」：见 resolveCallerId 注释 —— 这是防手滑，不是防越权
+        const callerId = await resolveCallerId(ctx, event);
+        if (callerId && callerId === String(event.userId || '').trim()) {
+          r = { ok: false, code: 'SELF_MUTE', msg: MSG_SELF_MUTE };
+          break;
+        }
+        r = await mute(db, event.userId, event.reason, event.by || callerId);
+        break;
+      }
+      case 'unmute':
+        r = await unmute(db, event.userId, event.by || await resolveCallerId(ctx, event));
         break;
       case 'takedown':
         // 举报即下架：走阈值判定，不回发确认（避免刷屏）

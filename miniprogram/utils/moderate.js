@@ -26,6 +26,21 @@ module.exports = {
   unban: function (userId) {
     return invoke('unban', { userId: userId });
   },
+  /**
+   * 禁言用户：停掉发帖 + 评论的能力，但**不动任何既有内容**、也不进黑名单。
+   * 【与 ban 的区别，选之前想清楚】ban = 拉黑 + 软删全部内容（重）；mute = 只掐发布能力（轻）。
+   *   初犯/刷屏/吵架用 mute，恶意/违法用 ban。两者正交，可以只禁言不拉黑。
+   * 【服务端会拒绝禁言自己】（SELF_MUTE）—— 否则管理员能把自己锁死，只能找另一位管理员解除。
+   * @param {String} userId 目标用户ID
+   * @param {String} [reason] 原因（可选，写入 Feeder.muteReason 备查）
+   */
+  mute: function (userId, reason) {
+    return invoke('mute', { userId: userId, reason: reason });
+  },
+  /** 解除禁言：只把 mutePost 拿掉。**不授予发布权** —— canPost 原值全程没被动过 */
+  unmute: function (userId) {
+    return invoke('unmute', { userId: userId });
+  },
   /** 举报即下架：≥阈值才软删（阈值在云函数里配置），reporterId 用于原子去重计数 */
   takedown: function (targetType, targetId, reporterId) {
     return invoke('takedown', { targetType: targetType, targetId: targetId, reporterId: reporterId });

@@ -105,6 +105,21 @@ function check(name, actual, expected) {
     ['拉黑用户 oAbCdEfGhIjKlMnOpQrS1',
       { verb: 'reject', object: 'user', userId: 'oAbCdEfGhIjKlMnOpQrS1' },
       { action: 'reject', userId: 'oAbCdEfGhIjKlMnOpQrS1', reason: '永久拉黑' }],
+    // 禁言 / 解除禁言（2026-09-16）：比拉黑轻一档 —— 只停发帖评论，**保留既有内容**、不进黑名单。
+    // 🔴 期望的 action 是 'mute'/'unmute' 而**不是** 'ban'：写成 ban 会在群里打「禁言用户」时
+    //    顺手把对方的历史推文/评论全部软删 —— 症状是静默的，行为看起来还"成功"了。
+    ['禁言用户',
+      { verb: 'mute', object: 'user' },
+      { action: 'mute', userId: '6475a94bf43e605f713f2ce1', reason: '飞书指令' }],
+    ['解除禁言',
+      { verb: 'unmute', object: 'user' },
+      { action: 'unmute', userId: '6475a94bf43e605f713f2ce1', reason: '飞书指令' }],
+    ['禁言用户 64fa07d6a09a9bd68b13a8a0',
+      { verb: 'mute', object: 'user', userId: '64fa07d6a09a9bd68b13a8a0' },
+      { action: 'mute', userId: '64fa07d6a09a9bd68b13a8a0', reason: '飞书指令' }],
+    ['解除禁言 oAbCdEfGhIjKlMnOpQrS1',
+      { verb: 'unmute', object: 'user', userId: 'oAbCdEfGhIjKlMnOpQrS1' },
+      { action: 'unmute', userId: 'oAbCdEfGhIjKlMnOpQrS1', reason: '飞书指令' }],
   ];
   reportCases.forEach(function (c) {
     const cmd = c[0];
@@ -278,6 +293,75 @@ function check(name, actual, expected) {
   check('裸「封禁」未被新命令挤掉', cb.parseCommand('封禁'), { verb: 'ban', object: null });
   check('裸「解封」未被新命令挤掉', cb.parseCommand('解封'), { verb: 'unban', object: null });
   check('「全部解封」未被新命令挤掉', cb.parseCommand('全部解封'), { verb: 'unban', object: 'all' });
+
+  // ============================================================
+  // 禁言 / 解除禁言（2026-09-16）
+  // ============================================================
+  console.log('\n[禁言命令]');
+
+  // 解析层：不撞任何既有命令（撞了会让「封禁用户」变成轻处置、或反之）
+  check('「禁言用户」不撞「封禁用户」/「拉黑用户」',
+    [cb.parseCommand('禁言用户').verb, cb.parseCommand('封禁用户').verb, cb.parseCommand('拉黑用户').verb],
+    ['mute', 'ban', 'reject']);
+  check('「解除禁言」不撞「解封用户」/「全部解封」',
+    [cb.parseCommand('解除禁言').verb, cb.parseCommand('解封用户').verb, cb.parseCommand('全部解封').verb],
+    ['unmute', 'unban', 'unban']);
+  // 带 ID 形式与裸命令必须是同一个 verb，否则同一条命令在"有 ID"和"没 ID"时行为不同
+  check('带 ID 与裸命令同 verb',
+    [cb.parseCommand('禁言用户 64fa07d6a09a9bd68b13a8a0').verb, cb.parseCommand('解除禁言 64fa07d6a09a9bd68b13a8a0').verb],
+    ['mute', 'unmute']);
+  // 用户的 ID 形态不止 24 位 hex（还有 openid），短 ID 一律不认 —— 防止把「禁言用户了」当命令
+  check('「禁言用户了」不被当命令（ID 形态校验生效）', cb.parseCommand('禁言用户了'), null);
+
+  // 推送里没有用户 ID 时，必须给带 ID 写法的提示，而不是静默失败
+  const noUserText = '【内容违规】推文\n内容：xx\n——————\n评论区回复：\n· 封禁 = 封禁该帖子';
+  check('无用户ID的推送下「禁言用户」→ 提示带 ID 的写法',
+    cb.resolveAction(cb.parseCommand('禁言用户'), 'review', noUserText),
+    { error: '❌ 未能解析出用户ID（可回复「禁言用户 <用户ID>」）' });
+  check('无用户ID的推送下「解除禁言」→ 提示带 ID 的写法',
+    cb.resolveAction(cb.parseCommand('解除禁言'), 'review', noUserText),
+    { error: '❌ 未能解析出用户ID（可回复「解除禁言 <用户ID>」）' });
+
+  // 🔴 跨文件契约：入口函数里 `if (cmd.userId)` 那条分支会把 cmd.verb **原样当 action**
+  //    丢给 moderate 云函数。所以两边的名字必须逐字一致 —— 名字漂开的表现是
+  //    群里回「禁言用户 <ID>」得到「未知 action: mute」，而且本地测不出（解析层是对的）。
+  //    这里直接把 verb 当 action 调一次真实的 moderate 来钉住它。
+  const mod = require(path.resolve(__dirname, '..', 'cloudfunctions', 'moderate', 'index.js'));
+  function miniDb() {
+    return { collection: function () {
+      return {
+        find: async function () { return { result: [] }; },
+        updateMany: async function () { return { modifiedCount: 1 }; },
+        updateOne: async function () { return {}; },
+        insertOne: async function () { return {}; },
+        deleteOne: async function () { return {}; },
+      };
+    } };
+  }
+  const onlyWrites = [];
+  const watchDb = { collection: function (name) {
+    return {
+      find: async function () { return { result: [] }; },
+      updateMany: async function (f, u) { onlyWrites.push({ name: name, update: u }); return { modifiedCount: 1 }; },
+      updateOne: async function () { return {}; },
+      insertOne: async function () { return {}; },
+      deleteOne: async function () { return {}; },
+    };
+  } };
+
+  const rMute = await mod({ args: { action: cb.parseCommand('禁言用户').verb, userId: 'u1' }, mpserverless: { db: miniDb() } });
+  check('verb 当 action 直接调 moderate → 能执行（名称逐字一致）',
+    { ok: rMute.ok, action: rMute.action }, { ok: true, action: 'mute' });
+  const rUnmute = await mod({ args: { action: cb.parseCommand('解除禁言').verb, userId: 'u1' }, mpserverless: { db: miniDb() } });
+  check('unmute 同理', { ok: rUnmute.ok, action: rUnmute.action }, { ok: true, action: 'unmute' });
+
+  // 走一遍完整的「群里回禁言用户 <ID>」路径：解析 → 当 action → moderate。
+  // 断言的是**只有 Feeder 被写** —— 这是"禁言不动内容"在命令链路上的最后一道保障。
+  const parsedMute = cb.parseCommand('禁言用户 64fa07d6a09a9bd68b13a8a0');
+  await mod({ args: { action: parsedMute.verb, userId: parsedMute.userId }, mpserverless: { db: watchDb } });
+  check('群命令路径只写 Feeder（不软删对方内容）',
+    [onlyWrites.length, onlyWrites[0] && onlyWrites[0].name, onlyWrites[0] && onlyWrites[0].update.$set.mutePost],
+    [1, 'Feeder', true]);
 
   // ============================================================
   console.log('\n结果: ' + pass + ' 通过 / ' + fail + ' 失败');

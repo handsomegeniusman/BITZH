@@ -71,6 +71,30 @@ module.exports = {
   whoami: function (password) {
     return invoke('whoami', { password: password });
   },
+  /**
+   * 待处理的发布申请（发布权限收紧成申请-审批制后的待办队列）。
+   * 与 list 一样是只读动作：服务端能独立确认身份时不需要密码。
+   * @returns {Promise<{ok:true, applies:Array<{applyId,userId,nickName,avatarUrl,appliedAtText}>, total:number}>}
+   */
+  listApplies: function (password) {
+    return invoke('listApplies', { password: password });
+  },
+  /**
+   * 通过发布申请：服务端把该用户的 Feeder.canPost 置 true（永久有效）。
+   * 黑名单用户会被服务端一票否决（BLACKLISTED），即便这里点了通过。
+   * @returns {Promise<{ok:true, userId:string, nickName:string, noApply:boolean}>}
+   */
+  approvePost: function (userId, applyId, password) {
+    return invoke('approvePost', { userId: userId, applyId: applyId, password: password });
+  },
+  /**
+   * 拒绝发布申请：只标记这条申请，**不碰该用户已有的任何权限**（本期不做撤销）。
+   * 用户当天不能再申请（PostApply 的 _id 已占用），次日起可再申请。
+   * @returns {Promise<{ok:true, userId:string, noApply:boolean}>}
+   */
+  rejectPost: function (userId, applyId, password) {
+    return invoke('rejectPost', { userId: userId, applyId: applyId, password: password });
+  },
   /** 服务端身份**不可信**时调用（页面要显示红色提醒条），判断依据是返回里的 identityMode */
   isTrusted: function (res) {
     return !!(res && res.identityMode === 'trusted');

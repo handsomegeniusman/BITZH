@@ -1,0 +1,7 @@
+{
+  "name": "backfillCanPost",
+  "version": "1.0.0",
+  "description": "一次性回填云函数（把已发过帖/评论过的老用户标记为已获批发布权），dry-run 优先，用完即删",
+  "main": "index.js",
+  "dependencies": {}
+}

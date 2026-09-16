@@ -7,7 +7,9 @@
   <view class="tab-bar-item" data-path="/pages/index/index" bindtap="switchTab">
     <view class="tab-text {{selected === 1 ? 'active' : ''}}">小猫书</view>
   </view>
-  <view class="tab-bar-center" catchtap="addPost" wx:if="{{audit}}">
+  <!-- 加号只在「发布开关开着」且「当前用户有发布权」时出现（管理员，或申请获批的普通用户）。
+       两个条件都在 js 的 refreshAudit() 里算好，这里只认结果。 -->
+  <view class="tab-bar-center" catchtap="addPost" wx:if="{{audit && canPublish}}">
     <view class="add-btn">＋</view>
   </view>
   <view class="tab-bar-item" data-path="/pages/about/about" bindtap="switchTab">

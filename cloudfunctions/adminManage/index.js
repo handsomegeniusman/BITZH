@@ -25,12 +25,29 @@
  *   initUserState 拿不到管理员判定，全站后台一起失效）。步骤见 README 第六.5 节。
  *
  * 【接口】ctx.args：
- *   { action:'list',   password? }                     → 管理员列表（身份不可信时必须带密码）
- *   { action:'grant',  userId, name?, password }       → 设为管理员
- *   { action:'revoke', userId, password }              → 移除管理员
- *   { action:'whoami', password }                      → 诊断身份来源（实测第一道锁用）
- *   { action:'list'|'grant'|'revoke', callerId? }      → callerId 仅作为身份不可信时的降级来源
+ *   { action:'list',        password? }                     → 管理员列表（身份不可信时必须带密码）
+ *   { action:'grant',       userId, name?, password }       → 设为管理员
+ *   { action:'revoke',      userId, password }              → 移除管理员
+ *   { action:'whoami',      password }                      → 诊断身份来源（实测第一道锁用）
+ *   { action:'listApplies', password? }                     → 待处理的发布权限申请
+ *   { action:'approvePost', userId, applyId?, password }    → 通过发布申请
+ *   { action:'rejectPost',  userId, applyId?, password }    → 拒绝发布申请
+ *   { action:'decidePostApply', userId, decision, internalSecret }  → 【飞书通道】同上，见下
+ *   { action:'list'|'grant'|…, callerId? }                  → callerId 仅作为身份不可信时的降级来源
  *   返回 { ok:true, ... } 或 { ok:false, code, msg }；异常兜底不抛。
+ *
+ * 【为什么发布权审批放在本函数】写入逻辑（applyDecision）只能有一份，否则两条审批路径
+ *   迟早漂移。而云函数各自独立打包、跨目录 require 不可用，所以只能"一个函数持有写入逻辑、
+ *   另一个用 function.invoke 调它"。放在 adminManage 而不是 moderate 的理由：
+ *   moderate 是**契约上任何人都能调**的函数（前端 utils/moderate.js 直接 invoke，无鉴权），
+ *   往它里面加"批准发布"等于新增一个客户端可直接调用的**自助提权接口**
+ *   （invoke('moderate',{action:'grantPost',userId:'我自己'}) 就拿到发布权）。
+ *   它今天已经能被任意调用去封禁别人，但那是"破坏"，这是"零成本自授利益"—— 性质不同。
+ *
+ * 【decidePostApply 为什么走另一套鉴权】飞书回调里没有终端用户身份，上面那两道锁
+ *   （调用者必须是管理员 + 密码）在这里无从谈起。它改用 FEISHU_INTERNAL_SECRET 校验，
+ *   与 feishuCallback 共享一个密钥；未配置时**硬失败**（fail-closed）—— 忘配置应该
+ *   得到一个"哑掉"的通道，而不是一个"谁都能批"的通道。
  */
 'use strict';
 const crypto = require('crypto');
@@ -41,8 +58,24 @@ const ADMIN_COLL = 'BITZHAdministrator';
 const FEEDER_COLL = 'Feeder';
 // 密码失败计数集合（防暴力猜密码）
 const AUTHFAIL_COLL = 'AdminAuthFail';
+// 发布权限申请集合（_id = userId_北京时间日期）
+const APPLY_COLL = 'PostApply';
+// 黑名单集合
+const BLACK_COLL = 'BlackNum';
 // 管理员列表一次最多取多少条（也是 revoke 的"最后一位"判据所依赖的上界）
 const ADMIN_LIST_LIMIT = 200;
+
+// ---- 动作清单 ----
+// 【为什么要有这两张表】原先 action 名单在 handle() 里手写了两遍（白名单一次、密码豁免一次），
+//   新增一个 action 时漏改任一处就出漏洞：漏改白名单 → 未知 action；**漏改密码豁免 → 新 action 不要密码**。
+//   合成表以后，加 action 只改一个地方。
+const ADMIN_ACTIONS = {
+  list: 1, grant: 1, revoke: 1,
+  listApplies: 1, approvePost: 1, rejectPost: 1,
+};
+// 身份可信时可免密码的动作（只读）。
+// 【注意】approvePost / rejectPost 刻意**不在**这里 —— 它们是写操作，永远要密码。
+const PASSWORD_OPTIONAL = { list: 1, listApplies: 1 };
 
 // ============================================================
 // 配置：优先控制台环境变量 process.env，EMAS 无环境变量入口时用随函数部署的 config.js 兜底
@@ -329,6 +362,45 @@ async function checkPassword(ctx, db, input, caller) {
 }
 
 // ============================================================
+// 飞书通道的内部密钥（第三道鉴权路径，只服务 decidePostApply）
+// ============================================================
+
+/**
+ * 校验飞书通道的内部密钥。
+ * 【为什么比对摘要而不是明文】两边都取 sha256 得到定长 32 字节，timingSafeEqual 就不会因
+ *   长度不等抛 ERR_CRYPTO_TIMING_SAFE_EQUAL_LENGTH；长度差异本身也不再是侧信道。
+ *   （与 verifyPassword 同一手法。）
+ * 【为什么没配是失败而不是放行】忘了配 FEISHU_INTERNAL_SECRET 应该得到一个"哑掉"的飞书
+ *   审批通道，而不是一个"随便传个值就能批"的通道 —— 这是本函数最重要的一条，
+ *   和 verifyPassword 的 NO_PASSWORD_CONFIG 是同一个哲学。
+ */
+function verifyInternalSecret(input) {
+  const want = String(getCfg('FEISHU_INTERNAL_SECRET') || '');
+  if (!want) {
+    return {
+      ok: false,
+      code: 'NO_INTERNAL_SECRET',
+      msg: '服务端未配置 FEISHU_INTERNAL_SECRET，飞书审批通道已关闭（刻意如此：忘配置应该哑掉，而不是谁都能批）',
+    };
+  }
+  const a = Buffer.from(sha256Hex(want), 'hex');
+  const b = Buffer.from(sha256Hex(input == null ? '' : String(input)), 'hex');
+  if (a.length !== b.length) return { ok: false, code: 'BAD_INTERNAL_SECRET', msg: '内部密钥错误' };
+  return crypto.timingSafeEqual(a, b) ? { ok: true } : { ok: false, code: 'BAD_INTERNAL_SECRET', msg: '内部密钥错误' };
+}
+
+/**
+ * 北京时间当天键（YYYY-MM-DD）。
+ * 【为什么要自己算】云函数容器是 UTC：`new Date().toISOString().slice(0,10)` 会在北京时间
+ *   早上 8 点翻日，于是"一天只能申请一次"的边界落在早上 8 点而不是零点。
+ * 【与 postApply/index.js 的同名函数逐字相同 —— 刻意复制，别顺手重构】
+ *   云函数各自独立打包，跨目录 require 在这里不可用。要改就两边一起改。
+ */
+function beijingDayKey(d) {
+  return new Date(d.getTime() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+}
+
+// ============================================================
 // 动作
 // ============================================================
 
@@ -491,6 +563,199 @@ async function doWhoami(ctx, db, caller, event) {
 }
 
 // ============================================================
+// 发布权限审批
+// ============================================================
+
+/**
+ * 【唯一的发布权写入者】小程序审批、飞书审批两条路径都调这里。
+ * 【绝不许在别处再写一次 Feeder.canPost】两份写入逻辑迟早漂移（比如一边补了黑名单判定、
+ *   另一边忘了），而漂移的后果是"某条路径能把权限批给不该批的人"，很难被发现。
+ * @param {Object} opt {userId, decision:'approve'|'reject', applyId?, actorId, actorTrusted, source}
+ */
+async function applyDecision(db, opt) {
+  const userId = String(opt.userId == null ? '' : opt.userId).trim();
+  if (badUserId(userId)) return { ok: false, code: 'BAD_USER_ID', msg: '用户ID 格式不正确' };
+
+  // 1) 必须是已注册用户
+  let feeders;
+  try {
+    feeders = toList(await col(db, FEEDER_COLL).find({ userId: userId }, { limit: 1 }));
+  } catch (e) {
+    // 与 NOT_FEEDER 分开：数据库抖一下不该被当成"这人没注册"
+    return { ok: false, code: 'LOOKUP_FAILED', msg: '用户资料查询失败，请重试' };
+  }
+  if (!feeders.length) return { ok: false, code: 'NOT_FEEDER', msg: '该用户未注册，不能授予发布权限' };
+
+  // 2) 黑名单一票否决（即便管理员点了"通过"也不给）
+  //    查黑名单出错时不放行 —— 这一步是"不给被拉黑的人开权限"的唯一执行点，宁可失败。
+  try {
+    const banned = toList(await col(db, BLACK_COLL).find({ id: userId }, { limit: 1 }));
+    if (banned.length) {
+      return { ok: false, code: 'BLACKLISTED', msg: '该用户在黑名单中，不能授予发布权限' };
+    }
+  } catch (e) {
+    console.error('[adminManage] 黑名单查询失败，拒绝授予', (e && e.message) || e);
+    return { ok: false, code: 'LOOKUP_FAILED', msg: '黑名单查询失败，请重试' };
+  }
+
+  const now = new Date();
+  const approve = opt.decision === 'approve';
+
+  if (approve) {
+    // 【为什么是 updateMany 而不是 updateOne】Feeder 里同一个 userId 可能存在重复注册文档，
+    //   而客户端 initUserState 读到哪一条是不确定的 —— 必须全部打上才保证生效。
+    // 【为什么按 userId 而不是 _id】canPost 的读者是 find('Feeder', {userId: 会话id})。
+    const set = { canPost: true };
+    // 【幂等：已经批过的不覆盖授予时间与出处】重复点「通过」、或批准一条早就处理过的申请时，
+    //   canPostBy / canPostTime 要留住**第一次**是谁批的 —— 那是一份审计记录，
+    //   被后一次操作改写就等于丢了"这个人是怎么拿到权限的"（回填进来的人尤其明显：
+    //   出处应当是 backfill，不该变成某个管理员）。
+    //   canPost 本身仍然每次都写（幂等，值不变），这样重复文档照样能被补齐。
+    if (!feeders[0].canPost) {
+      set.canPostBy = String(opt.actorId || '');
+      set.canPostTime = now;
+    }
+    await col(db, FEEDER_COLL).updateMany({ userId: userId }, { $set: set });
+  }
+  // 【拒绝时刻意什么都不写 Feeder】本期明确"不做撤销"。让 reject 去写 canPost:false，
+  //   等于一条误发的「拒绝」（在飞书群里"拒绝"是个很短很泛的词）就能抹掉已获批者的权限。
+  //   拒绝只表示"这次的申请没通过"，不改变任何已有权限。
+
+  // 3) 更新申请行。查不到是正常情况：管理员主动授予、或回填进来的老用户根本没申请过。
+  const applyId = String(opt.applyId || '').trim() || (userId + '_' + beijingDayKey(now));
+  let row = null;
+  try {
+    const r = toList(await col(db, APPLY_COLL).find({ _id: applyId }, { limit: 1 }));
+    row = r[0] || null;
+  } catch (e) {
+    console.warn('[adminManage] 读申请行失败（不影响授予）', (e && e.message) || e);
+  }
+  if (row) {
+    try {
+      await col(db, APPLY_COLL).updateOne({ _id: applyId }, {
+        $set: {
+          status: approve ? 'approved' : 'rejected',
+          handledAt: now,
+          handledBy: String(opt.actorId || ''),
+          handledByTrusted: !!opt.actorTrusted,
+          source: String(opt.source || 'miniapp'),
+        },
+      });
+    } catch (e) {
+      // 授予已经写成功了，申请状态没标上只是"待办列表里还留着" —— 不该让整个操作失败
+      console.error('[adminManage] 更新申请行失败（权限已授予）', (e && e.message) || e);
+    }
+  }
+
+  console.log('[adminManage] applyDecision ' + opt.decision + ' actor=' + maskId(opt.actorId) +
+    ' trusted=' + !!opt.actorTrusted + ' src=' + (opt.source || '') +
+    ' target=' + maskId(userId) + ' hasApply=' + !!row);
+  return {
+    ok: true,
+    action: approve ? 'approvePost' : 'rejectPost',
+    userId: userId,
+    nickName: String(feeders[0].nickName || ''),
+    noApply: !row,
+    applyId: applyId,
+    decision: opt.decision,
+  };
+}
+
+/** 待处理的发布申请（补上用户资料，页面直接渲染） */
+async function doListApplies(db, identityMode) {
+  let rows = [];
+  try {
+    rows = toList(await col(db, APPLY_COLL).find(
+      { status: 'pending' },
+      { sort: { appliedAt: 1 }, limit: ADMIN_LIST_LIMIT }
+    ));
+  } catch (e) {
+    console.error('[adminManage] 读取发布申请失败', (e && e.message) || e);
+    return { ok: false, code: 'LOOKUP_FAILED', msg: '发布申请读取失败，请重试' };
+  }
+
+  // 申请行里已有昵称快照，但用户可能改过昵称 —— 用实时资料覆盖，快照只作兜底
+  const ids = rows.map(function (r) { return r && r.userId; }).filter(Boolean);
+  let fmap = {};
+  if (ids.length) {
+    try {
+      const feeders = toList(await col(db, FEEDER_COLL).find({ userId: { $in: ids } }, { limit: ADMIN_LIST_LIMIT }));
+      feeders.forEach(function (f) { if (f && f.userId) fmap[f.userId] = f; });
+    } catch (e) {
+      console.warn('[adminManage] 补申请者资料失败（用快照兜底）', (e && e.message) || e);
+    }
+  }
+
+  const out = rows.map(function (r) {
+    const uid = (r && r.userId) || '';
+    const f = fmap[uid] || {};
+    return {
+      applyId: (r && r._id) || '',
+      userId: uid,
+      nickName: f.nickName || (r && r.nickName) || '',
+      avatarUrl: f.avatarUrl || (r && r.avatarUrl) || '',
+      appliedAtText: fmtTime(r && r.appliedAt),
+    };
+  });
+  return { ok: true, action: 'listApplies', applies: out, total: out.length, identityMode };
+}
+
+/** 通过发布申请 */
+async function doApprovePost(db, caller, identityMode, event) {
+  const r = await applyDecision(db, {
+    userId: event.userId,
+    applyId: event.applyId,
+    decision: 'approve',
+    actorId: caller.id,
+    actorTrusted: caller.trusted,
+    source: 'miniapp',
+  });
+  if (!r.ok) return r;
+  return Object.assign(r, { identityMode: identityMode });
+}
+
+/** 拒绝发布申请（只标申请行，不动任何已有权限） */
+async function doRejectPost(db, caller, identityMode, event) {
+  const r = await applyDecision(db, {
+    userId: event.userId,
+    applyId: event.applyId,
+    decision: 'reject',
+    actorId: caller.id,
+    actorTrusted: caller.trusted,
+    source: 'miniapp',
+  });
+  if (!r.ok) return r;
+  return Object.assign(r, { identityMode: identityMode });
+}
+
+/**
+ * 【飞书通道】执行发布权审批。
+ * 【鉴权】没有终端用户身份，走 FEISHU_INTERNAL_SECRET（与 feishuCallback 共享）。
+ *   验密是**第一件事**，验不过立刻返回，绝不落到下面的管理员分支。
+ * 【故意不接受 callerId 之类的降级】这条路上不存在"调用者是谁"这个概念。
+ */
+async function doDecidePostApply(db, event) {
+  const v = verifyInternalSecret(event.internalSecret);
+  if (!v.ok) {
+    console.error('[adminManage] 飞书内部密钥校验失败：' + v.code);
+    return v;
+  }
+  const decision = event.decision === 'approve' ? 'approve'
+    : (event.decision === 'reject' ? 'reject' : '');
+  if (!decision) {
+    return { ok: false, code: 'BAD_DECISION', msg: 'decision 必须是 approve / reject' };
+  }
+  return await applyDecision(db, {
+    userId: event.userId,
+    applyId: event.applyId,
+    decision: decision,
+    actorId: 'feishu',
+    actorTrusted: true,
+    source: 'feishu',
+  });
+}
+
+// ============================================================
 // 路由
 // ============================================================
 
@@ -503,7 +768,12 @@ async function handle(ctx, event) {
 
   if (action === 'whoami') return await doWhoami(ctx, db, caller, event);
 
-  if (action !== 'list' && action !== 'grant' && action !== 'revoke') {
+  // 【刻意放在管理员校验之外】飞书回调里没有终端用户身份，走不了下面那两道锁。
+  //   doDecidePostApply 内部第一件事就是校验 FEISHU_INTERNAL_SECRET，验不过立刻返回，
+  //   绝不会落到下面的管理员分支。放在这里是因为下面的 caller.id 检查必然失败。
+  if (action === 'decidePostApply') return await doDecidePostApply(db, event);
+
+  if (!ADMIN_ACTIONS[action]) {
     return { ok: false, msg: '未知 action: ' + event.action };
   }
 
@@ -518,14 +788,18 @@ async function handle(ctx, event) {
   const identityMode = caller.trusted ? 'trusted' : 'untrusted';
 
   // ---- 第二道锁：密码 ----
-  // list 只在身份不可信时才要密码：可信时"是不是管理员"已由服务端独立确认，读个名单不必再输一次；
-  // 不可信时那道锁是自报的，所以必须用密码补上。
-  if (action !== 'list' || !caller.trusted) {
+  // 只读动作（list / listApplies）在身份可信时才免密码：可信时"是不是管理员"已由服务端独立
+  // 确认，读个名单不必再输一次；不可信时那道锁是自报的，所以必须用密码补上。
+  // 写动作（grant / revoke / approvePost / rejectPost）永远要密码 —— 见 PASSWORD_OPTIONAL。
+  if (!PASSWORD_OPTIONAL[action] || !caller.trusted) {
     const pw = await checkPassword(ctx, db, event.password, caller);
     if (!pw.ok) return pw;
   }
 
   if (action === 'list') return await doList(db, admins, caller, identityMode);
+  if (action === 'listApplies') return await doListApplies(db, identityMode);
+  if (action === 'approvePost') return await doApprovePost(db, caller, identityMode, event);
+  if (action === 'rejectPost') return await doRejectPost(db, caller, identityMode, event);
   if (action === 'grant') return await doGrant(db, admins, caller, identityMode, event);
   return await doRevoke(db, admins, caller, identityMode, event);
 }
@@ -549,6 +823,9 @@ module.exports.passwordDigestConfigured = passwordDigestConfigured;
 module.exports.sanitizeName = sanitizeName;
 module.exports.sha256Hex = sha256Hex;
 module.exports.getCfg = getCfg;
+module.exports.applyDecision = applyDecision;
+module.exports.verifyInternalSecret = verifyInternalSecret;
+module.exports.beijingDayKey = beijingDayKey;
 /** 仅供测试：清掉模块级状态（内存降级计数、集合不可用标记） */
 module.exports.__resetState = function () {
   memFails.clear();

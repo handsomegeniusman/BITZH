@@ -1,0 +1,7 @@
+{
+  "name": "postApply",
+  "version": "1.0.0",
+  "description": "发布权限申请云函数（普通用户提交申请 + 推飞书卡片），一天一次，身份服务端派生",
+  "main": "index.js",
+  "dependencies": {}
+}

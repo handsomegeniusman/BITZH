@@ -15,6 +15,19 @@
         <image class="avatar" lazy-load="true" src="{{displayAvatarUrl}}" />
         <text class="nick-name">{{displayNickName}}</text>
       </view>
+      <!-- 发布权限申请：已获批（管理员 或 canPost）时整块不显示 —— 拿回加号和评论权后
+           还挂着一个"申请"按钮，用户会以为没批成功。
+           三态由 data 驱动（见 mydetail.js 的 loadApplyState）：
+             待审核   → 禁用 +「已申请，等待审核」
+             今天被拒 → 禁用 +「今天已被拒绝，明天可再申请」
+             其余     → 可点 +「申请发送帖子」
+           刻意放在 wx:if="{{audit}}" 之内（本块就在里面）：全局发布开关关掉时申请毫无意义，
+           让人申请一个已停用的权限是有害的误导。与下面「发官方推文」放在 audit 之外不矛盾。 -->
+      <view wx:if="{{!canPublish}}" class="btn_regist">
+        <button class="my-button2 {{applyDisabled ? 'my-button2-disabled' : ''}}"
+                disabled="{{applyDisabled}}"
+                bindtap="applyPost">{{applyBtnText}}</button>
+      </view>
     </view>
   </view>
 

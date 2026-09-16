@@ -19,7 +19,10 @@
 <view class="content" >
   <!-- 空态：话题下暂无推文（首屏查询完成后才显示，避免加载中误闪） -->
   <view wx:if="{{loaded && !listData.length}}" class="empty-tip">该{{isName === 'true' ? '作者' : '话题'}}下暂时没有推文</view>
-  <view class="float-image">
+  <!-- 发布入口只对有发布权的人显示（管理员，或申请获批的普通用户）。
+       这是 addBooklet 的第二个入口（另一个是底部导航的中间加号），
+       两处判断必须一致，否则"藏起来了"只是藏了一半。 -->
+  <view class="float-image" wx:if="{{canPublish}}">
     <image class="add-image" src="/pages/images/add.png" mode="" bindtap="addBooklet" lazy-load='true'/>
   </view>
   <view class="left">

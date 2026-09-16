@@ -117,9 +117,19 @@ function makeDb(opt) {
           }
           return {};
         },
+        // 与 updateOne 同理，updateMany 也必须真的落盘：审批的幂等性靠"再批一次时读到的
+        // canPost 已经是 true"来分支，桩不写库的话第二次调用读到的还是旧值，
+        // 断言就变成了自说自话（本条由 [审批] 那组用例实测发现）。
         updateMany: async function (f, u) {
           calls.push({ name: name, m: 'updateMany', filter: f, update: u });
           maybeFail(name + '.updateMany');
+          (data[name] || []).forEach(function (d) {
+            if (!match(d, f || {})) return;
+            if (u && u.$set) Object.assign(d, u.$set);
+            if (u && u.$inc) {
+              Object.keys(u.$inc).forEach(function (k) { d[k] = (Number(d[k]) || 0) + u.$inc[k]; });
+            }
+          });
           return {};
         },
         deleteOne: async function (f) {
@@ -640,6 +650,178 @@ const ADMIN_ENV = { ADMIN_PASSWORD: PW, ADMIN_PASSWORD_SHA256: undefined, ADMIN_
     check('日志里出现了 "password" 字段名 → 必须为 false', /password/i.test(all), false);
     check('确实产生了日志（否则上面三条是空过）', logs.length > 0, true);
   });
+
+  // ============================================================
+  // 发布权限审批（applyDecision / decidePostApply / listApplies）
+  // 本组是整个 adminManage 里最难人工验证的一段：审批会**永久**改变一个用户的权限，
+  // 而且有两条入口（小程序 / 飞书）。所以每条入口的正例、反例、以及"到底写了几次库"都断言到。
+  // ============================================================
+  const SECRET = 'feishu-shared-secret';
+  const SECRET_ENV = Object.assign({}, ADMIN_ENV, { FEISHU_INTERNAL_SECRET: SECRET });
+  const APPLY_ID = TID + '_2026-09-16';
+
+  /** baseData + 一条待审批申请 + 空黑名单 */
+  function applyData(extra) {
+    return baseData(Object.assign({
+      PostApply: [{
+        _id: APPLY_ID, userId: TID, nickName: '小明', avatarUrl: 'http://a/1.png',
+        status: 'pending', appliedAt: new Date('2026-09-16T01:00:00Z'), dayKey: '2026-09-16',
+        handledAt: null, handledBy: '', handledByTrusted: false, source: 'miniapp',
+      }],
+      BlackNum: [],
+    }, extra || {}));
+  }
+  /** 走小程序入口审批一次 */
+  function approveOnce(db, args) {
+    return mod(mkCtx({
+      db: db,
+      args: Object.assign({ action: 'approvePost', userId: TID, applyId: APPLY_ID, password: PW }, args || {}),
+    }));
+  }
+
+  await withEnv(SECRET_ENV, async function () {
+    console.log('[审批 · 小程序入口]');
+
+    // ---- 通过 ----
+    let db = makeDb({ data: applyData() });
+    let r = await approveOnce(db);
+    check('通过 → ok', { ok: r.ok, decision: r.decision, noApply: r.noApply },
+      { ok: true, decision: 'approve', noApply: false });
+    check('  回显昵称（弹窗文案要用）', r.nickName, '小明');
+    let up = db.of('Feeder', 'updateMany');
+    check('Feeder.updateMany 恰好 1 次', up.length, 1);
+    // 过滤条件必须是 userId：canPost 的读者是 initUserState 的 find('Feeder',{userId})
+    check('  按 userId 过滤（不是 _id）', up[0].filter, { userId: TID });
+    check('  $set.canPost 是布尔 true（不是 1 / 字符串）', up[0].update.$set.canPost, true);
+    check('  canPostBy = 审批人 id', up[0].update.$set.canPostBy, AID);
+    check('  canPostTime 是 Date', up[0].update.$set.canPostTime instanceof Date, true);
+    check('PostApply 标记 approved', db.data.PostApply[0].status, 'approved');
+    check('  并记下处理人/来源/身份是否可信',
+      { by: db.data.PostApply[0].handledBy, src: db.data.PostApply[0].source, t: db.data.PostApply[0].handledByTrusted },
+      { by: AID, src: 'miniapp', t: true });
+    check('  处理时间是一个 Date', db.data.PostApply[0].handledAt instanceof Date, true);
+
+    // ---- 幂等：重复点「通过」不覆盖第一次的授予出处 ----
+    // 【为什么这条重要】canPostTime/canPostBy 是"这个人是怎么拿到权限的"的审计记录。
+    // 被后一次操作改写，回填进来的用户（canPostBy='backfill'）就会看起来像某个管理员批的。
+    const grantedAt = db.data.Feeder[1].canPostTime;
+    await approveOnce(db); // 第二次
+    up = db.of('Feeder', 'updateMany');
+    check('再点一次 → 仍然只按 userId 更新一次', up.length, 2);
+    check('  但 $set 里不再含 canPostTime（不覆盖首次）', 'canPostTime' in up[1].update.$set, false);
+    check('  也不含 canPostBy', 'canPostBy' in up[1].update.$set, false);
+    check('  canPost 仍然写（幂等值不变，重复文档照样补齐）', up[1].update.$set.canPost, true);
+    check('  用户文档上的授予时间没被改写', db.data.Feeder[1].canPostTime, grantedAt);
+
+    // ---- 拒绝：绝不碰 Feeder ----
+    // 【这是"不做撤销"的唯一执行点】「拒绝」在飞书群里是个很短很泛的词，一次误发
+    // 若去写 canPost:false，就会抹掉一个已获批用户的权限。
+    db = makeDb({ data: applyData() });
+    r = await approveOnce(db, { action: 'rejectPost' });
+    check('拒绝 → ok', { ok: r.ok, decision: r.decision }, { ok: true, decision: 'reject' });
+    check('  Feeder 写入次数 === 0（"不做撤销"的执行点）', db.of('Feeder', 'updateMany').length, 0);
+    check('  Feeder 上的 canPost 未被写', 'canPost' in (db.data.Feeder[1] || {}), false);
+    check('  申请行标为 rejected', db.data.PostApply[0].status, 'rejected');
+    check('  申请行记下 source=miniapp', db.data.PostApply[0].source, 'miniapp');
+
+    // ---- 黑名单一票否决 ----
+    db = makeDb({ data: applyData({ BlackNum: [{ _id: 'b1', id: TID, reason: '内容违规' }] }) });
+    r = await approveOnce(db);
+    check('黑名单用户即便点「通过」也是 BLACKLISTED', { ok: r.ok, code: r.code },
+      { ok: false, code: 'BLACKLISTED' });
+    check('  零写入（Feeder）', db.of('Feeder', 'updateMany').length, 0);
+    check('  申请行保持 pending（未处理）', db.data.PostApply[0].status, 'pending');
+
+    // ---- 非注册用户 ----
+    db = makeDb({ data: { BITZHAdministrator: [ADMIN_A, ADMIN_B], Feeder: [], AdminAuthFail: [], PostApply: [], BlackNum: [] } });
+    r = await approveOnce(db);
+    check('未注册用户 → NOT_FEEDER', { ok: r.ok, code: r.code }, { ok: false, code: 'NOT_FEEDER' });
+    check('  零写入', db.of('Feeder', 'updateMany').length, 0);
+
+    // ---- 畸形 userId：必须在任何 DB 调用之前返回 ----
+    db = makeDb({ data: applyData() });
+    r = await approveOnce(db, { userId: '../etc/passwd' });
+    check('畸形 userId → BAD_USER_ID', { ok: r.ok, code: r.code }, { ok: false, code: 'BAD_USER_ID' });
+    check('  连 Feeder 都没查（校验在过滤条件进库之前）', db.of('Feeder', 'find').length, 0);
+
+    // ---- 没有申请行（管理员主动授予 / 回填用户）：照批，不因为"没申请过"就拒绝 ----
+    db = makeDb({ data: applyData({ PostApply: [] }) });
+    r = await approveOnce(db);
+    check('没有 PostApply 行 → 仍然授予，但如实标 noApply', { ok: r.ok, noApply: r.noApply }, { ok: true, noApply: true });
+    check('  且确实写了 Feeder', db.of('Feeder', 'updateMany').length, 1);
+
+    // ---- 写动作永远要密码（即便身份可信）----
+    db = makeDb({ data: applyData() });
+    r = await approveOnce(db, { password: 'wrong-password' });
+    check('密码错 → BAD_PASSWORD（trusted 也不能免）', { ok: r.ok, code: r.code },
+      { ok: false, code: 'BAD_PASSWORD' });
+    check('  零写入', db.of('Feeder', 'updateMany').length, 0);
+
+    console.log('[审批 · 飞书入口 decidePostApply]');
+
+    // ---- 正例：密钥对 → 与小程序走同一个 applyDecision ----
+    db = makeDb({ data: applyData() });
+    r = await mod(mkCtx({ db: db, args: { action: 'decidePostApply', internalSecret: SECRET, decision: 'approve', userId: TID, applyId: APPLY_ID } }));
+    check('密钥正确 → ok', { ok: r.ok, decision: r.decision }, { ok: true, decision: 'approve' });
+    check('  同样写了 canPost', db.of('Feeder', 'updateMany')[0].update.$set.canPost, true);
+    check('  申请行 source 记为 feishu', db.data.PostApply[0].source, 'feishu');
+    check('  handledBy 记为 feishu（这条路上没有管理员身份）', db.data.PostApply[0].handledBy, 'feishu');
+    check('  handledByTrusted = true', db.data.PostApply[0].handledByTrusted, true);
+
+    // ---- 安全反例：调用者**确实是管理员**，但密钥错 → 必须走密钥分支，绝不落进管理员分支 ----
+    // 【这是本设计最关键的一条】decidePostApply 被刻意放在管理员校验之外，
+    // 如果密钥校验被绕过/写错，它会直接落到"我是不是管理员"上 —— 那么任何一个管理员
+    // 都能不输密码批准发布权。用"真管理员 + 错密钥"来钉住它。
+    db = makeDb({ data: applyData() });
+    r = await mod(mkCtx({ db: db, args: { action: 'decidePostApply', internalSecret: 'guess', decision: 'approve', userId: TID, callerId: AID } }));
+    check('真管理员 + 错密钥 → 仍是 BAD_INTERNAL_SECRET', { ok: r.ok, code: r.code },
+      { ok: false, code: 'BAD_INTERNAL_SECRET' });
+    check('  零写入', db.of('Feeder', 'updateMany').length, 0);
+
+    // ---- fail-closed：没配密钥 = 哑掉，而不是"随便传个值就能批" ----
+    await withEnv({ FEISHU_INTERNAL_SECRET: undefined }, async function () {
+      db = makeDb({ data: applyData() });
+      r = await mod(mkCtx({ db: db, args: { action: 'decidePostApply', internalSecret: SECRET, decision: 'approve', userId: TID } }));
+      check('密钥未配置 → NO_INTERNAL_SECRET（传对值也不放行）', { ok: r.ok, code: r.code },
+        { ok: false, code: 'NO_INTERNAL_SECRET' });
+      check('  零写入', db.of('Feeder', 'updateMany').length, 0);
+    });
+
+    // ---- decision 取值 ----
+    db = makeDb({ data: applyData() });
+    r = await mod(mkCtx({ db: db, args: { action: 'decidePostApply', internalSecret: SECRET, decision: 'yolo', userId: TID } }));
+    check('decision 非法 → BAD_DECISION', { ok: r.ok, code: r.code }, { ok: false, code: 'BAD_DECISION' });
+    check('  零写入', db.of('Feeder', 'updateMany').length, 0);
+
+    console.log('[审批 · 待办队列 listApplies]');
+
+    db = makeDb({
+      data: baseData({
+        PostApply: [
+          { _id: 'x1', userId: TID, nickName: '旧昵称', status: 'pending', appliedAt: new Date('2026-09-15T01:00:00Z') },
+          { _id: 'x2', userId: BID, nickName: '乙', status: 'approved', appliedAt: new Date('2026-09-14T01:00:00Z') },
+        ],
+      }),
+    });
+    // listApplies 是只读动作：身份可信时可免密码（与 list 同一张表）
+    r = await mod(mkCtx({ db: db, args: { action: 'listApplies' } }));
+    check('待办队列只列 pending（已处理的不出现）', { ok: r.ok, total: r.total, ids: (r.applies || []).map((a) => a.applyId) },
+      { ok: true, total: 1, ids: ['x1'] });
+    check('  昵称用**实时**资料覆盖申请快照（用户改过昵称）', r.applies[0].nickName, '小明');
+    check('  applyId 就是 PostApply 的 _id（审批时要原样回传）', r.applies[0].applyId, 'x1');
+    check('  过滤条件为 status:pending', db.of('PostApply', 'find')[0].filter, { status: 'pending' });
+    check('  identityMode 如实回传', r.identityMode, 'trusted');
+  });
+
+  // ============================================================
+  // 北京时间当天键：一天只能申请一次 / "今天被拒" 的边界全靠它
+  // 云函数容器是 UTC，所以 UTC 16:00 = 北京次日 0 点。
+  // ============================================================
+  console.log('[beijingDayKey 边界]');
+  check('UTC 15:59 → 仍是当天', mod.beijingDayKey(new Date('2026-09-16T15:59:00Z')), '2026-09-16');
+  check('UTC 16:00 → 北京已跨日', mod.beijingDayKey(new Date('2026-09-16T16:00:00Z')), '2026-09-17');
+  check('UTC 23:59 → 北京次日', mod.beijingDayKey(new Date('2026-09-16T23:59:00Z')), '2026-09-17');
+  check('UTC 00:00 → 北京当天上午', mod.beijingDayKey(new Date('2026-09-16T00:00:00Z')), '2026-09-16');
 
   // ============================================================
   console.log('\n结果: ' + pass + ' 通过 / ' + fail + ' 失败');

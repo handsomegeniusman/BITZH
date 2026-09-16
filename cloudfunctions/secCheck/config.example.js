@@ -17,4 +17,14 @@ module.exports = {
   FEISHU_CHAT_ID: 'oc_你的通知群chat_id',   // 通知群 chat_id（获取方法见 README 12.3）
   FEISHU_WEBHOOK_URL: '',                  // 可选：群自定义机器人 webhook（回退通道，应用 API 失败时才用）
   FEISHU_WEBHOOK_SECRET: '',               // 可选：webhook 签名密钥
+
+  // ---- 可选：「发布申请」群（不填则申请卡片回落通知群）----
+  // 【强烈建议配置】发布申请卡片走这里，与违规告警分开，免得申请把告警刷走。
+  // 【FEISHU_APPLY_CHAT_ID 实质必填】「同意」/「拒绝」是不带参数的裸命令，必须由
+  //   feishuCallback 回读父消息才能解析出申请人 ID —— 而只有**应用 API** 发的消息
+  //   能被回读。不配这个 ID 就只能回落 webhook 发到通知群，管理员回「同意」会报
+  //   "未能解析出申请人ID"（那时只能手打「同意 <申请人ID>」）。
+  FEISHU_APPLY_CHAT_ID: 'oc_你的发布申请群chat_id',
+  FEISHU_APPLY_WEBHOOK_URL: '',            // 可选：申请群的 webhook 回退通道
+  FEISHU_APPLY_WEBHOOK_SECRET: '',
 };

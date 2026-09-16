@@ -61,7 +61,8 @@ Page({
     imageUrls: [],    // 推文图片地址列表
     Comment: [],      // 评论列表
     showComment: true,// 无评论时显示占位提示
-    isFeeder: false,  // 当前用户是否已注册（用于判断能否评论）
+    isFeeder: false,  // 当前用户是否已注册（决定输入框提示文案；评论本身所有人都能看）
+    canComment: false,// 能否发表评论：管理员 或 申请获批的用户（读 db.canPublish，与发布入口同一个答案）
     userId: '',       // 当前用户 openid
     audit: false,     // 是否开放评论（管理员后台开关）
     currentImageIndex: 0,
@@ -99,13 +100,16 @@ Page({
     this.getPage(options._id);                    // 加载推文内容
   },
 
-  /** 获取当前用户状态（管理员/已注册用户） */
+  /** 获取当前用户状态（管理员/已注册用户/有无发布权） */
   async initUser() {
     await db.initUserState();
     this.setData({
       userId: app.globalData.userId,
       isFeeder: app.globalData.isFeeder,
       userInfo: app.globalData.userInfo,
+      // 与 custom-tab-bar / someBooklet / addBooklet 读同一个判断式（db.canPublish）。
+      // 自己写 isAdministrator || canPost 的话，迟早出现"加号没了但评论还能发"这种漏一处才发现的 bug。
+      canComment: db.canPublish(),
     });
   },
 
@@ -297,7 +301,11 @@ Page({
 
   /** 发表评论 */
   async addComment() {
-    if (app.globalData.isFeeder) {
+    // 【这是 UX 闸门，不是安全边界】clientSecret 随小程序包发布，逆向者可以绕过本页
+    //   直接 insertOne('Comment', ...)。要真堵得把评论写入搬到云函数 + 控制台集合权限规则，
+    //   本期不做（与 guard.js、utils/adminManage.js 的既有立场一致）。但门槛仍然有意义：
+    //   它挡住的是"正常用户随手就能发"，这覆盖了绝大多数情况。
+    if (db.canPublish()) {
       const content = (this.data.comment || '').trim();
       if (!content) {
         wx.showToast({ title: '请输入评论内容', icon: 'none' });
@@ -340,6 +348,9 @@ Page({
         guard.resetThrottle('addComment'); // 发表失败：可立即重试
         wx.showToast({ icon: 'error', title: '操作失败' });
       });
+    } else if (app.globalData.isFeeder) {
+      // 已注册但还没获批：别弹"请先注册"（他已经注册了），要说清楚下一步怎么做
+      wx.showToast({ icon: 'none', title: '还没有发布权限，请到「我的」申请', duration: 2500 });
     } else {
       pageUtil.promptRegister(this.data.userId);
     }

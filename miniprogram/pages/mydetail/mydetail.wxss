@@ -58,6 +58,15 @@
   display: block;
   box-sizing: border-box;
 }
+/* 申请按钮的禁用态（已申请待审核 / 今天已被拒绝）：尺寸不变，只把粉色压成灰，
+   让"不是不能申请，是现在还不能"一眼可辨。用类选择器而非 button[disabled] ——
+   微信对原生 disabled 按钮的默认灰底样式权重更高，会盖掉本类的配色，
+   显式带上这个类就不依赖框架默认样式了。 */
+.my-button2-disabled {
+  background-color: #C8C8C8;
+  color: #F5F5F5;
+  box-shadow: none;
+}
 .user-info {
   display: flex;
   justify-content: center;

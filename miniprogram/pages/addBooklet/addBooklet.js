@@ -34,10 +34,20 @@ Page({
     todayStr: '',                // 今天的日期（YYYY-MM-DD），用于拍摄时间 picker 的 end 上限
   },
 
-  /** 页面加载：初始化用户状态，非注册用户禁止访问 */
+  /** 页面加载：初始化用户状态，无发布权 / 非注册用户禁止访问 */
   async onLoad() {
     guard.ensureNotBanned();
     await db.initUserState();
+    // 发布页仅管理员和"申请获批的普通用户"可用。
+    // 【为什么光藏入口不够】小程序页面可以被小程序码、分享链接、历史场景值直接打开，
+    //   不经过任何按钮 —— 只藏按钮的话，知道路由的人照样能进来发。
+    //   权限判断要落在"这一页准不准进"上，而不是"入口看不看得见"上。
+    // 走 db.canPublish() 与底部加号 / someBooklet 浮动按钮读同一个答案。
+    if (!db.canPublish()) {
+      wx.showToast({ title: '无发布权限', icon: 'none' });
+      setTimeout(() => wx.navigateBack(), 800);
+      return;
+    }
     if (!app.globalData.isFeeder) {
       pageUtil.promptRegister(app.globalData.userId);
       setTimeout(() => wx.navigateBack(), 800);

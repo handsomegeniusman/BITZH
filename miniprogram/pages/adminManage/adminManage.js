@@ -1,9 +1,10 @@
 // ============================================================
-// pages/adminManage/adminManage.js —— 在线添加 / 移除管理员（仅管理员）
-// 【作用】不打开控制台就能增删管理员，代价是每次操作都要输服务端密码：
-//   1. 输入操作密码 → 拉取当前管理员列表（密码错了会按 IP 锁定，见云函数）
+// pages/adminManage/adminManage.js —— 在线添加 / 移除管理员 + 发布申请审批（仅管理员）
+// 【作用】不打开控制台就能增删管理员、审批发布权限，代价是每次操作都要输服务端密码：
+//   1. 输入操作密码 → 拉取当前管理员列表 + 待审批的发布申请（密码错了会按 IP 锁定，见云函数）
 //   2. 搜索用户（昵称模糊 / 用户ID精确）→ 一键设为管理员
 //   3. 列表内移除管理员（服务端拒绝移除自己、拒绝移除最后一位）
+//   4. 「发布申请」队列：通过 → 该用户永久获得发布权；拒绝 → 只标记这条申请，不动已有权限
 //
 // 【本页只做界面，不做安全判断】"是不是管理员"由云函数独立判定，"密码对不对"也在云函数里比。
 //   客户端读 db.state.isAdministrator 只是为了**提前把页面关掉**（少一次白跑的调用），
@@ -24,7 +25,8 @@ const clipboard = require('../../utils/clipboard.js'); // 复制到剪贴板（�
 const DEFAULT_AVATAR = 'https://mmbiz.qpic.cn/mmbiz/icTdbqWNOwNRna42FI242Lcia07jQodd2FJGIYQfG0LAJGFxM4FbnQP6yfMxBgJ0F3YRqJCJ1aPAK2dQagdusBZg/0';
 
 // 出错时用弹窗（而不是一闪而过的 toast）展示的错误码：这些提示都比较长，toast 装不下会被截断
-const MODAL_CODES = ['TOO_MANY', 'SELF_REVOKE', 'LAST_ADMIN', 'NOT_FEEDER', 'BAD_USER_ID', 'LOOKUP_FAILED'];
+// BLACKLISTED：审批时被黑名单一票否决 —— 这条必须让人看清，否则管理员会反复点"通过"不知道为什么没反应
+const MODAL_CODES = ['TOO_MANY', 'SELF_REVOKE', 'LAST_ADMIN', 'NOT_FEEDER', 'BAD_USER_ID', 'LOOKUP_FAILED', 'BLACKLISTED'];
 
 // 真实姓名长度上限。**必须与服务端 sanitizeName 的截断长度一致**（cloudfunctions/adminManage/index.js）。
 // 前端先拦一道，是为了不让用户填完 30 个字、提交后被服务端**静默截成 20 个**——
@@ -41,6 +43,9 @@ const ADMIN_NAME_MAX = 20;
 // 【文案里不要写 markdown】wx.showModal 不渲染 ** 之类，会原样显示。
 const RESTART_HINT_ADD = '对方需要完全退出小程序再重新进入（从"最近使用"里划掉，或右上角关闭），管理入口才会出现。\n\n只是返回上一页、或切到后台再回来，都不算重新进入。';
 const RESTART_HINT_REMOVE = '若对方此刻正开着小程序，他手上的管理入口会保留到他重新进入为止 —— 要立刻生效，让他完全退出小程序（从"最近使用"里划掉，或右上角关闭）。';
+// 通过发布申请后要说的话。与上面同理：canPost 和"我是不是管理员"一样缓存在本次运行里，
+// 只有对方冷启动才能读到新值 —— 我们这边做不到，只能把话说明白。
+const RESTART_HINT_POST = '对方需要完全退出小程序再重新进入（从"最近使用"里划掉，或右上角关闭），加号和评论框才会出现。\n\n只是返回上一页、或切到后台再回来，都不算重新进入。';
 
 /**
  * 确认弹窗（Promise 版）。
@@ -79,6 +84,11 @@ Page({
     // ---- 管理员列表 ----
     admins: [],          // [{userId, name, nickName, avatarUrl, isSelf, grantedTimeText, displayName}]
 
+    // ---- 发布申请（待审批队列）----
+    applies: [],         // [{applyId, userId, nickName, avatarUrl, appliedAtText}]
+    appliesLoading: false,
+    actingApply: '',     // 正在审批的 applyId（两个按钮都显示"提交中…"并置灰）
+
     // ---- 搜索添加 ----
     keyword: '',
     searching: false,
@@ -102,19 +112,29 @@ Page({
     this.setData({ password: e.detail.value });
   },
 
-  /** 点「解锁 / 刷新」 */
-  onUnlockTap() {
-    this.loadAdmins();
+  /**
+   * 点「解锁 / 刷新」：先拉管理员列表，成功了再拉发布申请。
+   * 【为什么是串行而不是 Promise.all】两个请求带的是同一个密码，密码错时会**双双失败**，
+   *   于是弹出两个内容一样的错误弹窗，第二个还把第一个盖掉、看起来像卡了。
+   *   串行则只有先失败的那个会弹，另一路直接不发 —— 密码是这一切的前置条件，本来也该串行。
+   */
+  async onUnlockTap() {
+    const ok = await this.loadAdmins();
+    if (!ok) return; // 失败原因 loadAdmins 已经弹过了
+    await this.loadApplies();
   },
 
-  /** 拉取管理员列表（同时充当"验证密码是否正确"的动作） */
+  /**
+   * 拉取管理员列表（同时充当"验证密码是否正确"的动作）。
+   * @returns {Promise<boolean>} 是否成功 —— 调用方靠它决定要不要继续做后续请求
+   */
   async loadAdmins() {
     const pw = this.data.password || '';
     if (!pw) {
       wx.showToast({ title: '请先输入操作密码', icon: 'none' });
-      return;
+      return false;
     }
-    if (this.data.adminsLoading) return;
+    if (this.data.adminsLoading) return false;
     this.setData({ adminsLoading: true });
     try {
       const res = await adminApi.list(pw);
@@ -132,10 +152,114 @@ Page({
       });
       // 列表已经拿到了，把搜索结果里的"已是管理员"标记同步一遍
       this.markResultsAdmin();
+      this.setData({ adminsLoading: false });
+      return true;
+    } catch (err) {
+      this.handleError(err);
+      this.setData({ adminsLoading: false });
+      return false;
+    }
+  },
+
+  // ============ 发布申请（待审批队列）============
+
+  /**
+   * 拉取待审批的发布申请。
+   * 【只拉 pending】已通过/已拒绝的不再展示 —— 这个区块是待办队列，不是历史记录。
+   *   做完一条它就消失，管理员不用猜"这条我处理过没有"。
+   */
+  async loadApplies() {
+    if (!this.data.unlocked) return; // 密码还没验过，查了也是白查（且会白弹一个错误）
+    if (this.data.appliesLoading) return;
+    this.setData({ appliesLoading: true });
+    try {
+      const res = await adminApi.listApplies(this.data.password || '');
+      adminApi.ensureOk(res);
+      const applies = (res.applies || []).map((a) => Object.assign({}, a, {
+        avatarUrl: a.avatarUrl || DEFAULT_AVATAR,
+      }));
+      this.setData({ applies: applies });
     } catch (err) {
       this.handleError(err);
     }
-    this.setData({ adminsLoading: false });
+    this.setData({ appliesLoading: false });
+  },
+
+  /** 通过发布申请 → 该用户永久获得发布权（写入在云函数，这里只发起） */
+  async approvePost(e) {
+    const d = e.currentTarget.dataset;
+    const userId = d.userid;
+    const applyId = d.applyid;
+    const name = d.name || userId;
+    const pw = this.data.password || '';
+    if (!pw) {
+      wx.showToast({ title: '请先输入操作密码并解锁', icon: 'none' });
+      return;
+    }
+    if (this.data.actingApply) return;
+
+    const confirmed = await confirmAction(
+      '通过发布申请',
+      '通过「' + name + '」的发布申请？\n\n通过后对方永久获得发布帖子和评论的权限。',
+      '确认通过'
+    );
+    if (!confirmed) return; // 取消：不做任何操作，也不消耗节流窗口
+    if (!guard.throttle('adminManage.approvePost', 2000)) return;
+
+    this.setData({ actingApply: applyId });
+    try {
+      const res = await adminApi.approvePost(userId, applyId, pw);
+      adminApi.ensureOk(res);
+      guard.resetThrottle('adminManage.approvePost');
+      await this.loadApplies();
+      // 提示放在列表刷新之后：关掉弹窗时这条申请已经从队列里消失了，能立刻看到效果。
+      // 【弹窗文案里不要写 markdown】wx.showModal 不渲染 ** 之类，会原样显示。
+      wx.showModal({
+        title: '已通过',
+        content: '已通过「' + (res.nickName || name) + '」的发布申请。\n\n' + RESTART_HINT_POST,
+        showCancel: false,
+        confirmText: '知道了',
+      });
+    } catch (err) {
+      this.handleError(err);
+    }
+    this.setData({ actingApply: '' });
+  },
+
+  /** 拒绝发布申请 → 只标记这条申请，不收回对方已有的任何权限 */
+  async rejectPost(e) {
+    const d = e.currentTarget.dataset;
+    const userId = d.userid;
+    const applyId = d.applyid;
+    const name = d.name || userId;
+    const pw = this.data.password || '';
+    if (!pw) {
+      wx.showToast({ title: '请先输入操作密码并解锁', icon: 'none' });
+      return;
+    }
+    if (this.data.actingApply) return;
+
+    const confirmed = await confirmAction(
+      '拒绝发布申请',
+      '拒绝「' + name + '」的发布申请？\n\n只会把这条申请标为已拒绝，不会收回对方已有的任何权限。对方今天不能再申请，明天起可以重新申请。',
+      '确认拒绝',
+      '#c0392b'
+    );
+    if (!confirmed) return; // 取消：不做任何操作，也不消耗节流窗口
+    if (!guard.throttle('adminManage.rejectPost', 2000)) return;
+
+    this.setData({ actingApply: applyId });
+    try {
+      const res = await adminApi.rejectPost(userId, applyId, pw);
+      adminApi.ensureOk(res);
+      guard.resetThrottle('adminManage.rejectPost');
+      await this.loadApplies();
+      // 拒绝是非破坏性操作（没动对方任何已有权限），一句 toast 就够，不用弹窗打断
+      wx.showToast({ title: '已拒绝', icon: 'success' });
+    } catch (err) {
+      this.handleError(err);
+    }
+    this.setData({ actingApply: '' });
   },
 
   /**

@@ -109,6 +109,47 @@
       <text class="actions-tip" wx:if="{{item.isSelf}}">要移除自己请让另一位管理员操作</text>
     </view>
   </view>
+
+  <!-- ---------- 发布申请（待审批队列）----------
+       发布权限收紧成"申请-审批制"后的审批入口。这里只列 status='pending' 的申请：
+       通过/拒绝后它就从队列里消失，是个待办清单而不是历史记录。
+       飞书群里回「同意」/「拒绝」走的是同一条云函数逻辑（adminManage.applyDecision）。 -->
+  <view class="section-title">发布申请{{unlocked ? '（' + applies.length + '）' : ''}}</view>
+  <view class="empty small" wx:if="{{!unlocked}}">输入操作密码后点「解锁」查看</view>
+  <!-- 空态是**常态**（不是异常），文案按"暂时没有待办"写，别写成像出了问题 -->
+  <view class="empty small" wx:elif="{{!applies.length}}">没有待审批的申请</view>
+
+  <view class="card" wx:for="{{applies}}" wx:key="applyId">
+    <view class="user-head">
+      <image class="user-avatar" src="{{item.avatarUrl}}" mode="aspectFill" data-list="applies" data-index="{{index}}" binderror="onAvatarError"></image>
+      <view class="user-info">
+        <text class="user-name">{{item.nickName || '（无昵称）'}}</text>
+        <view class="user-id-row">
+          <text class="user-id" selectable="{{true}}" user-select="{{true}}">{{item.userId}}</text>
+          <text class="copy-btn" catchtap="copyId" data-userid="{{item.userId}}">复制</text>
+        </view>
+        <text class="user-sub" wx:if="{{item.appliedAtText}}">申请于 {{item.appliedAtText}}</text>
+      </view>
+    </view>
+    <view class="user-actions">
+      <!-- 同上面的既有做法：禁态用 class 而不是 disabled 属性 -->
+      <view
+        class="btn small success {{actingApply === item.applyId ? 'btn-disabled' : ''}}"
+        bindtap="approvePost"
+        data-userid="{{item.userId}}"
+        data-applyid="{{item.applyId}}"
+        data-name="{{item.nickName}}"
+      >{{actingApply === item.applyId ? '提交中…' : '通过'}}</view>
+      <view
+        class="btn small danger {{actingApply === item.applyId ? 'btn-disabled' : ''}}"
+        bindtap="rejectPost"
+        data-userid="{{item.userId}}"
+        data-applyid="{{item.applyId}}"
+        data-name="{{item.nickName}}"
+      >{{actingApply === item.applyId ? '提交中…' : '拒绝'}}</view>
+      <text class="actions-tip">通过后对方需完全退出小程序再进入才生效</text>
+    </view>
+  </view>
 </view>
 
 <!-- 有输入框的页面都要挂这个（全局完成栏，见 components/kb-done-bar） -->

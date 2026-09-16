@@ -13,8 +13,12 @@ Component({
     selected: 0,              // 当前选中 tab（渲染顺序：查猫=0 小猫书=1 关于=2 我的=3）
     color: '#888888',         // 未选中文字色
     selectedColor: '#FF405E', // 选中文字色（主粉）
-    // 审核开关：false（关闭注册/发布）时隐藏中间发布加号；默认 false 先隐藏，取回真值后若为 true 再显示
+    // 中间加号的两个显示条件，缺一不可：
+    //   audit      —— 发布开关（Administrator 集合的 audit 字段），关掉时全站停止发布
+    //   canPublish —— 有没有发布权（管理员，或申请获批的普通用户）
+    // 两个都默认 false：身份和开关还没取回来之前先隐藏，宁可晚一点出现也不要一闪而过。
     audit: false,
+    canPublish: false,
     // 4 个 tab 的路径清单（WXML 按此渲染，中间加号不占 tab 项）
     list: [
       { pagePath: '/pages/catSearch/catSearch', text: '查猫', index: 0 },
@@ -31,13 +35,34 @@ Component({
   },
 
   methods: {
-    /** 刷新审核开关：false（未开放注册/发布）时隐藏中间加号，true 时显示 */
-    refreshAudit() {
-      db.getAudit().then((a) => {
-        this.setData({ audit: !!a });
-      }).catch((err) => {
+    /**
+     * 刷新中间加号的显示条件（发布开关 audit + 当前用户有没有发布权）。
+     * 【为什么两件事在这里一起算】加号能不能出现，取决于"发布开关开没开"和"我有没有发布权"，
+     *   分散在两处判断迟早会不一致。这里一次算完，WXML 只认最终结果。
+     * 【为什么必须 await initUserState】本组件 attached 的时机早于页面 onLoad 里那次
+     *   initUserState 完成，此刻 app.globalData.isAdministrator 还是初始的 false，
+     *   直接读会把管理员也判成普通用户 —— 连自己的加号都看不到。
+     *   initUserState 内部有 administratorChecked 缓存，页面已经查过时这里不会再查库。
+     * 【方法名没改】4 个 tab 页的 onShow 都在调 refreshAudit()，改名要同步改 4 处；
+     *   留着这个名字，它们这次自动跟着一起更新。
+     */
+    async refreshAudit() {
+      try {
+        await db.initUserState();
+      } catch (err) {
+        console.error('[tabBar] 读取用户身份失败', err);
+      }
+      let audit = false;
+      try {
+        audit = !!(await db.getAudit());
+      } catch (err) {
         console.error('[tabBar] 读取审核开关失败', err);
-        this.setData({ audit: false });
+      }
+      this.setData({
+        audit: audit,
+        // 走 db.canPublish() 而不是自己写 isAdministrator || canPost：这个判断式有 4 个入口，
+        // 各写各的迟早漂移（典型症状：加号没了但评论还能发）。文件头 db 的 require 就是为它留的。
+        canPublish: db.canPublish(),
       });
     },
     /** 切换 tab（微信要求 tab 间跳转用 switchTab） */
@@ -54,6 +79,9 @@ Component({
 
     /** 中间加号：发布新帖（与 index 页 addBooklet 守卫一致：已注册跳转，未注册弹注册） */
     addPost() {
+      // 加号已经用 wx:if 藏起来了，这里再兜一道：藏元素挡不住代码调用，
+      // 权限判断要落在"能不能做"上，而不是"看不看得见按钮"上。
+      if (!db.canPublish()) return;
       if (app.globalData.isFeeder) {
         wx.navigateTo({ url: '/pages/addBooklet/addBooklet' });
       } else {

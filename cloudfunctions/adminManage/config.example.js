@@ -41,4 +41,13 @@ module.exports = {
   MAX_ADMINS: '',    // 管理员数量上限（20）
   PW_MAX_FAILS: '',  // 连续错几次密码就锁定（5）
   PW_LOCK_MS: '',    // 锁定时长，毫秒（600000 = 10 分钟）
+
+  // ---- 发布权限审批：飞书通道的内部密钥 ----
+  // 【为什么需要它】飞书群里回「同意」时没有终端用户身份，走不了上面的两道锁，
+  //   只能由 feishuCallback 调 action:'decidePostApply' 转达。这个密钥就是那条路的凭据。
+  // 【两边必须一致】本文件（adminManage）与 feishuCallback/config.js 里填**同一个值**。
+  // 【不配会怎样】校验失败 → 飞书审批整条通道关闭（fail-closed，返回 NO_INTERNAL_SECRET）。
+  //   这是刻意的：忘了配置应该"哑掉"，而不是变成"谁都能批"。小程序里的审批不受影响。
+  // 建议 32 位以上随机串：node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+  FEISHU_INTERNAL_SECRET: '',
 };

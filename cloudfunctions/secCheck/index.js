@@ -39,6 +39,20 @@ const ADMIN_EMAIL = getCfg('ADMIN_EMAIL');
 const FEISHU_APP_ID = getCfg('FEISHU_APP_ID');
 const FEISHU_APP_SECRET = getCfg('FEISHU_APP_SECRET');
 const FEISHU_CHAT_ID = getCfg('FEISHU_CHAT_ID');
+// 「发布申请」新群：发布权限申请卡片推到这里，与违规告警群分开，
+// 免得申请卡片把告警刷走、也免得申请群的成员顺手看到违规内容。
+// 未配置时一律回落主群（降级不阻塞，与全文件其余推送一致）。
+const FEISHU_APPLY_CHAT_ID = getCfg('FEISHU_APPLY_CHAT_ID');
+const FEISHU_APPLY_WEBHOOK_URL = getCfg('FEISHU_APPLY_WEBHOOK_URL');
+const FEISHU_APPLY_WEBHOOK_SECRET = getCfg('FEISHU_APPLY_WEBHOOK_SECRET');
+
+// 推送目标白名单。不认的值一律按 'main' —— 调用方拼错参数时宁可推到主群，
+// 也不要静默丢弃（丢一条违规告警比推错群严重得多）。
+const PUSH_TARGETS = ['main', 'apply'];
+function normTarget(t) {
+  const s = String(t || '');
+  return PUSH_TARGETS.indexOf(s) >= 0 ? s : 'main';
+}
 
 // ---------- access_token 缓存（single-flight，防并发重复刷新） ----------
 // 说明：云函数并发执行，多请求同时发现 token 过期时会各刷一次 → 被微信限流。
@@ -50,8 +64,16 @@ let tokenPromise = null; // 进行中的刷新请求（single-flight）
 const PUSH_MAX_PER_MIN = 30;   // 每分钟最多推送条数（超出丢弃 + 告警日志）
 const PUSH_DEDUP_MS = 60000;   // 相同内容去重窗口（60s）
 const PUSH_SEEN_MAX = 200;     // 去重表上限，超过清理最旧，防内存无界增长
-let pushWindow = { count: 0, windowStart: 0 };
-const pushSeen = {};           // text -> 上次推送时间戳
+// 【为什么去重/限流要按群分桶】这两个表原来是全局共享的，多一个群就会互相顶掉：
+//   ① 申请卡片会消耗主群的 PUSH_MAX_PER_MIN 配额 → 同一分钟内的高危违规告警被静默丢弃；
+//   ② 相同文案跨群互相去重 → 第二条申请直接不推（看起来像"申请丢了"）。
+//   所以按 target 分桶，各群各算各的。
+const pushBuckets = {};        // target -> { window:{count,windowStart}, seen:{text:ts} }
+function bucket(t) {
+  const k = normTarget(t);
+  if (!pushBuckets[k]) pushBuckets[k] = { window: { count: 0, windowStart: 0 }, seen: {} };
+  return pushBuckets[k];
+}
 // ---- tenant_access_token 缓存（single-flight，应用 API 推送用）----
 let appTokenCache = { token: null, expireAt: 0 };
 let appTokenPromise = null;
@@ -130,36 +152,50 @@ function feishuSign(timestamp, secret) {
   return crypto.createHmac('sha256', stringToSign).update(Buffer.alloc(0)).digest('base64');
 }
 
-/** 飞书群机器人推送（未配置 URL 则跳过；带限流 + 去重防刷屏；可选签名） */
-async function feishuPush(text) {
-  if (!FEISHU_WEBHOOK_URL) {
+/** 飞书群机器人推送（未配置 URL 则跳过；带限流 + 去重防刷屏；可选签名）
+ *  @param {String} text   推送正文
+ *  @param {String} target 'main'（默认，违规告警群）| 'apply'（发布申请群） */
+async function feishuPush(text, target) {
+  const t = normTarget(target);
+  let url = FEISHU_WEBHOOK_URL;
+  let secret = FEISHU_WEBHOOK_SECRET;
+  if (t === 'apply') {
+    if (FEISHU_APPLY_WEBHOOK_URL) {
+      url = FEISHU_APPLY_WEBHOOK_URL;
+      secret = FEISHU_APPLY_WEBHOOK_SECRET;
+    } else {
+      console.warn('[secCheck] 未配置 FEISHU_APPLY_WEBHOOK_URL，申请推送回落主群');
+    }
+  }
+  if (!url) {
     console.warn('[secCheck] 未配置 FEISHU_WEBHOOK_URL，跳过飞书推送');
     return;
   }
+  const b = bucket(t);
   const now = Date.now();
   // 去重：相同内容在窗口内只推一次（防同一违规内容反复刷屏）
-  if (pushSeen[text] && now - pushSeen[text] < PUSH_DEDUP_MS) return;
+  if (b.seen[text] && now - b.seen[text] < PUSH_DEDUP_MS) return;
   // 去重表无界增长防护：超上限清掉最旧一半
-  const keys = Object.keys(pushSeen);
+  const keys = Object.keys(b.seen);
   if (keys.length >= PUSH_SEEN_MAX) {
-    keys.slice(0, Math.floor(PUSH_SEEN_MAX / 2)).forEach(function (k) { delete pushSeen[k]; });
+    keys.slice(0, Math.floor(PUSH_SEEN_MAX / 2)).forEach(function (k) { delete b.seen[k]; });
   }
-  // 限流：滚动窗口每分钟最多 PUSH_MAX_PER_MIN 条
-  if (now - pushWindow.windowStart > 60000) pushWindow = { count: 0, windowStart: now };
-  if (pushWindow.count >= PUSH_MAX_PER_MIN) {
-    console.warn('[secCheck] 飞书推送限流，丢弃一条:', text.slice(0, 50));
+  // 限流：滚动窗口每分钟最多 PUSH_MAX_PER_MIN 条（按群各算各的）
+  if (now - b.window.windowStart > 60000) b.window = { count: 0, windowStart: now };
+  if (b.window.count >= PUSH_MAX_PER_MIN) {
+    console.warn('[secCheck] 飞书推送限流，丢弃一条（' + t + '）:', text.slice(0, 50));
     return;
   }
-  pushSeen[text] = now;
-  pushWindow.count++;
+  b.seen[text] = now;
+  b.window.count++;
   try {
     const body = { msg_type: 'text', content: { text: text } };
-    if (FEISHU_WEBHOOK_SECRET) {
+    if (secret) {
       const ts = String(Math.floor(now / 1000));
       body.timestamp = ts;
-      body.sign = feishuSign(ts, FEISHU_WEBHOOK_SECRET);
+      body.sign = feishuSign(ts, secret);
     }
-    await httpsPostJson(FEISHU_WEBHOOK_URL, body);
+    await httpsPostJson(url, body);
   } catch (e) {
     console.error('[secCheck] 飞书推送失败', e && e.message);
   }
@@ -188,15 +224,28 @@ async function getTenantToken() {
  * 应用 API 推送到群（自建应用 im/v1/messages，receive_id_type=chat_id）。
  * 机器人自己发的消息一定带 message_id，feishuCallback 回读父消息 100% 可用
  * → 评论区命令能准确解析出目标。未配置应用凭证/chat_id，或发送失败时返回 false（调用方回退 webhook）。
+ * @param {String} target 'main'（默认）| 'apply'（发布申请群）
+ * 【发布申请为什么必须走应用 API】只有应用 API 发的消息能被 feishuCallback 回读父消息文案，
+ *   而「同意」/「拒绝」是两个不带参数的裸命令，必须从父消息里解析出申请人 ID。
+ *   用 webhook 发的话管理员回「同意」会报"未能解析出申请人ID"。
  */
-async function feishuPushApp(text) {
-  if (!FEISHU_APP_ID || !FEISHU_APP_SECRET || !FEISHU_CHAT_ID) return false;
+async function feishuPushApp(text, target) {
+  const t = normTarget(target);
+  let chatId = FEISHU_CHAT_ID;
+  if (t === 'apply') {
+    if (FEISHU_APPLY_CHAT_ID) {
+      chatId = FEISHU_APPLY_CHAT_ID;
+    } else {
+      console.warn('[secCheck] 未配置 FEISHU_APPLY_CHAT_ID，申请推送回落主群（回读解析可能失效，建议尽快配置）');
+    }
+  }
+  if (!FEISHU_APP_ID || !FEISHU_APP_SECRET || !chatId) return false;
   try {
     const token = await getTenantToken();
     const content = { text: String(text || '').slice(0, 2000) };
     await httpsPostJson(
       'https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id',
-      { receive_id: FEISHU_CHAT_ID, msg_type: 'text', content: JSON.stringify(content) },
+      { receive_id: chatId, msg_type: 'text', content: JSON.stringify(content) },
       { Authorization: 'Bearer ' + token }
     );
     return true;
@@ -234,13 +283,14 @@ module.exports = async function (ctx) {
   // 每次调用生成 requestId，随返回 + 推送带出，便于关联云函数日志与飞书消息排查
   const requestId = String(Date.now()) + '-' + Math.random().toString(36).slice(2, 8);
   try {
-    // ---- 轻量通知模式：举报/申诉等只推送，不做内容检测 ----
+    // ---- 轻量通知模式：举报/申诉/发布申请等只推送，不做内容检测 ----
     if (event.action === 'notify') {
       const text = String(event.text || '').slice(0, 2000);
+      const target = normTarget(event.target); // 缺省/拼错一律主群
       // 优先应用 API 推送（保证评论区命令可回读解析），未配置/失败回退 webhook
-      const viaApp = await feishuPushApp(text);
-      if (!viaApp) await feishuPush(text);
-      return { ok: true, requestId: requestId, channel: viaApp ? 'app' : 'webhook' };
+      const viaApp = await feishuPushApp(text, target);
+      if (!viaApp) await feishuPush(text, target);
+      return { ok: true, requestId: requestId, channel: viaApp ? 'app' : 'webhook', target: target };
     }
 
     const content = String(event.content || '').slice(0, 2000);

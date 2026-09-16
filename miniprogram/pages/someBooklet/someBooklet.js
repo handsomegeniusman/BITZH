@@ -26,6 +26,7 @@ Page({
     multiIndex: [1, 0],                    // 默认按"拍摄时间 + 降序"
     skipCount: 0,
     loaded: false,                         // 首屏查询是否完成（用于空态提示）
+    canPublish: false,                     // 有无发布权（管理员，或申请获批）——决定浮动发布按钮是否显示
   },
 
   /** 页面加载：从分享链接可直接带 name / isName 打开；缺 name 时兜底 */
@@ -38,6 +39,9 @@ Page({
     }
     // 确保 isFeeder / userId 已初始化（分享链接直接打开 this page 时可能未加载）
     try { await db.initUserState(); } catch (err) { console.error('初始化用户状态失败', err); }
+    // 发布入口的显示条件（与 custom-tab-bar 的中间加号同一套判断：
+    // db.canPublish() = 管理员 或 申请获批的普通用户，绝不在这里自己写 OR）
+    this.setData({ canPublish: db.canPublish() });
     // sanitizedName 用于图片 src（COS key 只含安全字符），name 保留原文用于 DB 查询
     var sanitizedName = guard.sanitizeFileName(options.name || '', 20);
     this.setData({
@@ -175,8 +179,9 @@ Page({
   onHide() { this._flushLikes(); },
   onUnload() { this._flushLikes(); },
 
-  /** 发布新推文 */
+  /** 发布新推文（管理员或申请获批的用户；无权者看不到入口，这里兜底） */
   addBooklet() {
+    if (!db.canPublish()) return;
     if (app.globalData.isFeeder) {
       wx.navigateTo({ url: '/pages/addBooklet/addBooklet' });
     } else {

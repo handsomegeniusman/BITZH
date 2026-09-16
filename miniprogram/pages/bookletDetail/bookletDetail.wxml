@@ -92,12 +92,20 @@
 
   <!-- 底部评论输入栏：固定底部 + 安全区 + 宽屏居中（与评论区同级，便于评论区底部留白） -->
   <view wx:if="{{audit && !recoverMode}}" class="view-wrapper">
-    <view wx:if="{{isFeeder}}" class="toComment">
+    <!-- 有发布权（管理员 或 申请获批）：正常输入 + 发送按钮 -->
+    <view wx:if="{{canComment}}" class="toComment">
       <textarea data-key='main' bindinput="inputText" show-confirm-bar="{{false}}" class="comment_input" auto-height="true" placeholder-class="comment-placeholder" placeholder="善语结善缘，恶语伤人心" value="{{comment}}"></textarea>
       <button bindtap="addComment" class="new-button">发送</button>
     </view>
-    <view wx:else="" class="toComment">
-      <textarea data-key='main' bindinput="inputText" show-confirm-bar="{{false}}" class="comment_input" auto-height="true" placeholder-class="comment-placeholder" placeholder="注册后再评论吧" value="{{comment}}"></textarea>
+    <!-- 已注册但未获批：评论照样能看（上面的列表不受影响），只是不能发。
+         给一个 disabled 输入框而不是藏掉整栏 —— 藏掉的话用户会以为"这里本来就没法评论"，
+         灰着的框 + 明确文案才说得清"你还差一步"。 -->
+    <view wx:elif="{{isFeeder}}" class="toComment">
+      <textarea disabled data-key='main' show-confirm-bar="{{false}}" class="comment_input" auto-height="true" placeholder-class="comment-placeholder" placeholder="还没有发布权限，点「我的」申请" value="{{comment}}"></textarea>
+    </view>
+    <!-- 未注册 -->
+    <view wx:else class="toComment">
+      <textarea disabled data-key='main' show-confirm-bar="{{false}}" class="comment_input" auto-height="true" placeholder-class="comment-placeholder" placeholder="注册后再评论吧" value="{{comment}}"></textarea>
     </view>
   </view>
 

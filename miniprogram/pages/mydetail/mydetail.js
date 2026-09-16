@@ -10,10 +10,59 @@
 //        两个分栏卡片统一样式（大图 + 标题 + 编辑按钮），交互统一：单击看详情、
 //        长按或点编辑进编辑页。列表分页/存档映射复用公共模块
 //        （db.paginate 分页 + utils/trash.js 回收站逻辑）。
+//        - 已注册用户额外看到一个「申请发送帖子」按钮（发布权收紧成申请-审批制后的入口），
+//          三态见 loadApplyState()。
 // ============================================================
 const app = getApp();
 const db = require('../../utils/db.js'); // 公共数据库方法
 const trash = require('../../utils/trash.js'); // 回收站公共逻辑（列表映射/恢复）
+const guard = require('../../utils/guard.js'); // 前端保险工具（防连点限频）
+
+/** 可申请状态下的按钮文案（三态里的默认态，改文案只改这一处） */
+const APPLY_TEXT = '申请发送帖子';
+
+/**
+ * 危险操作二次确认：弹窗点「确认」返回 true，点取消 / 弹窗失败返回 false。
+ * 【为什么包 Promise】wx.showModal 是回调式 API，包成 Promise 才能用 await 直线写。
+ * 【调用约定】确认之后才调 guard.throttle —— 取消弹窗不该消耗限频窗口（项目约定）。
+ */
+function confirmAction(title, content, confirmText, confirmColor) {
+  return new Promise((resolve) => {
+    wx.showModal({
+      title: title,
+      content: content,
+      confirmText: confirmText || '确认',
+      confirmColor: confirmColor || '#FF405E',
+      success: (r) => resolve(!!r.confirm),
+      fail: () => resolve(false),
+    });
+  });
+}
+
+/**
+ * 北京时间当天键（YYYY-MM-DD）。
+ * 【为什么要自己算】与云函数 postApply / adminManage 里的同名函数保持同一口径：
+ *   按 UTC+8 切日，而不是按设备时区。设备时区一旦不是东八区，"今天已被拒绝"的
+ *   判断就会和云函数里写进 dayKey 的那天错开。
+ */
+function beijingDayKey(d) {
+  const t = d ? d.getTime() : Date.now();
+  return new Date(t + 8 * 3600 * 1000).toISOString().slice(0, 10);
+}
+
+/**
+ * 调 postApply 云函数提交申请。
+ * 【只做一件事】把请求发出去并解包 res.result，失败原因（NOT_FEEDER / BLACKLISTED /
+ *   ALREADY_APPLIED_TODAY …）由云函数给出中文 msg，客户端直接展示，不在这里重写一套文案。
+ */
+function invokeApply() {
+  const mp = app && app.mpServerless;
+  if (!mp || !mp.function) return Promise.reject(new Error('云函数不可用'));
+  return mp.function.invoke('postApply', { action: 'apply' })
+    .then(function (res) {
+      return (res && res.result !== undefined) ? res.result : res;
+    });
+}
 
 Page({
   data: {
@@ -27,6 +76,9 @@ Page({
     urlPage: app.globalData.url + 'page/', // 帖子图片目录地址
     isFeeder: false,
     isAdministrator: false, // 当前用户是否为管理员（控制「发官方推文」按钮）
+    canPublish: false,     // 管理员 或 已获批发布权（db.canPublish()）：true 时整块申请按钮不显示
+    applyBtnText: APPLY_TEXT, // 申请按钮文案（三态之一）
+    applyDisabled: false,  // 申请按钮是否禁用（待审核 / 今天已被拒绝）
     userInfo: {},
     myPosts: [],           // 我发布且仍存在的帖子（历史分栏）
     trashList: [],         // 我删除过的帖子存档（回收站分栏）
@@ -99,6 +151,8 @@ Page({
     this.setData({ myPosts: [], trashList: [] });
     this.loadMyPosts();
     this.loadTrash();
+    // 申请状态每次进来都重查：管理员可能刚批完，或者刚过零点（"今天被拒"要变回"可申请"）
+    this.loadApplyState();
   },
 
   /**
@@ -142,6 +196,7 @@ Page({
       userId: app.globalData.userId,
       isFeeder: app.globalData.isFeeder,
       isAdministrator: app.globalData.isAdministrator,
+      canPublish: db.canPublish(), // 必须在 initUserState 之后读（它读的是 db 的模块级缓存）
       userInfo: app.globalData.userInfo || {},
     });
     if (app.globalData.isFeeder) {
@@ -153,6 +208,86 @@ Page({
     // 按 userId 过滤加载，与投喂身份无关
     this.loadMyPosts();
     this.loadTrash();
+    this.loadApplyState();
+  },
+
+  // ============ 发布权限申请 ============
+
+  /**
+   * 刷新申请按钮的三态。
+   * 【先看 canPost，再看 PostApply】回填老用户时**只写 Feeder.canPost、不建 PostApply 行**，
+   *   所以「查不到申请记录」绝不等于「没被批准过」—— 那条只能靠 canPublish 判断。
+   *   PostApply 只用来决定按钮上写什么字。
+   * 【为什么用最新一条而不是查今天】一天只允许一条（_id 锁死），所以"今天"和"最新"在
+   *   正常数据下等价；用最新一条能在数据被手工改乱时也给出一个确定答案。
+   * 【失败了按可申请显示】这只是文案，真要拦住重复申请的是云函数里 _id 冲突那一道，
+   *   这里判错最多是让按钮看起来能点，点下去会拿到「每天只能申请一次」。
+   */
+  async loadApplyState() {
+    // 已获批（或管理员）的人连按钮都不显示，查了也是白查
+    if (!this.data.isFeeder || this.data.canPublish) return;
+    let latest = null;
+    try {
+      const rows = await db.find('PostApply', { userId: this.data.userId }, { sort: { appliedAt: -1 }, limit: 1 });
+      latest = (rows && rows[0]) || null;
+    } catch (e) {
+      console.error('[mydetail] 查询发布申请失败（按可申请显示）', e);
+      this.setData({ applyBtnText: APPLY_TEXT, applyDisabled: false });
+      return;
+    }
+    let text = APPLY_TEXT;
+    let disabled = false;
+    if (latest && latest.status === 'pending') {
+      text = '已申请，等待审核';
+      disabled = true;
+    } else if (latest && latest.status === 'rejected' && latest.dayKey === beijingDayKey()) {
+      // 只有"今天"被拒才禁用 —— 昨天被拒的人今天应该能再申请
+      text = '今天已被拒绝，明天可再申请';
+      disabled = true;
+    }
+    this.setData({ applyBtnText: text, applyDisabled: disabled });
+  },
+
+  /** 点「申请发送帖子」：二次确认 → 提交 → 刷新按钮三态 */
+  async applyPost() {
+    // 按钮 disabled 时点不动，这里再挡一道防手滑（也防 setData 还没渲染时被连点）
+    if (this.data.applyDisabled) return;
+    // 【顺序是承重的】弹窗在前、限频在后：点「取消」不该消耗限频窗口（项目约定，
+    // 同 reviewCenter.js 的 banReview/restoreReport）。
+    const confirmed = await confirmAction(
+      '申请发布权限',
+      '提交后由管理员审核，通过即可发布帖子和评论。\n每天只能申请一次。',
+      '提交申请'
+    );
+    if (!confirmed) return;
+    if (!guard.throttle('applyPost', 3000)) return; // 限频命中：throttle 已弹提示，直接收手
+
+    wx.showLoading({ title: '提交中', mask: true });
+    try {
+      const res = await invokeApply();
+      wx.hideLoading();
+      if (res && res.ok === false) {
+        // 失败原因（未注册 / 黑名单 / 今天已申请过 …）直接用服务端文案
+        wx.showToast({ icon: 'none', title: res.msg || '申请失败，请稍后重试', duration: 2500 });
+        // 服务端说"已经有权限了"：本地缓存是旧的，刷新一下按钮状态（仍要退出重进才真正生效）
+        if (res.code === 'ALREADY_CAN_POST') this.loadApplyState();
+        return;
+      }
+      // 纯告知，不需要 await（也没有"取消"这个选项）—— 用 showCancel:false 的 showModal，
+      // 而不是 confirmAction（那个是给"确认/取消"二选一的危险操作用的）。
+      wx.showModal({
+        title: '已提交',
+        content: '申请已提交，等待管理员审核。\n通过后需要完全退出小程序再重新进入，加号和评论框才会出现。',
+        showCancel: false,
+        confirmText: '知道了',
+        confirmColor: '#FF405E',
+      });
+      this.loadApplyState();
+    } catch (e) {
+      wx.hideLoading();
+      console.error('[mydetail] 申请发布权限失败', e);
+      wx.showToast({ icon: 'none', title: '申请失败，请稍后重试' });
+    }
   },
 
   /** 发官方推文（仅管理员；入口按钮在 WXML 按 isAdministrator 显示） */

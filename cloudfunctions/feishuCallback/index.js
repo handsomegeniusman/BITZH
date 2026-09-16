@@ -164,6 +164,18 @@ function extractReporterId(text) {
   return (m && m[1]) ? m[1].trim() : '';
 }
 
+/** 从推送原文解析「申请人ID」（【发布申请】推送里的「申请人ID：xxx」行）。
+ *  「同意」/「拒绝」命令专用。
+ *  【必须行首锚定（/m），且不能复用 extractOpenid】extractOpenid 会匹配「用户ID：」和
+ *  「被举报人ID：」。若拿它做批准，管理员在**举报推送**下打「同意」（这是个很泛的词，
+ *  完全可能手滑）就会把**被举报人**的 ID 解析出来并授予发布权 —— 给一个刚被举报的人开权限。
+ *  场景守卫（resolveAction 里的 context 判断）是第二道防线，这里是第一道。 */
+function extractApplicantId(text) {
+  const s = String(text || '');
+  const m = s.match(/^申请人ID[：:]\s*(\S+)/m);
+  return (m && m[1]) ? m[1].trim() : '';
+}
+
 /** 从推送原文解析「类型 + 目标ID」（封禁/解封帖子用） */
 function extractTarget(text) {
   const s = String(text || '');
@@ -179,13 +191,15 @@ function extractTarget(text) {
   return { type: type, id: (im && im[1]) ? im[1].trim() : '' };
 }
 
-/** 从推送原文判断场景：申诉 / 举报 / 审核（默认）。
+/** 从推送原文判断场景：申诉 / 举报 / 发布申请 / 审核（默认）。
  *  只看第一行标题，避免正文内容误含「【申诉】/【举报】」字样导致误判场景。 */
 function detectContext(text) {
   const s = String(text || '');
   const firstLine = (s.split('\n')[0] || s).trim();
   if (firstLine.indexOf('【申诉】') >= 0) return 'appeal';
   if (firstLine.indexOf('【举报】') >= 0) return 'report';
+  // 发布权限申请卡片（postApply 通过 secCheck 推到「发布申请」群）
+  if (firstLine.indexOf('【发布申请】') >= 0) return 'apply';
   return 'review';
 }
 
@@ -199,6 +213,26 @@ function detectContext(text) {
 function resolveAction(cmd, context, parentText) {
   const verb = cmd.verb;
   const object = cmd.object;
+
+  // 「同意」/「拒绝」= 发布权限审批。**必须限定场景**：
+  //   这两个词极短极泛（群里聊别的事打「同意」完全正常），不限定的话
+  //   ① 在举报推送下打「同意」会去解析被举报人的 ID 并给他开发布权；
+  //   ② 在审核推送下打「同意」会被当成审批推文。
+  //   context !== 'apply' 一律拒绝，宁可让管理员多打一次，也不能批错人。
+  if (verb === 'grantPost' || verb === 'denyPost') {
+    if (context !== 'apply') {
+      return { error: '❌ 「同意」/「拒绝」只能在【发布申请】推送下回复（当前是【' + context + '】场景）' };
+    }
+    const uid = cmd.userId || extractApplicantId(parentText);
+    if (!uid) {
+      return { error: '❌ 未能解析出申请人ID（可回复「同意 <申请人ID>」）' };
+    }
+    return {
+      action: 'applyDecision',
+      decision: verb === 'grantPost' ? 'approve' : 'reject',
+      userId: uid,
+    };
+  }
 
   if (verb === 'reject') { // 拉黑用户：全场景可用
     const userId = cmd.userId || extractOpenid(parentText);
@@ -261,9 +295,11 @@ function resolveAction(cmd, context, parentText) {
 
 /**
  * 解析文本命令 → { verb, object, userId? }
- *   verb:   'ban' | 'unban' | 'reject'
+ *   verb:   'ban' | 'unban' | 'reject' | 'grantPost' | 'denyPost'
  *   object: 'user' | 'post' | null（null=裸命令，默认对象由 resolveAction 定为「帖子」）
- *   私聊带 openid：封禁 <openid> / 解封 <openid> / 拉黑用户 <openid>
+ *   私聊带 openid：封禁 <openid> / 解封 <openid> / 拉黑用户 <openid> / 同意 <申请人ID>
+ * 【注意】「同意」/「拒绝」用的 verb 是 grantPost/denyPost，**不能复用 'reject'** ——
+ *   那个词已经被「拉黑用户」占了，复用会让「拒绝」变成把申请人拉进黑名单。
  */
 function parseCommand(content) {
   const c = String(content || '').trim();
@@ -275,6 +311,13 @@ function parseCommand(content) {
   if (m) return { verb: 'reject', object: 'user', userId: m[1] };
   m = c.match(new RegExp('^全部解封\\s+(' + ID_PAT + ')$'));
   if (m) return { verb: 'unban', object: 'all', userId: m[1] };
+  // 发布权限审批的"带 ID"形式：回读不到父消息（比如卡片是 webhook 发的）时唯一可用的写法
+  m = c.match(new RegExp('^同意\\s+(' + ID_PAT + ')$'));
+  if (m) return { verb: 'grantPost', object: 'user', userId: m[1] };
+  m = c.match(new RegExp('^拒绝\\s+(' + ID_PAT + ')$'));
+  if (m) return { verb: 'denyPost', object: 'user', userId: m[1] };
+  if (c === '同意') return { verb: 'grantPost', object: 'user' };
+  if (c === '拒绝') return { verb: 'denyPost', object: 'user' };
   if (c === '封禁用户') return { verb: 'ban', object: 'user' };
   if (c === '封禁举报人') return { verb: 'ban', object: 'reporter' };
   if (c === '解封举报人') return { verb: 'unban', object: 'reporter' };
@@ -428,6 +471,48 @@ async function fireModerate(ctx, params, messageId) {
   return await invokeModerate(ctx, invokeParams);
 }
 
+/**
+ * 触发并等待 adminManage 执行发布权限审批。
+ * 【为什么调 adminManage 而不是自己写库】写入逻辑只能有一份（adminManage 的 applyDecision），
+ *   否则小程序审批和飞书审批两份实现迟早漂移。飞书回调里没有终端用户身份，
+ *   走不了 adminManage 那两道锁，所以用 FEISHU_INTERNAL_SECRET 作为这条通道的凭据。
+ * 【为什么不用 fireModerate】发布权授予刻意不放 moderate（它是无鉴权的公开函数，
+ *   加 grant 等于开一个客户端可直接调用的自助提权接口）。走独立的一条线，互不干扰。
+ */
+async function fireApplyDecision(ctx, params, messageId) {
+  const opId = String(messageId || '').trim();
+  const dedupKey = dedupKeyOf(opId, params);
+  if (dedupCheck(dedupKey)) {
+    console.log('[feishuCallback] 该审批指令已处理过，跳过重复触发:', opId || dedupKey);
+    return 'skip';
+  }
+  const t0 = Date.now();
+  let r = null;
+  try {
+    r = await withTimeout(
+      ctx.mpserverless.function.invoke('adminManage', Object.assign({}, params, {
+        action: 'decidePostApply',
+        internalSecret: getCfg('FEISHU_INTERNAL_SECRET'),
+      })),
+      MODERATE_AWAIT_MS
+    );
+  } catch (e) {
+    console.error('[feishuCallback] 触发 adminManage 失败', e && e.message);
+  }
+  const elapsed = Date.now() - t0;
+  if (elapsed > 5000) {
+    console.warn('[feishuCallback] 审批执行耗时过长:', elapsed + 'ms');
+  }
+  if (r === null || r === 'skip') {
+    console.error('[feishuCallback] 触发 adminManage 失败（adminManage 是否已部署？）');
+    await confirmPush('❌ 诊断：未能触发发布审批。请检查 adminManage 云函数是否已部署、' +
+      'FEISHU_INTERNAL_SECRET 是否已在 feishuCallback 与 adminManage 两侧配成同一个值。');
+  } else if (r && typeof r === 'object' && r.ok === false) {
+    console.error('[feishuCallback] adminManage 返回失败:', r.code, r.msg);
+  }
+  return r;
+}
+
 /** 调用 moderate 并 await 完成。调用失败时自动重试 1 次；配合 moderate 侧 opId 幂等，重试不重复执行。 */
 async function invokeModerate(ctx, params) {
   let tries = 0;
@@ -442,6 +527,71 @@ async function invokeModerate(ctx, params) {
       await new Promise(function (resolve) { setTimeout(resolve, 1500); });
     }
   }
+}
+
+/**
+ * 处理「同意」/「拒绝」：解析出申请人 → 触发 adminManage → 返回回执文案。
+ * 【两种写法，风险不同】
+ *   · 「同意」       —— 靠回读被回复的推送原文拿申请人ID。**必须限定场景**：
+ *       这两个词太短太泛，群里聊别的事打「同意」完全正常。不限定的话，在举报推送下打
+ *       「同意」就会去解析「被举报人ID」并把发布权批给刚被举报的人。
+ *   · 「同意 <ID>」  —— 手打了明确的 ID，不存在解析错人的风险，所以不要求场景。
+ *       这条也是卡片由 webhook 发出（回读不到父消息）时唯一能用的写法。
+ * @returns {Promise<{reply:string, ok:boolean}>} 永远返回可回发的文案，不抛
+ */
+async function handlePostDecision(ctx, message, cmd, text) {
+  const approve = cmd.verb === 'grantPost';
+  const verbText = approve ? '同意' : '拒绝';
+
+  let parentText = '';
+  let context = 'apply'; // 手打 ID 时无需场景校验
+  if (!cmd.userId) {
+    const rootId = message.root_id || message.parent_id || '';
+    if (!rootId) {
+      return { ok: false, reply: '❌ 没有可关联的推送。请在该申请卡片下回复，或直接发「' + verbText + ' <申请人ID>」' };
+    }
+    try {
+      const tk = await getTenantToken();
+      parentText = parseContentText(await fetchMessageText(tk, rootId));
+    } catch (e) {
+      console.error('[feishuCallback] 回读父消息失败', e && e.message);
+    }
+    context = detectContext(parentText);
+  }
+
+  const resolved = resolveAction(cmd, context, parentText);
+  if (resolved.error) {
+    // 诊断：与 moderate 那条线同款，把场景和回读结果推给管理员自己看
+    await confirmPush('🔍 诊断：指令「' + text + '」→ 场景=' + context + '，被拒绝：' + resolved.error +
+      '\n父推送（前120字）：\n' + String(parentText || '(回读为空)').slice(0, 120));
+    return { ok: false, reply: resolved.error };
+  }
+
+  const r = await fireApplyDecision(ctx, {
+    decision: resolved.decision,
+    userId: resolved.userId,
+  }, message.message_id || '');
+
+  if (r === 'skip') return { ok: true, reply: '⚠️ 收到相同指令，已在执行中，不重复处理' };
+  if (!r || typeof r !== 'object') {
+    return { ok: false, reply: '❌ 未能触发审批，请检查 adminManage 是否已部署、FEISHU_INTERNAL_SECRET 是否两侧一致' };
+  }
+  if (r.ok === false) {
+    return { ok: false, reply: '❌ ' + (r.msg || '执行失败') + '（' + (r.code || '?') + '）' };
+  }
+
+  const who = r.nickName ? ('「' + r.nickName + '」') : resolved.userId;
+  if (approve) {
+    return {
+      ok: true,
+      reply: '✅ 已通过 ' + who + ' 的发布申请。\n' +
+        '对方需**完全退出小程序再重新进入**才生效（只是返回上一页或切后台都不算）。',
+    };
+  }
+  return {
+    ok: true,
+    reply: '✅ 已拒绝 ' + who + ' 的发布申请。对方已有权限（如有）不受影响，今天不能再申请。',
+  };
 }
 
 module.exports = async function (ctx) {
@@ -504,7 +654,7 @@ module.exports = async function (ctx) {
   const cmd = parseCommand(text);
   if (!cmd) {
     console.log('[feishuCallback] 未识别:', text);
-    await respond(message, '⚠️ 未识别：「' + text + '」（来自 ' + fromUser + '）\n可用：封禁 / 封禁帖子 / 封禁用户 / 封禁举报人 / 解封 / 解封帖子 / 解封用户 / 解封举报人 / 全部解封 / 拉黑用户');
+    await respond(message, '⚠️ 未识别：「' + text + '」（来自 ' + fromUser + '）\n可用：封禁 / 封禁帖子 / 封禁用户 / 封禁举报人 / 解封 / 解封帖子 / 解封用户 / 解封举报人 / 全部解封 / 拉黑用户\n发布申请：同意 / 拒绝（在该申请卡片下回复）');
     return { code: 0 };
   }
 
@@ -515,6 +665,15 @@ module.exports = async function (ctx) {
   if (dedupCheck(cmdDedupKey, DEDUP_CMD_MS)) {
     console.log('[feishuCallback] 重复指令，仅回执:', text);
     await respond(message, '⚠️ 收到相同指令，已在执行中，不重复处理');
+    return { code: 0 };
+  }
+
+  // ---- 发布权限审批：「同意」/「拒绝」（走 adminManage，不走 moderate）----
+  // 【为什么必须拦在这里】下面 `if (cmd.userId)` 会把任何带 userId 的命令原样丢给 moderate，
+  //   而 grantPost/denyPost 对 moderate 来说是未知 action。必须在分流之前截住。
+  if (cmd.verb === 'grantPost' || cmd.verb === 'denyPost') {
+    const decided = await handlePostDecision(ctx, message, cmd, text);
+    await respond(message, decided.reply);
     return { code: 0 };
   }
 
@@ -569,3 +728,4 @@ module.exports.detectContext = detectContext;
 module.exports.extractTarget = extractTarget;
 module.exports.extractOpenid = extractOpenid;
 module.exports.extractReporterId = extractReporterId;
+module.exports.extractApplicantId = extractApplicantId;

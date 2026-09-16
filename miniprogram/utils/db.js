@@ -78,6 +78,7 @@ const state = {
   administratorChecked: false, // 管理员是否已查询过（防止重复查库）
   feederChecked: false,        // 用户资料是否已查询过
   audit: null,                 // 审核开关（是否开放注册/发布），null 表示未加载
+  canPost: false,              // 是否已获批发布权限（Feeder.canPost；管理员另算，见 canPublish）
 };
 
 /**
@@ -134,6 +135,9 @@ async function initUserState() {
       if (res.result && res.result.length > 0) {
         state.isFeeder = true;
         state.userInfo = res.result[0];
+        // 【零额外查询】Feeder 文档刚刚就查回来了，canPost 直接读它。
+        // 用 !! 而非 === true：控制台手工改数据时可能写成 1；云函数一律写布尔。
+        state.canPost = !!(res.result[0] && res.result[0].canPost);
       }
     } catch (e) {
       console.error('查询用户资料失败', e);
@@ -147,11 +151,25 @@ async function initUserState() {
   app.globalData.Administrator = state.administratorName;
   app.globalData.isFeeder = state.isFeeder;
   app.globalData.userInfo = state.userInfo || {};
+  app.globalData.canPost = state.canPost;
   if (typeof app.notifyPageDataListeners === 'function') {
     app.notifyPageDataListeners(app.globalData.userInfo);
   }
 
   return state;
+}
+
+/**
+ * 能否发布 / 评论：管理员，或已获批发布权的普通用户。
+ * 【为什么要有这个函数】4 个入口（底部加号 / someBooklet 浮动按钮 / addBooklet 页守卫 /
+ *   评论区输入栏）都要问同一件事，判断式写 4 遍迟早漂移 —— 尤其是"加号没了但评论还能发"
+ *   这种漏一处才发现的 bug。所有入口只认这一个答案。
+ * 【必须在 await db.initUserState() 之后调用】它读的是模块级 state 缓存。
+ * 【注意命名】DB 字段叫 canPost（只表示"被批准过"），本函数叫 canPublish（多含"管理员也算"）。
+ * @returns {Boolean}
+ */
+function canPublish() {
+  return !!(state.isAdministrator || state.canPost);
 }
 
 /**
@@ -260,6 +278,9 @@ function resetUserState() {
   state.administratorName = null;
   state.administratorChecked = false;
   state.feederChecked = false;
+  // 【必须清】漏了会残留上一次的 true —— 管理员刚批准完自己再切号，
+  // 新账号会带着"已获批"的状态继续用，加号和评论框都误开。
+  state.canPost = false;
 }
 
 /**
@@ -350,6 +371,7 @@ module.exports = {
   // 用户状态 / 审核开关 / 分页
   getUserId: getUserId,
   initUserState: initUserState,
+  canPublish: canPublish,
   getAudit: getAudit,
   getContact: getContact,
   isBlacklisted: isBlacklisted,

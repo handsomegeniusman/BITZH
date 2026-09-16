@@ -154,6 +154,56 @@
   font-size: 13px;
   line-height: 1;
 }
+/* ============ 话题命中的猫列表 ============
+   用 flex-wrap 而不是横向 scroll-view：标签命中猫通常就一两只，横滑会把第二只
+   藏在屏幕外（没有任何提示），而且和上面 .relative-tags 的换行语言一致。
+   顶部细线把它和标签行分开 —— 否则两排粉色胶囊挨在一起会被当成同一组。 */
+.topic-cats {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #eee;
+}
+.topic-cats-title {
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: #999;
+}
+.topic-cats-list {
+  display: flex;
+  flex-wrap: wrap;
+}
+/* 每只猫：圆形缩略图 + 名字。底色比 .relative-chip 的 #FFE5EA 更浅，
+   再靠左侧头像圆点区分开，不让人误读成"又一组标签"。
+   样式挂在 <navigator> 内层的 view 上（不是 navigator 本身）——与 所有 / catSearch
+   等 6 个猫咪列表页的写法一致：navigator 只管跳转，不承担布局，避开它的默认样式。 */
+.topic-cat {
+  display: inline-flex;
+  align-items: center;
+  margin: 0 8px 8px 0;
+  padding: 4px 14px 4px 4px;
+  background: #FFF3F5;
+  border-radius: 999px;
+  max-width: 200px;
+}
+.topic-cat:active {
+  background: #FFE5EA;
+}
+.topic-cat-avator {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: #FFE5EA; /* 图没加载出来时也是一块圆，不是空白 */
+}
+/* 名字：长猫名省略号（和 .relative-chip-text 同理，省略号必须挂在文字子元素上） */
+.topic-cat-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: #FF405E;
+}
 
 /* ---------- 拍摄时间（标题下方的元信息行） ---------- */
 .photoTime {

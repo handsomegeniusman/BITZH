@@ -54,6 +54,7 @@
 | 查猫 | 按关键词搜索猫（支持空格 / 多关键词分词），可看「在校 / 离校」等分类 |
 | 猫详情 | 照片轮播、状态 / 绝育标签、详细资料展开收起、相关猫咪、相关话题聚合 |
 | 小猫书 | 图文瀑布流，点击进入详情；按拍摄时间 / 发布时间 / 点赞排序 |
+| 推文详情里的**相关猫咪** | 推文的话题若命中猫名（真实名 / 别名 / 曾用名 / 昵称，独立词匹配），话题下方会列出这些猫，点进猫详情。一只猫被多个话题命中时只列一次 |
 | 发布动态 | 底部中间「+」按钮发布小猫书（未注册用户先引导注册） |
 | **申请发布权限** | 「我的」页点「申请发送帖子」→ 管理员审批 → 通过后**永久**获得发布帖子和评论的权限。**一天只能申请一次**，申请不需要填理由。详见[第 12.7 节](#127-发布权限申请单开一个群) |
 | 评论 | 所有人都能**看**评论；**发**评论需要发布权限（管理员或已获批） |
@@ -94,7 +95,7 @@
 | 后端 | 阿里云 MPServerless 云开发（`@alicloud/mpserverless-sdk`） |
 | 图片存储 | 腾讯云 COS（`cos-wx-sdk-v5`），支持云函数签发临时密钥（STS） |
 | 云函数 | 共 6 个：`getCosSts`（可选，COS 临时密钥）、`secCheck`（内容安全审核）、`moderate`（封禁/解封执行器）、`adminManage`（在线增删管理员 + 发布申请审批，服务端密码校验）、`postApply`（用户申请发布权限）、`feishuCallback`（飞书指令联动，进阶）。另有一个**一次性**脚本 `backfillCanPost`（回填老用户发布权限，用完即删） |
-| 单元测试 | `tests/` 下 5 个零依赖 Node 脚本（云函数为主），`node tests/adminManage.test.js` 直接跑，退出码 `0` 即全部通过 |
+| 单元测试 | `tests/` 下 6 个零依赖 Node 脚本（云函数为主，外加一个纯函数工具 `catForm`），`node tests/adminManage.test.js` 直接跑，退出码 `0` 即全部通过 |
 
 > ⚠️ 小程序是纯前端项目，`config.js` 里的前端密钥（MPServerless 客户端密钥、COS 固定密钥）反编译即可看到。**务必**：COS 尽量启用 STS 临时密钥；MPServerless 开启数据库权限校验。所有**云函数密钥**一律走环境变量，**绝不写进代码、绝不提交到仓库**（详见[第七节](#七密钥与云函数环境变量重要必读)）。
 
@@ -152,7 +153,8 @@ BITZH/
 │   ├── moderateActions.test.js  # 封禁/解封/下架/恢复动作路由
 │   ├── postApply.test.js        # 申请发布权限：身份服务端派生 / 一天一次 / 卡片格式契约
 │   ├── backfillCanPost.test.js  # 回填口径：dryRun / 黑名单 / official 排除 / 计数自检
-│   └── feishuCommands.test.js   # 飞书指令解析（含「同意」场景守卫的安全负例）
+│   ├── feishuCommands.test.js   # 飞书指令解析（含「同意」场景守卫的安全负例）
+│   └── catForm.test.js          # 话题→猫 匹配：独立词边界 / 去重 / 排序（唯一测 utils/ 的脚本）
 ├── changeLog.md               # 版本更新记录
 ├── 已知问题.md                # 已修复/待关注的问题清单
 ├── 测试清单.md                # 手动测试清单
@@ -160,7 +162,7 @@ BITZH/
 └── 万柳猫咪图鉴.jpg           # 项目 Logo
 ```
 
-> 注：`manage/`（旧数据转换脚本）与旧的 `test/` 目录已清理；现在的单测在 `tests/`（5 个零依赖 Node 脚本，直接 `node` 运行）。
+> 注：`manage/`（旧数据转换脚本）与旧的 `test/` 目录已清理；现在的单测在 `tests/`（6 个零依赖 Node 脚本，直接 `node` 运行）。
 > 注：`backfillCanPost/` 不在上表的「云函数」计数里——它没有任何前端调用方，只在控制台手动跑一次，跑完建议连同部署一起删掉。
 
 ---
@@ -506,7 +508,7 @@ module.exports = {
 3. 去小程序复核中心 / 用户管理确认该用户已封禁。
 4. 评论「解封用户」→ 确认恢复。
 5. 本地命令解析自测：`node tests/feishuCommands.test.js`（78 项全过，覆盖全部命令 + 你给的样例 + 飞书 URL 验证应答 + 发布申请场景守卫的安全负例）；`node tests/moderateActions.test.js`（12 项全过，覆盖封禁/解封/下架/恢复/永久拉黑直接幂等执行 + 联动清复核中心待办）。
-6. 发布申请相关自测：`node tests/postApply.test.js`（35 项）、`node tests/adminManage.test.js`（171 项，含审批正/反例与越权负例）。全量 5 个脚本合计 **348 项**。
+6. 发布申请相关自测：`node tests/postApply.test.js`（35 项）、`node tests/adminManage.test.js`（171 项，含审批正/反例与越权负例）。全量 6 个脚本合计 **376 项**。
 
 这是**进阶玩法**，不影响小程序基本功能，新手可完全跳过。
 
@@ -828,7 +830,7 @@ identityMode = trusted    实测日期：2026-09-15
 `app.globalData.isAdministrator` 由数据库判断（见 `utils/db.js` 的 `initUserState`）。把你的 openid 写入 `BITZHAdministrator` 集合即可。
 
 **Q6：测试 / 单测在哪、怎么跑？**
-`tests/` 下有 5 个零依赖 Node 脚本（`adminManage` / `moderateActions` / `postApply` / `backfillCanPost` / `feishuCommands`），直接 `node tests/adminManage.test.js` 运行，**退出码 `0` 即全部通过**。它们不连真实数据库（用 mock），改云函数后建议顺手跑一遍。页面类（`pages/`、`utils/`）的单测历史上清理过，那部分回归请按 `测试清单.md` 手动过一遍。
+`tests/` 下有 6 个零依赖 Node 脚本（`adminManage` / `moderateActions` / `postApply` / `backfillCanPost` / `feishuCommands` / `catForm`），直接 `node tests/adminManage.test.js` 运行，**退出码 `0` 即全部通过**。它们不连真实数据库（用 mock），改云函数后建议顺手跑一遍。页面类（`pages/`）的单测历史上清理过，那部分回归请按 `测试清单.md` 手动过一遍；`utils/` 下的**纯函数**（如 `catForm.js`）现在有单测了 —— 不带 `wx`、不依赖本机 `config.js` 的工具模块都可以照 `tests/catForm.test.js` 的样子加。
 
 > ⚠️ `postApply.test.js` 里有一组**跨云函数契约**测试：把 `postApply` 生成的飞书卡片正文原样喂给 `feishuCallback` 的 `extractApplicantId` 解析。这两个函数各自独立打包、代码不共享，卡片格式是它们之间**唯一**的接口——改卡片文案时忘了改解析器（或反过来），两边的单测都还是绿的，但管理员回「同意」会得到"未能解析出申请人ID"。动这一处务必跑这组。
 

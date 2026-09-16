@@ -149,6 +149,46 @@ function topicCatFilter(topics) {
   return { $or: ors };
 }
 
+/** 话题数组 + 候选猫 → 「哪些话题是猫名」以及「命中的猫分别是哪些」。
+ *  【为什么要单独抽出来】bookletDetail 的「相关猫咪」列表需要的三件事都不在
+ *    aliasContains 里：① 一只猫可能被两个话题同时命中（真实名话题 + 别名话题）→ 要去重；
+ *    ② 列表顺序必须跟着**话题**走（那是页面上看得见、从左到右的东西），不能跟着
+ *    数据库返回顺序走 —— 后者没有任何页面含义，换个索引就可能变，会让同一篇推文
+ *    两次打开顺序不一样；③ 同时还要给出「话题 → 那只猫的 _id」这张表（胶囊画 🐱、
+ *    长按跳猫编辑页用）。
+ *    抽成纯函数（不碰 db、不碰 setData）是为了能单测 —— 顺序和去重恰好是
+ *    最容易静默写错、又最难靠肉眼在页面上发现的两件事。
+ *  @param {string[]} topics 话题名数组，顺序 = 页面上胶囊的显示顺序
+ *  @param {Object[]} cats   候选猫，顺序 = 数据库返回顺序
+ *  @returns {{catTopicMap: Object, cats: Object[]}}
+ *    catTopicMap[t] = 该话题命中的**第一只**猫的 _id（"第一只"按数据库顺序，与
+ *      本函数抽出来之前的实现一致）；cats = 扁平去重后的命中猫，顺序跟 topics 走。
+ */
+function matchCatsByTopics(topics, cats) {
+  const catTopicMap = {};
+  const hits = [];
+  const seen = new Set(); // 按 _id 去重：同一只猫可能被真实名和别名两个话题各命中一次
+  const list = (topics || []).filter(Boolean);
+  // 预算好每只猫"所有可被叫的名字"（真实名 + 别名 + 曾用名 + 昵称），
+  // 避免在双层循环里对同一只猫反复拼串
+  const goods = (cats || [])
+    .filter(function (c) { return c && c.name && c._id; })
+    .map(function (c) {
+      return { cat: c, stack: [c.name, c.otherName, c.usedName, c.nickname].filter(Boolean).join(' ') };
+    });
+  // 【话题外循环、猫内循环】顺序跟话题走，理由见上面的 ②
+  list.forEach(function (t) {
+    goods.forEach(function (g) {
+      if (!aliasContains(g.stack, t)) return;
+      if (!catTopicMap[t]) catTopicMap[t] = g.cat._id;
+      if (seen.has(g.cat._id)) return;
+      seen.add(g.cat._id);
+      hits.push(g.cat);
+    });
+  });
+  return { catTopicMap: catTopicMap, cats: hits };
+}
+
 module.exports = {
   pickers: pickers,
   nickname: nickname,
@@ -158,4 +198,5 @@ module.exports = {
   aliasTokenRegex: aliasTokenRegex,
   aliasContains: aliasContains,
   topicCatFilter: topicCatFilter,
+  matchCatsByTopics: matchCatsByTopics,
 };

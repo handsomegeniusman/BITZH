@@ -1,6 +1,6 @@
 // ============================================================
 // pages/bookletDetail/bookletDetail.js —— 推文详情页
-// 【作用】展示一条推文的图片轮播、正文、相关标签、评论区。
+// 【作用】展示一条推文的图片轮播、正文、相关标签（及话题命中的猫）、评论区。
 //        登录用户可以发表 / 修改 / 删除自己的评论。
 //        分享出去的链接带上 _id，其他人打开可直接看到这条推文。
 //        数据库增删改查、图片 URL、未登录弹窗统一走公共模块。
@@ -57,6 +57,8 @@ async function findCatByName(name, trust) {
 Page({
   data: {
     url: app.globalData.url + 'page/', // 推文图片目录地址
+    catUrl: app.globalData.url, // 猫咪图片根地址（猫图在根目录下，与推文的 page/ 不同目录）
+    relatedCats: [],    // 话题命中的猫（扁平、按 _id 去重、缩略图已带版本号）→ 点进猫详情
     listData: {},     // 当前推文
     imageUrls: [],    // 推文图片地址列表
     Comment: [],      // 评论列表
@@ -220,23 +222,34 @@ Page({
    *  话题原文，别名话题（肥猪）要能直接命中发福那只猫。
    *  值是那只猫的 _id：既当「是不是猫」的布尔用（wxml 判 🐱），
    *  又直接喂给胶囊的 data-_id 供长按跳编辑页 —— 一次查询两处用，不再重复查。
-   *  只读查询，失败静默。 */
+   *  【第三个产出 relatedCats】同一趟算出「话题命中的猫」扁平列表（卡片下方展示、
+   *  点进猫详情）。刻意和 catTopicMap 共用这一次查询与同一套 aliasContains 判断：
+   *  两处若各查一次、各判一次，"胶囊上有 🐱"和"出现在猫列表里"迟早互相矛盾。
+   *  只读查询，失败静默（失败时两个产出都为空 → 猫列表整块不渲染）。 */
   async markCatTopics(list) {
-    const catTopicMap = {};
-    if (!list.length) { this.setData({ catTopicMap }); return; }
-    try {
-      const filter = catForm.topicCatFilter(list);
-      const cats = filter ? await db.find('BITZH', filter, { limit: list.length * 5 }) : [];
-      (cats || []).forEach((c) => {
-        if (!c || !c.name || !c._id) return;
-        // 该猫所有"可被叫的名字"拼成串：真实名 + 别名 + 曾用名 + 昵称（含关系词/描述词）
-        const stack = [c.name, c.otherName, c.usedName, c.nickname].filter(Boolean).join(' ');
-        list.forEach((t) => { if (!catTopicMap[t] && catForm.aliasContains(stack, t)) catTopicMap[t] = c._id; });
-      });
-    } catch (err) {
-      console.error('查询话题猫失败', err);
+    let matched = { catTopicMap: {}, cats: [] };
+    if (list.length) {
+      try {
+        const filter = catForm.topicCatFilter(list);
+        const found = filter ? await db.find('BITZH', filter, { limit: list.length * 5 }) : [];
+        // 去重与排序的规则在 catForm.matchCatsByTopics（纯函数，有单测）：
+        // 顺序跟话题走、同一只猫只出现一次
+        matched = catForm.matchCatsByTopics(list, found);
+      } catch (err) {
+        console.error('查询话题猫失败', err);
+      }
     }
-    this.setData({ catTopicMap });
+    this.setData({
+      catTopicMap: matched.catTopicMap,
+      // 缩略图必须带照片版本号（photoVer），否则某只猫换了照片后这里仍显示微信缓存的旧图
+      relatedCats: pageUtil.stampThumbs(matched.cats, this.data.catUrl),
+    });
+  },
+
+  /** 猫列表缩略图加载失败 → 逐级降级 .png → 0.jpg → 占位图（逻辑在 utils/page.js，
+   *  这里只做薄封装，与其余 6 个猫咪列表页写法一致）。 */
+  onCatImgError(e) {
+    pageUtil.onImgError(this, e);
   },
 
   /** 点击相关标签：若对应猫咪存在则打开猫详情（真实名 / 别名 / 曾用名 / 绰号都能命中），

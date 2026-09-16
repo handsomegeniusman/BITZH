@@ -56,6 +56,28 @@
         </view>
       </view>
       <view class="relative-guide">点击话题可查看相关猫咪或文章</view>
+
+      <!-- 话题命中的猫：扁平、按猫去重，点进猫详情。
+           与上面胶囊的 🐱 共用 markCatTopics 的同一次查询和同一套匹配判断，
+           所以「胶囊上有 🐱」和「出现在这个列表里」不会互相矛盾。
+           用 navigator 而不是 bindtap + wx.navigateTo：跳转是纯声明式的，
+           和其余猫咪列表页（所有 / catSearch）写法一致，也不必在 js 里再写一个跳转函数。
+           relatedCats 为空（没有标签命中猫）时整块不渲染 —— 多数推文不该多出一行空标题。 -->
+      <view wx:if="{{relatedCats.length}}" class="topic-cats">
+        <view class="topic-cats-title">相关猫咪</view>
+        <view class="topic-cats-list">
+          <navigator wx:for="{{relatedCats}}" wx:key="_id"
+                     url="/pages/catDetail/catDetail?_id={{item._id}}">
+            <view class="topic-cat">
+              <image lazy-load="true" class="topic-cat-avator"
+                     src="{{item._thumbFallback == 1 ? item._thumbJpg : (item._thumbFallback > 1 ? '/pages/images/logo.png' : item._thumbUrl)}}"
+                     binderror="onCatImgError" data-list="relatedCats" data-index="{{index}}"
+                     mode="aspectFill"></image>
+              <text class="topic-cat-name">{{item.name}}</text>
+            </view>
+          </navigator>
+        </view>
+      </view>
     </view>
   </view>
 

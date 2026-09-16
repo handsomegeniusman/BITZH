@@ -228,6 +228,25 @@
   padding: 4rpx 12rpx;
 }
 
+/* ---------- 「导入推荐词表」次要按钮 ----------
+   刻意**不用** .feature-button（88rpx 全宽主色渐变，和「加入词库」同级）：
+   它是给词库打底的辅助动作，"加入词库"才是这里的主动作。做成虚线描边的
+   小条，一眼能看出是"辅助/可重复点"而不是主提交按钮。 */
+.seed-btn {
+  margin-top: 4rpx;
+  padding: 18rpx 20rpx;
+  text-align: center;
+  font-size: 24rpx;
+  color: #9c6b7e;
+  background: #fdf7f9;
+  border: 2rpx dashed #e3c6d2;
+  border-radius: 14rpx;
+}
+
+.seed-btn:active {
+  background: #f7eaf0;
+}
+
 /* 行式导航入口 */
 .row {
   background: #ffffff;

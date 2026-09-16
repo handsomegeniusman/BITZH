@@ -33,6 +33,10 @@
  *   { action:'approvePost', userId, applyId?, password }    → 通过发布申请
  *   { action:'rejectPost',  userId, applyId?, password }    → 拒绝发布申请
  *   { action:'decidePostApply', userId, decision, internalSecret }  → 【飞书通道】同上，见下
+ *   { action:'listWords',   password? }                     → 动态敏感词库列表（只读，见「动态敏感词库」节）
+ *   { action:'addWord',     word, tier?, password }         → 往词库加一个词（也用于改档位）
+ *   { action:'delWord',     word, password }                → 从词库删一个词
+ *   { action:'seedWords',   password }                      → 一键导入内置推荐词表（幂等，见「推荐词表」节）
  *   { action:'list'|'grant'|…, callerId? }                  → callerId 仅作为身份不可信时的降级来源
  *   返回 { ok:true, ... } 或 { ok:false, code, msg }；异常兜底不抛。
  *
@@ -87,10 +91,10 @@ const WORD_MAX_LEN = 20;
 const ADMIN_ACTIONS = {
   list: 1, grant: 1, revoke: 1,
   listApplies: 1, approvePost: 1, rejectPost: 1,
-  authCheck: 1, listWords: 1, addWord: 1, delWord: 1,
+  authCheck: 1, listWords: 1, addWord: 1, delWord: 1, seedWords: 1,
 };
 // 身份可信时可免密码的动作（只读）。
-// 【注意】approvePost / rejectPost / addWord / delWord 刻意**不在**这里 —— 写操作永远要密码。
+// 【注意】approvePost / rejectPost / addWord / delWord / seedWords 刻意**不在**这里 —— 写操作永远要密码。
 // 【注意】authCheck 也**不在**这里，而且它必须是"永远要密码"的：它存在的意义就是
 //   「验一下这个密码对不对」，放进豁免名单等于永远返回对。
 const PASSWORD_OPTIONAL = { list: 1, listApplies: 1, listWords: 1 };
@@ -996,6 +1000,101 @@ async function doDelWord(db, event) {
 }
 
 // ============================================================
+// 推荐词表（一键导入动态词库）
+// ============================================================
+//
+// 【为什么放在服务端，而不是写在小程序的 JS 里】
+//   小程序包会发到每一台手机上，也要过微信的包审核。把 40 多个违禁词写在客户端，
+//   等于对外公开一份"哪些词被拦、怎么绕过"的清单。这类清单只该待在服务端。
+//   （静态词表 sensitiveWords.js 同理 —— 它在 secCheck 的部署包里，也不随小程序发布。）
+//
+// 【它与静态词表 sensitiveWords.js 是两回事，别混】
+//   · 静态词表：编译进 secCheck 部署包的硬拦词，改一次要重新部署；好处是**不依赖数据库**，
+//     词库读不到时它照常工作。那是"永远不该出现"的词（涉政、赌博、诈骗…）。
+//   · 本清单：往**动态词库（SensitiveWord 集合）里灌的初始内容**。灌完就归管理员在
+//     小程序里管 —— 能看见、能改档、能删。所以这批词随时可以被推翻，静态词表不行。
+//
+// 【为什么这批词不直接写进静态表】下面有若干条我标了"有正当用法、可能误伤"的
+//   （弓弩、弹弓、猫奴、网暴、狗肉节…）。它们的误伤概率明显高于既有静态词，
+//   所以更需要"随时能删"这条退路 —— 动态词库给的正是这条退路。
+//
+// 【幂等】重复导入只补上缺的那些，不会产生重复行（_id 去重，见 wordKey）。
+//   ⚠️ 改本清单要重新上传 adminManage（它是随包发布的常量）。
+const SEED_WORDS = [
+  // ---- block 档：在本论坛语境下没有正当用法 ----
+  // 「X猫」结构：每个都得单列一次，因为匹配是 indexOf 子串，没有"词根"这回事。
+  // 注意静态表已有「打猫/摔猫/毒猫/扔猫/活埋」，所以不再重复列。
+  { word: '踢猫', tier: 'block' }, { word: '踩猫', tier: 'block' }, { word: '砸猫', tier: 'block' },
+  { word: '碾猫', tier: 'block' }, { word: '射猫', tier: 'block' }, { word: '吊猫', tier: 'block' },
+  { word: '掐猫', tier: 'block' }, { word: '勒猫', tier: 'block' },
+  { word: '烫猫', tier: 'block' }, { word: '烧猫', tier: 'block' }, { word: '淹猫', tier: 'block' },
+  { word: '偷猫', tier: 'block' }, { word: '盗猫', tier: 'block' },
+  // 工具类
+  { word: '捕兽夹', tier: 'block' },   // 多数地区禁用，本论坛无正当用法
+  { word: '毒鼠强', tier: 'block' },   // 国家禁用鼠药（「老鼠药」有正当用法，见下面 review 档）
+  { word: '吹箭', tier: 'block' },     // 圈内用于向猫发射麻醉/毒针
+  { word: '泼硫酸', tier: 'block' },   // 只收三字形式；单「硫酸」有正当用法，在 review 档
+  // 绕词写法：用「喵/咪」替「猫」，以及拼音写法（与静态表的「贱猫/键猫」同一手法）
+  { word: '虐喵', tier: 'block' }, { word: '虐咪', tier: 'block' },
+  { word: 'nuemao', tier: 'block' },   // 注意 wordKey 会去掉空白，所以"nue mao"归档后与它同键，只留一条
+  // 手段 / 组织化行为
+  { word: '活体解剖', tier: 'block' }, { word: '肢解', tier: 'block' },
+  { word: '活体盲盒', tier: 'block' },
+  { word: '抓猫队', tier: 'block' }, { word: '捕猫队', tier: 'block' },
+  // 与虐猫无关，但论坛里对骂时最该拦的一类（它比关键词更容易直接引发线下骚扰）
+  { word: '人肉搜索', tier: 'block' },
+
+  // ---- review 档：有正当用法，放行但落 Review 待管理员复核 ----
+  // 判断依据只有一条：这个词有没有正当用法。有 → review。
+  { word: '老鼠药', tier: 'review' },  // 灭鼠是正当行为
+  { word: '硫酸', tier: 'review' },    // 化学课 / 工业话题
+  { word: '弹弓', tier: 'review' },    // 玩具，也是打猫工具
+  { word: '麻醉针', tier: 'review' },  // 兽医正当用途
+  { word: '剥皮', tier: 'review' }, { word: '断尾', tier: 'review' },
+  { word: '异烟肼', tier: 'review' },  // 抗结核药（现实中也被用来投毒），有正当用法
+  { word: '弓弩', tier: 'review' }, { word: '弩箭', tier: 'review' }, // 历史 / 新闻话题
+  { word: '猫孝子', tier: 'review' }, { word: '猫奴', tier: 'review' },
+  //   ↑ 虐猫圈用来骂爱猫人，但「猫奴」社团成员自己也常自称，进 block 会大量误伤
+  { word: '恨猫', tier: 'review' },    // 可能是「我对猫毛过敏，很恨猫」这类正常抱怨
+  { word: '猫贩子', tier: 'review' }, { word: '运猫车', tier: 'review' },
+  //   ↑ 社团自己会用它批判交易行为
+  { word: '网暴', tier: 'review' },    // 社团讨论反网暴时会出现
+  { word: '狗肉节', tier: 'review' },  // 属于观点表达
+  { word: '开盒', tier: 'review' },    // ⚠️ 盲盒圈里"开盒"= 拆盲盒，有正当用法（与"开盲盒"并存）
+];
+
+/**
+ * 一键导入推荐词表。
+ * 【为什么逐个走 doAddWord，而不是另写一套批量校验】词库写入是**全局生效**的
+ *   （一个单字词能把所有人的发布打死），校验逻辑只该有一份 —— 否则"手动加"和
+ *   "批量导入"迟早会分叉，而分叉出来的那条没人测。这里刻意复用，代价是重复读几次词库。
+ * 【幂等】已存在的词按 doAddWord 的语义只改档位/跳过，不产生重复行。
+ *   所以重复点只补缺的那些，中途失败也可以直接再点一次。
+ * 【部分失败不报错】返回 failed 明细，ok 仍为 true —— 比如词库快满时后几条进不去，
+ *   那是"导入了大部分"，不是"导入失败"，页面按这个如实提示。
+ */
+async function doSeedWords(db, caller) {
+  let added = 0, updated = 0, kept = 0;
+  const failed = [];
+  for (let i = 0; i < SEED_WORDS.length; i++) {
+    const it = SEED_WORDS[i];
+    const r = await doAddWord(db, caller, { word: it.word, tier: it.tier });
+    if (!r || !r.ok) {
+      failed.push({ word: it.word, code: (r && r.code) || 'UNKNOWN' });
+    } else if (r.added) added++;
+    else if (r.updated) updated++;
+    else kept++;
+  }
+  console.log('[adminManage] seedWords by=' + maskId(caller && caller.id) +
+    ' added=' + added + ' updated=' + updated + ' kept=' + kept + ' failed=' + failed.length);
+  return {
+    ok: true, action: 'seedWords',
+    added: added, updated: updated, kept: kept,
+    failed: failed, listTotal: SEED_WORDS.length,
+  };
+}
+
+// ============================================================
 // 路由
 // ============================================================
 
@@ -1058,6 +1157,8 @@ async function handle(ctx, event) {
   if (action === 'listWords') return await doListWords(db);
   if (action === 'addWord') return await doAddWord(db, caller, event);
   if (action === 'delWord') return await doDelWord(db, event);
+  // 词表在服务端（SEED_WORDS），客户端只发一个空请求 —— 违禁词清单不随小程序包发出去
+  if (action === 'seedWords') return await doSeedWords(db, caller);
   if (action === 'approvePost') return await doApprovePost(db, caller, identityMode, event);
   if (action === 'rejectPost') return await doRejectPost(db, caller, identityMode, event);
   if (action === 'grant') return await doGrant(db, admins, caller, identityMode, event);
@@ -1086,6 +1187,9 @@ module.exports.getCfg = getCfg;
 module.exports.applyDecision = applyDecision;
 module.exports.verifyInternalSecret = verifyInternalSecret;
 module.exports.beijingDayKey = beijingDayKey;
+// 推荐词表本身也要能被测试检查（长度、档位、有没有和静态词表重复）——
+// 这份清单是手写的常量，写错一个字在子串匹配下等于"这条没加"，而线上看不出来。
+module.exports.SEED_WORDS = SEED_WORDS;
 /** 仅供测试：清掉模块级状态（内存降级计数、集合不可用标记） */
 module.exports.__resetState = function () {
   memFails.clear();

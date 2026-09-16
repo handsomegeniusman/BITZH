@@ -215,6 +215,50 @@ Page({
     this.setData({ wordActing: false });
   },
 
+  /**
+   * 一键导入内置推荐词表（词表在**服务端**，这里只发一个空请求）。
+   * 【为什么值得一个按钮】手动一条条加四十几条太慢，且输错一个字就不生效（子串匹配下
+   *   错一个字等于没加）。幂等，所以重复点只补缺的那些，中途失败再点一次就行。
+   */
+  async seedWords() {
+    if (this.data.wordActing) return;
+    const confirmed = await new Promise((resolve) => {
+      wx.showModal({
+        title: '导入推荐词表',
+        content: '导入内置的推荐词表？\n\n内容是虐猫圈的黑话与手段词（拦下档），以及若干条"有正当用法、只标记"的词（复核档）。\n\n已有的词不会重复添加，导入后可以逐条删除或改档。',
+        confirmText: '导入',
+        success: (r) => resolve(!!r.confirm),
+        fail: () => resolve(false),
+      });
+    });
+    if (!confirmed) return;
+    if (!guard.throttle('Administrator.seedWords', 3000)) return;
+
+    this.setData({ wordActing: true, wordHint: '导入中，请稍候…' });
+    try {
+      const res = await adminApi.seedWords();
+      adminApi.ensureOk(res);
+      guard.resetThrottle('Administrator.seedWords');
+      await this.loadWords();
+      const failN = (res.failed || []).length;
+      this.setData({
+        wordHint: '已导入 ' + res.listTotal + ' 条：新增 ' + res.added + '、改档 ' + res.updated
+          + '、本来就有 ' + res.kept
+          + (failN ? '、失败 ' + failN + ' 条（' + res.failed[0].code + '）' : ''),
+      });
+      wx.showToast({ title: failN ? '部分导入成功' : '已导入推荐词表', icon: 'none', duration: 2000 });
+    } catch (err) {
+      const code = (err && err.code) || '';
+      const msg = (err && err.message) || '导入失败，请重试';
+      const hint = (code === 'NEED_PASSWORD' || code === 'BAD_PASSWORD')
+        ? '需要操作密码：请在上方「操作密码」里填写'
+        : msg;
+      this.setData({ wordHint: hint });
+      wx.showToast({ title: hint, icon: 'none', duration: 2500 });
+    }
+    this.setData({ wordActing: false });
+  },
+
   /** 从词库删掉一个词（手滑加错时的补救入口；没有它就只能去控制台改库） */
   async delWord(e) {
     const word = e.currentTarget.dataset.word;

@@ -96,6 +96,14 @@
                     <button bindtap="addWord" class="feature-button contact-save">{{wordActing ? '提交中…' : '加入词库'}}</button>
                     <text class="pwd-tip" wx:if="{{wordHint}}">{{wordHint}}</text>
 
+                    <!-- 一键导入推荐词表：虐猫圈黑话/手段词 + 几条"只标记"的疑似词。
+                         词表在**服务端**（adminManage 的 SEED_WORDS），客户端只发一个空请求 ——
+                         违禁词清单不能随小程序包发到每台手机上，那等于公开"怎么绕过"。
+                         幂等：重复点只补缺的那些，中途失败也可以直接再点一次。
+                         用次要样式（.seed-btn）而不是主色大按钮：这是一次性的补词动作，
+                         不该和「加入词库」抢视觉重量。 -->
+                    <view class="seed-btn" bindtap="seedWords">{{wordActing ? '处理中…' : '导入推荐词表（幂等，只补缺的）'}}</view>
+
                     <view class="word-item" wx:for="{{words}}" wx:key="word">
                         <text class="word-text">{{item.word}}</text>
                         <text class="word-tag {{item.tier === 'review' ? 'word-tag-review' : ''}}">{{item.tier === 'review' ? '只标记' : '拦下'}}</text>

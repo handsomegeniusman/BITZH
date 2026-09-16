@@ -1051,7 +1051,139 @@ const ADMIN_ENV = { ADMIN_PASSWORD: PW, ADMIN_PASSWORD_SHA256: undefined, ADMIN_
     }));
     check('非管理员即使带对密码也写不了', r.code, 'NOT_ADMIN');
     check('  且没写库', db.of('SensitiveWord', 'insertOne').length, 0);
+
+    // ---- 一键导入推荐词表（seedWords）----
+    // 词表在服务端常量里，客户端只发空请求。这里先查清单本身，再查导入行为。
+    db = makeDb({ data: { BITZHAdministrator: [ADMIN_A], AdminAuthFail: [], BlackNum: [], Feeder: [], PostApply: [], SensitiveWord: [] } });
+    r = await mod(mkCtx({ db: db, args: { action: 'seedWords', callerId: AID, password: PW } }));
+    const seed = mod.SEED_WORDS;
+    check('导入成功且总数对得上', { ok: r.ok, listTotal: r.listTotal }, { ok: true, listTotal: seed.length });
+    check('  全部是新增（空词库）', { added: r.added, updated: r.updated, kept: r.kept, failed: r.failed.length },
+      { added: seed.length, updated: 0, kept: 0, failed: 0 });
+    check('  真的逐条写了库', db.of('SensitiveWord', 'insertOne').length, seed.length);
+    check('  写进去的档位和清单一致（抽查 block/review 各一条）',
+      db.of('SensitiveWord', 'insertOne').filter(function (x) {
+        return x.doc._id === '踢猫' ? x.doc.tier === 'block' : (x.doc._id === '猫奴' ? x.doc.tier === 'review' : false);
+      }).length, 2);
+
+    // 幂等：再点一次不该产生重复行、也不该报错
+    db = makeDb({ data: { BITZHAdministrator: [ADMIN_A], AdminAuthFail: [], BlackNum: [], Feeder: [], PostApply: [], SensitiveWord: [] } });
+    await mod(mkCtx({ db: db, args: { action: 'seedWords', callerId: AID, password: PW } }));
+    const firstPass = db.of('SensitiveWord', 'insertOne').length;
+    await mod(mkCtx({ db: db, args: { action: 'seedWords', callerId: AID, password: PW } }));
+    check('重复导入不产生重复行（第二次全部 kept）', db.of('SensitiveWord', 'insertOne').length, firstPass);
+    check('  第二次没有多余的 update', db.of('SensitiveWord', 'updateOne').length, 0);
+
+    // 已存在但档位不同 → 第二次导入负责改回来（复用 addWord 的改档语义）
+    db = makeDb({ data: {
+      BITZHAdministrator: [ADMIN_A], AdminAuthFail: [], BlackNum: [], Feeder: [], PostApply: [],
+      SensitiveWord: [{ _id: '踢猫', word: '踢猫', tier: 'review' }],
+    } });
+    r = await mod(mkCtx({ db: db, args: { action: 'seedWords', callerId: AID, password: PW } }));
+    check('已存在但档位被改过 → 导入时改回清单的档位', r.updated, 1);
+    check('  改档写的是清单里的档位', db.of('SensitiveWord', 'updateOne')[0].update.$set.tier, 'block');
+
+    // 词库快满 → 部分失败要如实报，而不是整体失败（已经是"导入了大部分"）
+    const nearlyFull = [];
+    for (let i = 0; i < 299; i++) nearlyFull.push({ _id: 'y' + i, word: 'y' + i, tier: 'block' });
+    db = makeDb({ data: { BITZHAdministrator: [ADMIN_A], AdminAuthFail: [], BlackNum: [], Feeder: [], PostApply: [], SensitiveWord: nearlyFull } });
+    r = await mod(mkCtx({ db: db, args: { action: 'seedWords', callerId: AID, password: PW } }));
+    check('词库将满 → ok 仍为 true（不是整体失败）', r.ok, true);
+    check('  只进了凑满上限的那几条', r.added, 1);
+    check('  其余进 failed 且带原因', r.failed.length, seed.length - 1);
+    check('  failed 里的 code 是词库满', r.failed[0].code, 'WORD_BANK_FULL');
+
+    // 门槛与 addWord 完全一致（seedWords 也不在 PASSWORD_OPTIONAL 里）
+    db = makeDb({ data: { BITZHAdministrator: [ADMIN_A], AdminAuthFail: [], BlackNum: [], Feeder: [], PostApply: [], SensitiveWord: [] } });
+    r = await mod(mkCtx({ db: db, args: { action: 'seedWords', callerId: AID } }));
+    check('seedWords 不带密码 → NEED_PASSWORD', r.code, 'NEED_PASSWORD');
+    check('  且没写库', db.of('SensitiveWord', 'insertOne').length, 0);
+
+    db = makeDb({ data: { BITZHAdministrator: [ADMIN_A], AdminAuthFail: [], BlackNum: [], Feeder: [], PostApply: [], SensitiveWord: [] } });
+    r = await mod(mkCtx({
+      db: db, args: { action: 'seedWords', callerId: TID, password: PW },
+      getInfo: async function () { throw new Error('x'); },
+    }));
+    check('非管理员导入被拒', r.code, 'NOT_ADMIN');
+    check('  且没写库', db.of('SensitiveWord', 'insertOne').length, 0);
   });
+
+  // ============================================================
+  console.log('\n[推荐词表清单自检]');
+  // 这份清单是手写常量，而匹配是 indexOf 子串 —— 写错一个字等于"这条没加"，
+  // 线上完全看不出来（词库列表里显示得好好的）。所以清单本身必须被测。
+  // ============================================================
+  (function () {
+    const seed = mod.SEED_WORDS;
+    const sw = require('../cloudfunctions/secCheck/sensitiveWords.js');
+    const C = sw.CATEGORIES;
+
+    // 这一组刻意**不**用 sw.match(词) 直接测 —— 清单里的词是**动态词库**的内容，
+    // 裸静态表当然一条都命中不了（那样测出来的"没命中"是假警报）。
+    // 唯一正确的问题是：把它丢进 withExtraWords 之后，线上会不会真的拦得住。
+    function served(word, tier) {
+      const cats = sw.withExtraWords(C, [tier ? { word: word, tier: tier } : word]);
+      const r = sw.match(word, { scene: 3, categories: cats });
+      return [r.severity, r.keywords.length];
+    }
+
+    check('清单条数（改词表时要一起改这个数，免得无声增删）', seed.length, 43);
+    check('档位只有 block / review',
+      seed.filter(function (x) { return x.tier !== 'block' && x.tier !== 'review'; }), []);
+
+    // 去重键与 adminManage.wordKey 同一算法（去空白 + 控制字符）。
+    // 这里重写一份而不是 require：wordKey 没导出，而它短到不值得为测试开个口子。
+    function key(s) {
+      let out = '';
+      s = String(s == null ? '' : s);
+      for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); if (c <= 32 || c === 127) continue; out += s.charAt(i); }
+      return out;
+    }
+    const keys = seed.map(function (x) { return key(x.word); });
+
+    // 单字词会把所有人的发布打死；超长词由服务端 WORD_MAX_LEN 拒绝。
+    // ⚠️ 这两个阈值是**抄来的常量**（服务端没导出），改服务端要一起改这里。
+    const badLen = seed.filter(function (x) {
+      const n = key(x.word).length;
+      return n < sw.MIN_WORD_LEN || n > 20;
+    }).map(function (x) { return x.word; });
+    check('长度都在 min(2) ~ max(20) 之间', badLen, []);
+
+    // 清单内部撞键 → 后一条会覆盖前一条的档位（同 _id），等于有一条白写了
+    const dupes = keys.filter(function (k, i) { return keys.indexOf(k) !== i; });
+    check('清单内部无重复（按 wordKey 去空白后比）', dupes, []);
+
+    // 【最重要的一条】与静态词表重复的词会被 withExtraWords **静默丢弃** ——
+    // 导入时显示成功（doAddWord 也不查静态表），实际不生效。
+    // 下一条 served() 的断言会连"因重复被丢弃"一起抓住，这条只负责把原因说出来。
+    const staticAll = [];
+    C.forEach(function (c) { staticAll.push.apply(staticAll, (c.block || []).concat(c.review || [])); });
+    check('清单与静态词表无重复（重复的会被静默丢弃）',
+      keys.filter(function (k) { return staticAll.indexOf(k) >= 0; }), []);
+
+    // 每条词都必须真的进得了动态词库并命中自己 —— 一条断言同时覆盖三种坏情况：
+    // 被静态表重复丢掉、归一化后变成空/变了样、以及拼错字（拼错=换了个词，照样命中，
+    // 所以这条挡不住错别字，只挡"加了等于没加"）。
+    const dead = seed.filter(function (x) { return served(x.word, x.tier)[1] === 0; })
+      .map(function (x) { return x.word; });
+    check('每条词都真的进得了词库且能命中自己', dead, []);
+
+    // 档位要如实传到线上：写错档位不会报错，只会让该拦的变"标记"
+    const wrongTier = seed.filter(function (x) { return served(x.word, x.tier)[0] !== x.tier; })
+      .map(function (x) { return x.word + ':' + served(x.word, x.tier)[0]; });
+    check('每条词的生效档位与清单一致', wrongTier, []);
+
+    // 整批一起灌（真实路径是 43 条同时进库，不是一条一条来）：
+    // 词库超上限时 withExtraWords 会截断，被截掉的词静默失效。
+    const all = sw.withExtraWords(C, seed);
+    const missedTogether = seed.filter(function (x) { return served(x.word, x.tier)[1] === 0; });
+    check('整批灌入后仍不超上限（超了会静默截断）', seed.length <= sw.MAX_EXTRA_WORDS, true);
+    check('整批一起灌时 block/review 两档都没被截断',
+      [all[0].block.length, all[all.length - 1].review.length],
+      [seed.filter(function (x) { return x.tier === 'block'; }).length,
+        seed.filter(function (x) { return x.tier === 'review'; }).length]);
+    check('  且每条都还在（双重确认）', missedTogether.length, 0);
+  })();
 
   // ============================================================
   // 北京时间当天键：一天只能申请一次 / "今天被拒" 的边界全靠它

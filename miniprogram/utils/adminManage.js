@@ -201,6 +201,17 @@ module.exports = {
   delWord: function (word, password) {
     return invoke('delWord', { word: word, password: password });
   },
+  /**
+   * 一键导入内置的推荐词表（虐猫圈黑话与手段 + 若干"放行但标记"的疑似词）。
+   * 【为什么没有参数】词表在**服务端**（adminManage 的 SEED_WORDS）—— 违禁词清单
+   *   不随小程序包发到每台手机上，所以这里只发一个空请求。
+   * 【幂等】已有的词只改档位/跳过，重复调用只补缺的那些，中途失败再点一次即可。
+   * @returns {Promise<{ok:true, added:number, updated:number, kept:number,
+   *          failed:Array<{word,code}>, listTotal:number}>}
+   */
+  seedWords: function (password) {
+    return invoke('seedWords', { password: password });
+  },
 
   /** 服务端身份**不可信**时调用（页面要显示红色提醒条），判断依据是返回里的 identityMode */
   isTrusted: function (res) {

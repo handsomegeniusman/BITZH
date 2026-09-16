@@ -129,6 +129,11 @@ Page({
     wx.navigateTo({ url: '/pages/userManage/userManage' });
   },
 
+  /** 管理员管理（在线添加 / 移除管理员；进入后还要输服务端密码才能操作） */
+  manageAdmins() {
+    wx.navigateTo({ url: '/pages/adminManage/adminManage' });
+  },
+
   /** 官方推文管理列表（含"发布新推文"入口） */
   manageOfficial() {
     wx.navigateTo({ url: '/pages/manageOfficial/manageOfficial' });

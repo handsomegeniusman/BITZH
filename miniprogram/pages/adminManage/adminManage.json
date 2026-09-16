@@ -1,0 +1,6 @@
+{
+  "navigationBarTitleText": "管理员管理",
+  "usingComponents": {
+    "kb-done-bar": "/components/kb-done-bar/kb-done-bar"
+  }
+}

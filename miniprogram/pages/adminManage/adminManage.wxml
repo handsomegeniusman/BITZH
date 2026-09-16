@@ -1,0 +1,115 @@
+<!-- ============================================================
+     pages/adminManage/adminManage.wxml —— 在线添加 / 移除管理员（仅管理员）
+     - 顶部：操作密码（服务端校验）+ 解锁按钮
+     - 中部：搜索用户 → 设为管理员
+     - 底部：当前管理员列表 → 移除
+     整页用 wx:if="{{ready}}" 包住：ready 为 false 时不渲染任何内容，
+     避免非管理员在 requireAdmin 挡回之前看到一闪而过的界面。
+============================================================ -->
+<view class="root" wx:if="{{ready}}">
+
+  <!-- 身份提醒条：服务端没能独立确认调用者身份时，如实说明"现在只有一道锁"。
+       这不是 bug，是实测结果（见 README 七.5）。宁可把话说清楚，
+       也不能让人以为有两把锁而实际只有密码一把。 -->
+  <view class="warn-bar" wx:if="{{unlocked && !trusted}}">
+    <text class="warn-title">⚠️ 当前实际只有「密码」一道锁</text>
+    <text class="warn-text">服务端未能独立确认你的身份，调用者是谁由客户端自报（理论上可伪造），因此密码是唯一真实门槛。若要让"必须是管理员才能操作"也真正成立，请按 README 第七.5 节实测一次，然后把云函数环境变量 ADMIN_TRUST_CALLER_ID 设为 1。</text>
+  </view>
+
+  <!-- ---------- 操作密码 ---------- -->
+  <view class="card">
+    <view class="pwd-row">
+      <input
+        class="pwd-input"
+        password="{{true}}"
+        value="{{password}}"
+        placeholder="操作密码（服务端校验）"
+        confirm-type="done"
+        bindinput="onPasswordInput"
+        bindconfirm="onUnlockTap"
+      />
+      <view class="pwd-btn {{adminsLoading ? 'btn-disabled' : ''}}" bindtap="onUnlockTap">{{adminsLoading ? '查询中…' : (unlocked ? '刷新' : '解锁')}}</view>
+    </view>
+    <text class="pwd-hint">密码只存在本页内存里，不写缓存、不进全局变量，离开本页即失效。连续输错会被暂时锁定（按 IP 计）。</text>
+  </view>
+
+  <!-- ---------- 添加管理员 ---------- -->
+  <view class="section-title">添加管理员</view>
+  <view class="search-bar">
+    <input
+      class="search-input"
+      value="{{keyword}}"
+      placeholder="昵称或用户ID"
+      confirm-type="search"
+      bindinput="onKeywordInput"
+      bindconfirm="onSearchTap"
+    />
+    <view class="search-btn" bindtap="onSearchTap">{{searching ? '搜索中' : '搜索'}}</view>
+  </view>
+
+  <view class="card" wx:for="{{results}}" wx:key="userId">
+    <view class="user-head">
+      <image class="user-avatar" src="{{item.avatarUrl}}" mode="aspectFill" data-list="results" data-index="{{index}}" binderror="onAvatarError"></image>
+      <view class="user-info">
+        <text class="user-name">{{item.nickName || '（无昵称）'}}</text>
+        <view class="user-id-row">
+          <text class="user-id" selectable="{{true}}" user-select="{{true}}">{{item.userId}}</text>
+          <text class="copy-btn" catchtap="copyId" data-userid="{{item.userId}}">复制</text>
+        </view>
+      </view>
+    </view>
+    <view class="user-actions">
+      <view wx:if="{{item.isAdmin}}" class="btn small done">已是管理员</view>
+      <view wx:elif="{{item.isSelf}}" class="btn small done">就是我自己</view>
+      <!-- 禁态用 class 而不是 disabled 属性：本仓库既有做法（userManage.wxml），
+           且 disabled 的默认样式会和这里的 WXSS 打架 -->
+      <view
+        class="btn small success {{acting === item.userId ? 'btn-disabled' : ''}}"
+        bindtap="grant"
+        data-userid="{{item.userId}}"
+      >{{acting === item.userId ? '提交中…' : '设为管理员'}}</view>
+      <text class="actions-tip" wx:if="{{item.isAdmin}}">无需重复添加</text>
+    </view>
+  </view>
+  <view class="empty small" wx:if="{{searched && !results.length}}">没有找到这个用户</view>
+  <view class="empty small" wx:if="{{searched && results.length}}">点「设为管理员」后会让你填写对方的真实姓名（显示在下方列表里），填完对方重新进入小程序即可看到管理入口</view>
+
+  <!-- ---------- 当前管理员 ---------- -->
+  <view class="section-title">当前管理员{{unlocked ? '（' + admins.length + '）' : ''}}</view>
+  <view class="empty small" wx:if="{{!unlocked}}">输入操作密码后点「解锁」查看</view>
+  <!-- 列表为空是不正常的：至少应该有一位（能进来的人自己就是管理员）。
+       这种情况多半是刚发生了并发移除，或者集合读不到 —— 明说出来，别只显示个空白。 -->
+  <view class="empty small" wx:elif="{{!admins.length}}">列表为空 —— 这不正常，请去 MPServerless 控制台确认 BITZHAdministrator 集合里还有管理员</view>
+
+  <view class="card" wx:for="{{admins}}" wx:key="userId">
+    <view class="user-head">
+      <image class="user-avatar" src="{{item.avatarUrl}}" mode="aspectFill" data-list="admins" data-index="{{index}}" binderror="onAvatarError"></image>
+      <view class="user-info">
+        <view class="user-name-row">
+          <text class="user-name">{{item.displayName}}</text>
+          <text class="user-status status-ok" wx:if="{{item.isSelf}}">我</text>
+        </view>
+        <text class="user-sub" wx:if="{{item.nickName && item.nickName !== item.name}}">昵称：{{item.nickName}}</text>
+        <view class="user-id-row">
+          <text class="user-id" selectable="{{true}}" user-select="{{true}}">{{item.userId}}</text>
+          <text class="copy-btn" catchtap="copyId" data-userid="{{item.userId}}">复制</text>
+        </view>
+        <text class="user-sub" wx:if="{{item.grantedTimeText}}">授予于 {{item.grantedTimeText}}</text>
+      </view>
+    </view>
+    <view class="user-actions">
+      <view wx:if="{{item.isSelf}}" class="btn small done">这是我</view>
+      <view wx:elif="{{admins.length <= 1}}" class="btn small done">最后一位，不可移除</view>
+      <view
+        class="btn small danger {{acting === item.userId ? 'btn-disabled' : ''}}"
+        bindtap="revoke"
+        data-userid="{{item.userId}}"
+        data-name="{{item.displayName}}"
+      >{{acting === item.userId ? '提交中…' : '移除'}}</view>
+      <text class="actions-tip" wx:if="{{item.isSelf}}">要移除自己请让另一位管理员操作</text>
+    </view>
+  </view>
+</view>
+
+<!-- 有输入框的页面都要挂这个（全局完成栏，见 components/kb-done-bar） -->
+<kb-done-bar/>

@@ -1,0 +1,7 @@
+{
+  "name": "adminManage",
+  "version": "1.0.0",
+  "description": "管理员在线增删云函数（服务端密码校验，写库不经客户端）",
+  "main": "index.js",
+  "dependencies": {}
+}

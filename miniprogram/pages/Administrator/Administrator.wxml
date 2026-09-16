@@ -62,6 +62,12 @@
                 <text class="row-title">搜索用户 / 封禁解封 / 黑名单</text>
                 <text class="row-arrow">›</text>
             </view>
+            <!-- 管理员管理：增删管理员需要服务端密码校验（走 adminManage 云函数），
+                 不是点进去就能改，页面里会再要一次密码 -->
+            <view class="row" bindtap="manageAdmins" hover-class="row-hover">
+                <text class="row-title">管理员管理 / 添加 / 移除</text>
+                <text class="row-arrow">›</text>
+            </view>
         </view>
 
         <view class="footer-space"></view>

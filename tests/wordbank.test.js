@@ -30,13 +30,21 @@ function groupBy(key) {
 
   // 「网络虐猫」不需要单独加词 —— 子串匹配下「虐猫」已经覆盖它。
   // 这条测试的存在意义：防止将来有人以为"没拦网络虐猫"而把冗余词塞进表里。
-  check('网络虐猫 已被「虐猫」子串命中', hit('网络虐猫'), ['block', 'pet_risk', ['虐猫']]);
+  // 注意严重度是 review：2026-09-16 管理员选了选项 B，「虐猫」从 block 挪到了 review。
+  check('网络虐猫 已被「虐猫」子串命中', hit('网络虐猫'), ['review', 'pet_risk', ['虐猫']]);
 
-  // ⚠️ 这条记录的是**刻意保留的现状，不是理想行为**：
-  //    「虐猫」在 block 档是子串硬拦，所以社团自己发的反虐待宣传文案
-  //    （含"虐猫"二字）也会被拦。改动这里之前先想清楚要拦的是"行为词"还是"讨论该行为"。
-  check('反虐待宣传文案同样被拦（现状，见文件头注释）',
-    hit('请大家拒绝虐猫，看到虐猫视频请举报'), ['block', 'pet_risk', ['虐猫']]);
+  // 【2026-09-16 管理员决定：选项 B】「虐猫」从 block 挪进 review。
+  //    原因：它是双用途词 —— 既是虐猫圈的行为词，也是社团自己的反虐待宣传用语。
+  //    原先在 block 时，社团发的「请大家拒绝虐猫，看到虐猫视频请举报」会被**直接拒绝发布**。
+  //    现在：内容放行，但落一条 Review 推管理员复核（真虐猫贴和反宣传贴一起进复核队列 ——
+  //    这是选 B 时明确接受的代价）。⚠️ 要改回 block 先跟管理员确认，别顺手改。
+  check('反虐待宣传文案现在能发出去（落 review 待复核）',
+    hit('请大家拒绝虐猫，看到虐猫视频请举报'), ['review', 'pet_risk', ['虐猫']]);
+  check('虐猫 在 review 数组里而非 block 里',
+    [groupBy('pet_risk').block.indexOf('虐猫') >= 0, groupBy('pet_risk').review.indexOf('虐猫') >= 0], [false, true]);
+  // 挪档不能把本类别内部的硬拦一起降级：block 先于 review 检查，所以「摔猫」仍然赢
+  check('同现时 block 词仍然压过 review 的「虐猫」',
+    hit('摔猫 虐猫'), ['block', 'pet_risk', ['摔猫']]);
 
   // 「耄耋」刻意放 review（放行但落 Review 待人工复核），不是 block。
   // 文言词子串误伤面大；若要一律拦死，改 pet_risk.block 并同步改这条测试。
@@ -106,12 +114,14 @@ function groupBy(key) {
   check('全是不可用词时原样返回', w.withExtraWords(C, ['猫', '', ' ']) === C, true);
 
   // 与静态词重复的：留着也是白占位置（静态表已经拦了）
-  check('与静态 block 词重复 → 丢弃', w.withExtraWords(C, ['虐猫']) === C, true);
+  check('与静态 block 词重复 → 丢弃', w.withExtraWords(C, ['摔猫']) === C, true);
   check('与静态 review 词重复 → 丢弃', w.withExtraWords(C, ['弃养']) === C, true);
-  check('归一化后才与静态重复 → 也丢弃', w.withExtraWords(C, ['虐貓']) === C, true);
+  check('归一化后才与静态重复 → 也丢弃', w.withExtraWords(C, ['摔貓']) === C, true);
 
   // 动态词之间自己重复
   check('动态词内部去重', w.withExtraWords(C, ['猫贩子', '猫贩子', '猫贩子'])[0].block, ['猫贩子']);
+  // 三个输入分别踩三种情况：单字（丢）、可用（留）、与静态词重复（丢）。
+  // 「虐猫」现在是**静态 review 档**，所以这条顺带钉住"静态 review 词不会漏进动态 block 档"。
   check('混杂可用与不可用时只留可用的', w.withExtraWords(C, ['猫', '猫贩子', '虐猫'])[0].block, ['猫贩子']);
 
   console.log('\n[withExtraWords：两档位与优先级]');
@@ -129,11 +139,14 @@ function groupBy(key) {
     hit('火钳子', [{ word: '火钳子', tier: 'review' }])[1], 'wordbank_review');
 
   // 【最重要的一条】动态 review 档**不得**覆盖别处的 block：
-  // 若把 review 档也放在最前，一条同时含「火钳子」和「虐猫」的内容会被报成 review，
+  // 若把 review 档也放在最前，一条同时含「火钳子」和「摔猫」的内容会被报成 review，
   // 严重度不升反降 —— 那是把硬拦悄悄降级成"标记"。
+  // ⚠️ 这里举例必须用**仍在静态 block 档**的词（摔猫）。原先用的是「虐猫」，
+  //    它 2026-09-16 挪进了静态 review 档 —— 拿它举例，两边都是 review，
+  //    这条测试就会永远通过而失去意义。
   check('动态 review 不覆盖静态 block（严重度不得降级）',
-    hit('火钳子 虐猫', [{ word: '火钳子', tier: 'review' }]),
-    ['block', 'pet_risk', ['虐猫']]);
+    hit('火钳子 摔猫', [{ word: '火钳子', tier: 'review' }]),
+    ['block', 'pet_risk', ['摔猫']]);
   // 反过来：动态 block 覆盖静态 review（管理员显式判定优先）
   check('动态 block 覆盖静态 review',
     hit('转让猫咪', [{ word: '转让猫咪', tier: 'block' }]),

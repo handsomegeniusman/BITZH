@@ -1,6 +1,6 @@
 // ============================================================
 // pages/bookletDetail/bookletDetail.js —— 推文详情页
-// 【作用】展示一条推文的图片轮播、正文、相关标签（及话题命中的猫）、评论区。
+// 【作用】展示一条推文的图片轮播、正文、相关标签（话题是猫名时换成圆头像胶囊）、评论区。
 //        登录用户可以发表 / 修改 / 删除自己的评论。
 //        分享出去的链接带上 _id，其他人打开可直接看到这条推文。
 //        数据库增删改查、图片 URL、未登录弹窗统一走公共模块。
@@ -58,7 +58,14 @@ Page({
   data: {
     url: app.globalData.url + 'page/', // 推文图片目录地址
     catUrl: app.globalData.url, // 猫咪图片根地址（猫图在根目录下，与推文的 page/ 不同目录）
-    relatedCats: [],    // 话题命中的猫（扁平、按 _id 去重、缩略图已带版本号）→ 点进猫详情
+    // 话题行：每格 {text: 话题原文, cat: 命中那只猫 | null}。cat 有值的那格渲染成
+    // 圆头像胶囊（点进猫详情），null 的那格保持原来的粉色文字胶囊（点搜同话题文章）。
+    // 【为什么合成一个数组】话题文本和「它是不是猫名」必须同源同序：分成两个数组
+    //   （一个存文本、一个存猫）迟早会有一处改了另一处没改，出现"头像配错名字"。
+    // 【为什么是数组不是「话题→猫」的 map】图片加载失败要逐级降级
+    //   （.png → 0.jpg → 占位图），降级靠 pageUtil.onImgError 的 data-list + data-index
+    //   按下标读写 _thumbFallback，map 没法按下标索引，只能再绕一层把 key 拼出来。
+    topicRow: [],
     listData: {},     // 当前推文
     imageUrls: [],    // 推文图片地址列表
     Comment: [],      // 评论列表
@@ -69,7 +76,6 @@ Page({
     audit: false,     // 是否开放评论（管理员后台开关）
     currentImageIndex: 0,
     recoverMode: false, // 回收站预览模式：内容来自 Delete 存档，只读，不展示评论区
-    catTopicMap: {},    // 话题 -> 命中那只猫的 _id（有值 = 猫名，胶囊前加 🐱 且长按可编辑）
     blocked: false,     // 推文已被封禁/下架：非管理入口打开 → 全屏封禁占位（禁止查看）
     titleCatId: '',     // 标题就是猫名时那只猫的 _id（空 = 标题不是猫名，标题前不画 🐱）
     titleHasCatIcon: false, // 标题里已经手写了 🐱 → 不重复画（避免出现两个猫头）
@@ -209,45 +215,53 @@ Page({
   },
 
   /** 解析相关标签（topic.parse 兼容 "#肥仔#水晶" / "＃小梅" / "笨笨，小鸭" 等脏格式），
-   *  并异步标记哪些话题是猫名（胶囊加 🐱） */
+   *  并异步标记哪些话题是猫名（那些格子换成圆头像胶囊）。
+   *  先按「全是普通话题」渲染一版，再等查询回来把猫名那几格换掉 —— 两者文字与位置
+   *  完全相同，只有底色和左侧头像变，所以不会看到整行跳一下。查询失败时保持这一版。 */
   getRelative() {
     const relativeList = topic.parse(this.data.listData.relative);
-    this.setData({ relativeList });
+    this.setData({ topicRow: relativeList.map((t) => ({ text: t, cat: null })) });
     this.markCatTopics(relativeList);
   },
 
   /** 标记话题里哪些是猫名（和 catDetail 一致）：真实名 name / 别名 otherName /
    *  曾用名 usedName / 昵称 nickname 任一字段含该话题独立词（支持 "肥猪/饭桶"、
-   *  "猫哥 小奶猫" 这类分隔写法）。map 必须按【话题名】做 key——胶囊上显示的是
+   *  "猫哥 小奶猫" 这类分隔写法）。命中表必须按【话题名】做 key——胶囊上显示的是
    *  话题原文，别名话题（肥猪）要能直接命中发福那只猫。
-   *  值是那只猫的 _id：既当「是不是猫」的布尔用（wxml 判 🐱），
-   *  又直接喂给胶囊的 data-_id 供长按跳编辑页 —— 一次查询两处用，不再重复查。
-   *  【第三个产出 relatedCats】同一趟算出「话题命中的猫」扁平列表（卡片下方展示、
-   *  点进猫详情）。刻意和 catTopicMap 共用这一次查询与同一套 aliasContains 判断：
-   *  两处若各查一次、各判一次，"胶囊上有 🐱"和"出现在猫列表里"迟早互相矛盾。
-   *  只读查询，失败静默（失败时两个产出都为空 → 猫列表整块不渲染）。 */
+   *  【为什么顺带产出 topicRow 而不是只给一个「是不是猫」的布尔】猫名话题要用那只猫的
+   *  圆头像，光有布尔还得再查一次；而且 data-_id（长按进猫编辑页）也要那只猫的 _id。
+   *  一次查询同时喂给头像、跳转和长按 —— 三处若各查一次、各判一次，迟早互相矛盾
+   *  （此前正是这种"两处各判一次"导致过「胶囊有 🐱、长按却没反应」）。
+   *  只读查询，失败静默（topicRow 保持 getRelative 里那版：整行按普通话题渲染）。 */
   async markCatTopics(list) {
-    let matched = { catTopicMap: {}, cats: [] };
+    let matched = { topicCats: {} };
     if (list.length) {
       try {
         const filter = catForm.topicCatFilter(list);
         const found = filter ? await db.find('BITZH', filter, { limit: list.length * 5 }) : [];
-        // 去重与排序的规则在 catForm.matchCatsByTopics（纯函数，有单测）：
-        // 顺序跟话题走、同一只猫只出现一次
+        // 命中判断在 catForm.matchCatsByTopics（纯函数，有单测）
         matched = catForm.matchCatsByTopics(list, found);
       } catch (err) {
         console.error('查询话题猫失败', err);
       }
     }
+    const topicCats = matched.topicCats;
     this.setData({
-      catTopicMap: matched.catTopicMap,
-      // 缩略图必须带照片版本号（photoVer），否则某只猫换了照片后这里仍显示微信缓存的旧图
-      relatedCats: pageUtil.stampThumbs(matched.cats, this.data.catUrl),
+      topicRow: list.map((t) => {
+        const cat = topicCats[t];
+        if (!cat) return { text: t, cat: null };
+        // 缩略图必须带照片版本号（photoVer），否则某只猫换了照片后这里仍显示微信缓存的旧图。
+        // stampThumbs 是原地补字段并返回同一批对象：同一只猫被两个话题命中时传的是同一个
+        // 对象，补两次结果相同，不会重复拼串。
+        pageUtil.stampThumbs([cat], this.data.catUrl);
+        return { text: t, cat: cat };
+      }),
     });
   },
 
-  /** 猫列表缩略图加载失败 → 逐级降级 .png → 0.jpg → 占位图（逻辑在 utils/page.js，
-   *  这里只做薄封装，与其余 6 个猫咪列表页写法一致）。 */
+  /** 话题行圆头像加载失败 → 逐级降级 .png → 0.jpg → 占位图（逻辑在 utils/page.js，
+   *  这里只做薄封装，与其余 6 个猫咪列表页写法一致）。
+   *  依赖 data-list="topicRow" 与话题行同下标，见 data 里的注释。 */
   onCatImgError(e) {
     pageUtil.onImgError(this, e);
   },

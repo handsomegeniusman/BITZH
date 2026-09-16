@@ -42,42 +42,39 @@
     <view wx:if="{{listData.photoTime}}" class="photoTime">拍摄于 {{listData.photoTime}}</view>
     <view class="main" user-select="true">{{listData.main}}</view>
 
-    <!-- 话题：点击跳相关猫咪或话题文章；管理员长按胶囊 → 直达那只猫的编辑页。
-         data-_id 由 markCatTopics 一并算好（话题不是猫名时为空，长按不跳） -->
-    <view wx:if="{{relativeList.length}}" class="topic-block">
+    <!-- 话题行：话题是猫名的那一格渲染成圆头像胶囊（头像就是那只猫，点进猫详情），
+         其余保持原来的粉色文字胶囊（点击搜同话题文章）。两种胶囊的文字、位置一致，
+         只有底色和左侧头像不同，所以"先普通、后换成猫款"不会看到整行跳一下。
+         管理员长按任意胶囊 → 直达那只猫的编辑页（非猫名话题 data-_id 为空，长按不跳）。
+         哪些格是猫、那只是哪只猫，由 markCatTopics 一次查询算好（见 bookletDetail.js）。 -->
+    <view wx:if="{{topicRow.length}}" class="topic-block">
       <view class="relative-tags">
-        <view class="relative-chip" wx:for="{{relativeList}}" wx:key="*this"
-              bindtap="toRelative"
-              bindlongpress="editCat"
-              data-name="{{item}}"
-              data-_id="{{catTopicMap[item] || ''}}">
-          <text wx:if="{{catTopicMap[item]}}" class="relative-cat-icon">🐱</text>
-          <text class="relative-chip-text">#{{item}}</text>
-        </view>
+        <block wx:for="{{topicRow}}" wx:key="text">
+          <!-- 猫名话题：圆头像 + 话题原文。头像已经说明"这是猫"，不再另画 🐱。
+               _thumbFallback 读的是**这一格**（不是 item.cat）：加载失败的降级标志
+               由 pageUtil.onImgError 按 data-list/data-index 写在 topicRow[index] 上。 -->
+          <view wx:if="{{item.cat}}" class="topic-cat"
+                bindtap="toRelative"
+                bindlongpress="editCat"
+                data-name="{{item.text}}"
+                data-_id="{{item.cat._id}}">
+            <image lazy-load="true" class="topic-cat-avator"
+                   src="{{item._thumbFallback == 1 ? item.cat._thumbJpg : (item._thumbFallback > 1 ? '/pages/images/logo.png' : item.cat._thumbUrl)}}"
+                   binderror="onCatImgError" data-list="topicRow" data-index="{{index}}"
+                   mode="aspectFill"></image>
+            <text class="topic-cat-name">#{{item.text}}</text>
+          </view>
+          <!-- 非猫名话题：原本的样式与行为都不变 -->
+          <view wx:else class="relative-chip"
+                bindtap="toRelative"
+                bindlongpress="editCat"
+                data-name="{{item.text}}"
+                data-_id="">
+            <text class="relative-chip-text">#{{item.text}}</text>
+          </view>
+        </block>
       </view>
       <view class="relative-guide">点击话题可查看相关猫咪或文章</view>
-
-      <!-- 话题命中的猫：扁平、按猫去重，点进猫详情。
-           与上面胶囊的 🐱 共用 markCatTopics 的同一次查询和同一套匹配判断，
-           所以「胶囊上有 🐱」和「出现在这个列表里」不会互相矛盾。
-           用 navigator 而不是 bindtap + wx.navigateTo：跳转是纯声明式的，
-           和其余猫咪列表页（所有 / catSearch）写法一致，也不必在 js 里再写一个跳转函数。
-           relatedCats 为空（没有标签命中猫）时整块不渲染 —— 多数推文不该多出一行空标题。 -->
-      <view wx:if="{{relatedCats.length}}" class="topic-cats">
-        <view class="topic-cats-title">相关猫咪</view>
-        <view class="topic-cats-list">
-          <navigator wx:for="{{relatedCats}}" wx:key="_id"
-                     url="/pages/catDetail/catDetail?_id={{item._id}}">
-            <view class="topic-cat">
-              <image lazy-load="true" class="topic-cat-avator"
-                     src="{{item._thumbFallback == 1 ? item._thumbJpg : (item._thumbFallback > 1 ? '/pages/images/logo.png' : item._thumbUrl)}}"
-                     binderror="onCatImgError" data-list="relatedCats" data-index="{{index}}"
-                     mode="aspectFill"></image>
-              <text class="topic-cat-name">{{item.name}}</text>
-            </view>
-          </navigator>
-        </view>
-      </view>
     </view>
   </view>
 

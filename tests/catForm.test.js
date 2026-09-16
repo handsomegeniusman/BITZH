@@ -1,14 +1,16 @@
 'use strict';
 /**
- * tests/catForm.test.js —— 话题 → 猫 匹配（含「相关猫咪」列表的去重与排序）
+ * tests/catForm.test.js —— 话题 → 猫 匹配（推文详情话题行的圆头像胶囊 & 扁平列表）
  * ============================================================
  * 零框架，与 tests/adminManage.test.js 同一套写法（check + 退出码）。
  *
  * 【为什么单测这一块】这是全仓唯一一个"名字匹配"的地方，而且它同时喂给四处在页面上
- *   表现不同的东西：话题胶囊前的 🐱、点话题跳猫、长按话题进猫编辑页、以及推文详情
- *   下方的「相关猫咪」列表。四者必须给出一致的答案 —— 单测钉的是这个一致性。
+ *   表现不同的东西：话题胶囊的圆头像、点话题跳猫、长按话题进猫编辑页、以及
+ *   catTopicMap（"这一格是不是猫名"）。四者必须给出一致的答案 —— 单测钉的是这个一致性，
+ *   尤其是 `topicCats[t]._id === catTopicMap[t]` 这条不变量：两处一旦不一致，
+ *   页面就会出现「胶囊上有猫头像、点进去找不到那只猫」。
  *   另外两件事**只在肉眼上很难发现写错**：
- *     ① 去重：一只猫被两个话题命中（真实名 + 别名）时不能出现两次；
+ *     ① 去重：一只猫被两个话题命中（真实名 + 别名）时不能出现两次（cats 用）；
  *     ② 排序：列表顺序要跟话题走，不能跟数据库返回顺序走（后者换个索引就会变）。
  *
  * 【为什么这个文件测的是 miniprogram/utils/ 而不是 cloudfunctions/】catForm.js 是
@@ -67,6 +69,55 @@ console.log('[基本命中]');
   const r = catForm.matchCatsByTopics(['不存在的猫'], ALL);
   check('没命中 → 两个产出都空', { ids: ids(r), map: r.catTopicMap }, { ids: [], map: {} });
 }
+
+console.log('\n[topicCats：话题 → 那只猫的对象（话题行圆头像用）]');
+// 头像要用的是**猫对象**（里面的 _thumbUrl/_thumbJpg 由页面 stampThumbs 补），
+// 只给 _id 的话页面还得再查一次 —— 那又多出一处可能和这里判断不一致的地方。
+{
+  const r = catForm.matchCatsByTopics(['希特勒'], ALL);
+  check('命中 → 值是猫对象本身（不是 _id 字符串）', r.topicCats['希特勒'] === A, true);
+  check('  且名字对得上', r.topicCats['希特勒'].name, '希特勒');
+}
+{
+  const r = catForm.matchCatsByTopics(['小希'], ALL);
+  // 别名话题必须也能拿到猫对象 —— 头像不认识"别名"，它只认"哪只猫"
+  check('别名话题 → 指向那只猫', (r.topicCats['小希'] || {})._id, 'cA');
+}
+{
+  // 同一只猫被真实名话题 + 别名话题命中：两个 key 必须指向**同一个对象**。
+  // 页面按 key 取对象补缩略图字段，若这里给副本，两格头像就会各补各的（后果轻微但没意义）。
+  const r = catForm.matchCatsByTopics(['希特勒', '小希'], ALL);
+  check('两个话题命中同一只 → 同一个对象（不是副本）', r.topicCats['希特勒'] === r.topicCats['小希'], true);
+}
+{
+  const r = catForm.matchCatsByTopics(['希特勒', '不是猫的话题'], ALL);
+  // 未命中的话题**不出现这个 key**（不是 undefined/null 的 key）——
+  // 页面靠 `topicCats[t]` 真假决定渲染哪种胶囊，给个假值 key 会让判空写法变脆
+  check('未命中 → 该话题根本没有 key', Object.prototype.hasOwnProperty.call(r.topicCats, '不是猫的话题'), false);
+  check('  且只有命中的那个 key', Object.keys(r.topicCats), ['希特勒']);
+}
+{
+  // 【本组最该有的一条】topicCats 与 catTopicMap 必须同口径：
+  // 前者给头像、后者给 data-_id，一旦不一致就会出现"有头像但点不进那只猫"
+  const cases = [['希特勒'], ['小希'], ['小胡子'], ['饭桶', '猫哥'], ['希特勒', '小希'], ['肥仔', '不存在的猫']];
+  const mismatched = [];
+  cases.forEach(function (topics) {
+    const r = catForm.matchCatsByTopics(topics, ALL);
+    Object.keys(r.topicCats).forEach(function (t) {
+      if (r.topicCats[t]._id !== r.catTopicMap[t]) mismatched.push(t);
+    });
+  });
+  check('不变量：topicCats[t]._id 恒等于 catTopicMap[t]', mismatched, []);
+}
+check('脏数据（缺 name / 缺 _id）不产生 topicCats 条目', (function () {
+  const r = catForm.matchCatsByTopics(['希特勒', 'z'], [null, { name: '希特勒' }, { _id: 'z' }, A]);
+  return Object.keys(r.topicCats);
+})(), ['希特勒']);
+check('topics / cats 为空或非数组 → topicCats 为空对象（且不抛）', [
+  JSON.stringify(catForm.matchCatsByTopics([], ALL).topicCats),
+  JSON.stringify(catForm.matchCatsByTopics(null, ALL).topicCats),
+  JSON.stringify(catForm.matchCatsByTopics(['希特勒'], null).topicCats),
+], ['{}', '{}', '{}']);
 
 console.log('\n[独立词边界：不许把「肥猪」当成「肥猪头」]');
 // 这是 aliasContains 存在的全部理由 —— 话题比猫名短一截时不能算命中，

@@ -146,36 +146,12 @@
   font-size: 12px;
   color: #999;
 }
-/* 猫话题前的小猫头标识（和 catDetail 话题一致：真实名/别名/曾用名命中的猫名）。
-   胶囊是 inline-flex + align-items:center，图标不参与文字基线，垂直居中 */
-.relative-cat-icon {
-  flex-shrink: 0;
-  margin-right: 2px;
-  font-size: 13px;
-  line-height: 1;
-}
-/* ============ 话题命中的猫列表 ============
-   用 flex-wrap 而不是横向 scroll-view：标签命中猫通常就一两只，横滑会把第二只
-   藏在屏幕外（没有任何提示），而且和上面 .relative-tags 的换行语言一致。
-   顶部细线把它和标签行分开 —— 否则两排粉色胶囊挨在一起会被当成同一组。 */
-.topic-cats {
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid #eee;
-}
-.topic-cats-title {
-  margin-bottom: 8px;
-  font-size: 12px;
-  color: #999;
-}
-.topic-cats-list {
-  display: flex;
-  flex-wrap: wrap;
-}
-/* 每只猫：圆形缩略图 + 名字。底色比 .relative-chip 的 #FFE5EA 更浅，
-   再靠左侧头像圆点区分开，不让人误读成"又一组标签"。
-   样式挂在 <navigator> 内层的 view 上（不是 navigator 本身）——与 所有 / catSearch
-   等 6 个猫咪列表页的写法一致：navigator 只管跳转，不承担布局，避开它的默认样式。 */
+/* ============ 猫名话题：圆头像胶囊 ============
+   和 .relative-chip 同在 .relative-tags 这一行里换行（两者 margin 都是 0 8px 8px 0，
+   间距一致）。靠「更浅的底色 + 左侧圆形头像」与文字胶囊区分开：一眼能看出
+   这一格是只猫、点了进猫详情，而不是又一个普通话题。
+   注意是 <view> + bindtap，不是 <navigator>：这一格还要 bindlongpress 给管理员
+   进猫编辑页，跳转目标也由 toRelative 按"是不是猫"决定（猫名→猫详情，否则→搜文章）。 */
 .topic-cat {
   display: inline-flex;
   align-items: center;

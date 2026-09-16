@@ -150,22 +150,32 @@ function topicCatFilter(topics) {
 }
 
 /** 话题数组 + 候选猫 → 「哪些话题是猫名」以及「命中的猫分别是哪些」。
- *  【为什么要单独抽出来】bookletDetail 的「相关猫咪」列表需要的三件事都不在
+ *  【为什么要单独抽出来】bookletDetail 的话题行需要的三件事都不在
  *    aliasContains 里：① 一只猫可能被两个话题同时命中（真实名话题 + 别名话题）→ 要去重；
  *    ② 列表顺序必须跟着**话题**走（那是页面上看得见、从左到右的东西），不能跟着
  *    数据库返回顺序走 —— 后者没有任何页面含义，换个索引就可能变，会让同一篇推文
- *    两次打开顺序不一样；③ 同时还要给出「话题 → 那只猫的 _id」这张表（胶囊画 🐱、
- *    长按跳猫编辑页用）。
+ *    两次打开顺序不一样；③ 同时还要给出「话题 → 那只猫」这张表（胶囊换圆头像、
+ *    画 🐱、长按跳猫编辑页都要用）。
  *    抽成纯函数（不碰 db、不碰 setData）是为了能单测 —— 顺序和去重恰好是
  *    最容易静默写错、又最难靠肉眼在页面上发现的两件事。
  *  @param {string[]} topics 话题名数组，顺序 = 页面上胶囊的显示顺序
  *  @param {Object[]} cats   候选猫，顺序 = 数据库返回顺序
- *  @returns {{catTopicMap: Object, cats: Object[]}}
+ *  @returns {{catTopicMap: Object, topicCats: Object, cats: Object[]}}
  *    catTopicMap[t] = 该话题命中的**第一只**猫的 _id（"第一只"按数据库顺序，与
- *      本函数抽出来之前的实现一致）；cats = 扁平去重后的命中猫，顺序跟 topics 走。
+ *      本函数抽出来之前的实现一致）；
+ *    topicCats[t]   = 该话题命中的**第一只**猫的**对象本身**（不是副本）——
+ *      话题行要拿它渲染圆头像，只给 _id 还得再查一次；
+ *    cats = 扁平去重后的命中猫，顺序跟 topics 走。
+ *    catTopicMap 与 topicCats 的取值口径**必须一致**（同一张表派生），
+ *    否则会出现「胶囊认这是猫、点进去找不到那只猫」——有断言钉住。
+ *    【cats 目前页面没在用】话题行是"一格话题一格胶囊"，页面直接拿 topicCats 逐格取，
+ *    既不需要去重也不需要重排（数组本身就是按话题顺序建的）。保留 cats 是给
+ *    「把命中的猫单独列一排（按猫去重）」那种用法留的口子，去重与排序规则仍由单测钉着；
+ *    真确定不再需要时连同那两组测试一起删，别让它慢慢变成没人敢动的"僵尸分支"。
  */
 function matchCatsByTopics(topics, cats) {
   const catTopicMap = {};
+  const topicCats = {};
   const hits = [];
   const seen = new Set(); // 按 _id 去重：同一只猫可能被真实名和别名两个话题各命中一次
   const list = (topics || []).filter(Boolean);
@@ -181,12 +191,13 @@ function matchCatsByTopics(topics, cats) {
     goods.forEach(function (g) {
       if (!aliasContains(g.stack, t)) return;
       if (!catTopicMap[t]) catTopicMap[t] = g.cat._id;
+      if (!topicCats[t]) topicCats[t] = g.cat;
       if (seen.has(g.cat._id)) return;
       seen.add(g.cat._id);
       hits.push(g.cat);
     });
   });
-  return { catTopicMap: catTopicMap, cats: hits };
+  return { catTopicMap: catTopicMap, topicCats: topicCats, cats: hits };
 }
 
 module.exports = {

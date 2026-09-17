@@ -73,7 +73,7 @@ Page({
     isFeeder: false,  // 当前用户是否已注册（决定输入框提示文案；评论本身所有人都能看）
     canComment: false,// 能否发表评论：管理员 或 申请获批的用户（读 db.canPublish，与发布入口同一个答案）
     userId: '',       // 当前用户 openid
-    audit: false,     // 是否开放评论（管理员后台开关）
+    audit: false,     // 对本页用户是否开放评论（审核开关 + 本人豁免：Feeder.enable 或管理员，见 db.getAuditForMe）
     currentImageIndex: 0,
     recoverMode: false, // 回收站预览模式：内容来自 Delete 存档，只读，不展示评论区
     blocked: false,     // 推文已被封禁/下架：非管理入口打开 → 全屏封禁占位（禁止查看）
@@ -90,7 +90,8 @@ Page({
       setTimeout(() => wx.navigateBack(), 800);
       return;
     }
-    this.setData({ audit: await db.getAudit() }); // 审核开关（getAudit 内部已兜底，不会 reject）
+    // 审核开关 + 本人豁免（内部已兜底，不会 reject）。评论区（wxml 的 audit 条件）共用这个值。
+    this.setData({ audit: await db.getAuditForMe() });
     try {
       await this.initUser();                      // 用户权限状态
     } catch (e) {

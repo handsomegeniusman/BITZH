@@ -16,7 +16,7 @@ const cb = require(path.resolve(__dirname, '..', 'cloudfunctions', 'feishuCallba
 
 // —— 入口必须是函数（EMAS 云函数约定），且附带了纯解析函数 ——
 assert.strictEqual(typeof cb, 'function', 'module.exports 应为云函数入口');
-['parseCommand', 'resolveAction', 'detectContext', 'extractTarget', 'extractOpenid', 'extractReporterId', 'extractApplicantId'].forEach(function (fn) {
+['parseCommand', 'resolveAction', 'detectContext', 'extractTarget', 'extractOpenid', 'extractReporterId', 'extractApplicantId', 'extractExemptUserId'].forEach(function (fn) {
   assert.strictEqual(typeof cb[fn], 'function', '应导出 ' + fn);
 });
 
@@ -362,6 +362,169 @@ function check(name, actual, expected) {
   check('群命令路径只写 Feeder（不软删对方内容）',
     [onlyWrites.length, onlyWrites[0] && onlyWrites[0].name, onlyWrites[0] && onlyWrites[0].update.$set.mutePost],
     [1, 'Feeder', true]);
+
+  // ============================================================
+  // 撤销「审核模式豁免」（2026-09-17；同日的「恢复豁免」已按需求方口径删除）
+  // ============================================================
+  console.log('\n[撤销豁免 命令]');
+  {
+    check('「撤销豁免」不被任何既有命令抢走',
+      [cb.parseCommand('撤销豁免').verb, cb.parseCommand('撤销豁免').object],
+      ['revokeEnable', 'user']);
+    check('带 ID 的写法能解析出 ID',
+      [cb.parseCommand('撤销豁免 64fa07d6a09a9bd68b13a8a0').verb,
+        cb.parseCommand('撤销豁免 64fa07d6a09a9bd68b13a8a0').userId],
+      ['revokeEnable', '64fa07d6a09a9bd68b13a8a0']);
+    check('openid 形态也认',
+      cb.parseCommand('撤销豁免 oAbCdEfGhIjKlMnOpQrS1').userId, 'oAbCdEfGhIjKlMnOpQrS1');
+    // 【与「禁言用户了」同一类保护】不校验 ID 形态的话，「撤销豁免了」会被当成裸命令，
+    //   而在【自助开通】卡片下它就会真的撤销——用户只是打了句话，不是下命令。
+    check('「撤销豁免了」不被当命令', cb.parseCommand('撤销豁免了'), null);
+    // 【命名纪律】「权限」在本项目指发布权（canPost），这条命令**不碰** canPost。
+    //   叫「撤销权限」会让管理员以为能收回发帖权 —— 那是个会让人做错决定的歧义。
+    check('命令词里刻意不含「权限 / 封禁 / 解封」',
+      ['撤销权限', '封禁豁免', '解封豁免'].map(function (s) { return cb.parseCommand(s); }),
+      [null, null, null]);
+    // 走的是 adminManage，不是 moderate —— 所以 verb 名必须与 adminManage 的 action 名逐字一致
+    check('verb 名与 adminManage 的 action 名逐字一致（走的是那条线，不是 moderate）',
+      cb.parseCommand('撤销豁免').verb, 'revokeEnable');
+    // 【被删掉的命令必须真的解析不出来】删除两半里最容易漏的是"入口函数的分流"：
+    //   parseCommand 不再认识它，自然也就到不了那条分支 —— 所以这里断言 null 就够，
+    //   真正防的是"将来有人把「恢复豁免」当成一条新命令又加回来"。
+    //   （adminManage 那边还有一个同名反例，钉的是"云函数不认这个 action"。）
+    check('  ⚠️ 「恢复豁免」已不是命令（裸的 / 带 ID 的都不认）',
+      [cb.parseCommand('恢复豁免'), cb.parseCommand('恢复豁免 64fa07d6a09a9bd68b13a8a0')],
+      [null, null]);
+  }
+
+  console.log('\n[撤销豁免：只能认【自助开通】卡片 —— 撤错人不报错，所以必须收窄]');
+  {
+    // 【为什么这条是本组最要紧的】撤销是**粘性状态**：撤了要管理员再解一次，
+    //   而撤错人**不会报错、当场也看不出来**（对方只是忽然在审核模式下看不见内容了）。
+    //   而带「用户ID：」行的卡片不止【自助开通】一张 —— secCheck 的推送也有。
+    const selfEnableText = '【自助开通】审核模式豁免\n' +
+      '有同学在小程序「关于」页连点 logo 五次，自助开通了豁免。\n' +
+      '（无需回复本卡；要收回豁免就在本卡下回复「撤销豁免」。撤错了让对方重新申请即可 —— 审批通过会解锁）\n' +
+      '\n' +
+      '用户ID：64fa07d6a09a9bd68b13a8a0\n' +
+      '昵称：小明\n' +
+      '时间：2026-09-17 21:00';
+    const uid = '64fa07d6a09a9bd68b13a8a0';
+
+    check('场景自成一类（不再落进默认档 review）', cb.detectContext(selfEnableText), 'selfenable');
+    check('extractExemptUserId 取到「用户ID：」那行', cb.extractExemptUserId(selfEnableText), uid);
+
+    // 【上面这类断言对「行首锚定」是没有牙齿的 —— 这条是被变异测试逼出来的】
+    //   把 extractExemptUserId 整个换成宽口径的 extractOpenid，上面所有断言**一条都不红**。
+    //   原因有二：本卡里「用户ID：」既是行首、又是全文唯一一处，两个口径结果重合；
+    //   而下面那两条负例（【待复核】/ 举报推送）**根本走不到这个解析器** ——
+    //   它们是被 resolveAction 里的场景守卫先拦掉的，与解析器宽窄无关。
+    //   所以锚定真正防的是**格式漂移**：这张卡将来只要多一行引用（把「昵称」挪到 ID 行之前、
+    //   或加一行「引用：…用户ID：xxx」），宽口径就会取到**正文里被引用的那一个**，
+    //   而撤销是粘性的、撤错人当场看不出来 —— 正是本组开头的失效模式。
+    //   ⚠️ 下面第二条断言把 extractOpenid 当**反例**来写，是刻意的：它让"两个口径不同"这件事
+    //   变成一条会红的断言，而不是注释里的一个说法。
+    const spoofed = '【自助开通】审核模式豁免\n' +
+      '昵称：他自称「用户ID：ou_fake000000000000」\n' +
+      '用户ID：' + uid + '\n' +
+      '时间：2026-09-17 21:00';
+    check('  ⚠️ 行首锚定：正文里被引用的「用户ID：」必须跳过，取行首那一个',
+      cb.extractExemptUserId(spoofed), uid);
+    check('     （同一条文本喂给宽口径 extractOpenid 就会取错人 —— 这就是不能复用它做撤销的原因）',
+      cb.extractOpenid(spoofed) === uid, false);
+    check('解析成 revokeEnable',
+      cb.resolveAction(cb.parseCommand('撤销豁免'), 'selfenable', selfEnableText),
+      { action: 'revokeEnable', userId: uid });
+    // 反例一：secCheck 的【待复核】推送（真的带「用户ID：」行，格式照 buildPush 抄的）
+    const reviewPush = '【待复核】引流广告\n' +
+      '内容：加群领养猫咪\n' +
+      '作者：某同学\n' +
+      '用户ID：64fa07d6a09a9bd68b13a8a0\n' +
+      '命中词：加群\n' +
+      '状态：内容已发布（待复核）';
+    check('  【待复核】推送里同样能抠出「用户ID：」',
+      cb.extractExemptUserId(reviewPush), uid);
+    check('  ⚠️ 但在那里裸「撤销豁免」必须被拒（否则撤的是被复核的作者）',
+      typeof cb.resolveAction(cb.parseCommand('撤销豁免'), cb.detectContext(reviewPush), reviewPush).error,
+      'string');
+
+    // 反例二：举报推送（extractOpenid 会捞「被举报人ID：」—— 这正是不能复用它做撤销的原因）
+    check('  ⚠️ 举报推送下也必须被拒（extractOpenid 会捞到被举报人）',
+      typeof cb.resolveAction(cb.parseCommand('撤销豁免'), cb.detectContext(reportText), reportText).error,
+      'string');
+    check('     而「禁言用户」在举报推送下仍然照常可用（宽窄是分开定的，没被一起改窄）',
+      cb.resolveAction(cb.parseCommand('禁言用户'), cb.detectContext(reportText), reportText),
+      { action: 'mute', userId: '6475a94bf43e605f713f2ce1', reason: '飞书指令' });
+
+    // 反例三：发布申请卡片，且**绝不能**把「同意」那条线搅乱
+    check('  发布申请卡片上「撤销豁免」也被拒（那上面没有「用户ID：」行）',
+      typeof cb.resolveAction(cb.parseCommand('撤销豁免'), cb.detectContext(applyText), applyText).error,
+      'string');
+    check('    且「同意」仍然只在发布申请卡片下有效（本功能没动到它）',
+      cb.resolveAction(cb.parseCommand('同意'), cb.detectContext(applyText), applyText).action,
+      'applyDecision');
+    check('    「同意」在【自助开通】下仍然被拒（它的首行守卫没被放宽）',
+      typeof cb.resolveAction(cb.parseCommand('同意'), cb.detectContext(selfEnableText), selfEnableText).error,
+      'string');
+
+    // 带 ID 的写法不受场景限制：这是回读不到父消息时（卡片由 webhook 发出）唯一的出路
+    check('带 ID 时不受场景限制（【待复核】下也能用）',
+      cb.resolveAction(cb.parseCommand('撤销豁免 ' + uid), cb.detectContext(reviewPush), reviewPush),
+      { action: 'revokeEnable', userId: uid });
+  }
+
+  // ============================================================
+  // 撤销豁免**必须走 adminManage，不能走 moderate**（2026-09-17）
+  // ============================================================
+  // 🔴 与上面那条「verb 当 action 直接调 moderate」的断言**方向相反**，所以必须另写一组：
+  //    那条证明「禁言」两边的名字是对的；这条证明「撤销豁免」**根本不该出现在那边**。
+  //    两条放在一起才完整 —— 单看名字逐字一致会让人以为"放进 moderate 也行"。
+  //
+  // 为什么不能放 moderate：它的头注释把契约写死了 ——「契约上任何人都能调」，
+  //   因此**只许剥夺/恢复（ban/unban/mute/unmute），严禁授予（grantPost 就是被这条挡在外面的）」。
+  //   「撤销豁免」本身够格进 moderate（剥夺），但它**配套写一个 enableRevoked 锁**，
+  //   而唯一能解这把锁的是 adminManage 的 applyDecision（审批通过）—— 写入逻辑拆在
+  //   两个函数里迟早对不上。再加上原先与该锁配对的「恢复豁免」（授予类，moderate 明令禁止），
+  //   撤销与恢复是同一枚硬币的两面，拆开必漂，所以一起放在 adminManage，
+  //   靠 FEISHU_INTERNAL_SECRET 验签（fail-closed）。
+  //   【2026-09-17】「恢复豁免」已删（退路改成"让对方重新申请"），这条理由只剩前半段 ——
+  //   但结论不变：revokeEnable 仍然**必须**是 moderate 的未知 action。
+  //
+  // ⚠️ 这条断言真正保护的是**将来**：若有人为了省事把 revokeEnable 塞进 moderate 的 switch，
+  //   它会变红 —— 因为下面这个调用**必须**是未知 action。
+  {
+    // ⚠️ 用本块自己的 id：上面那组的 uid 是块级作用域，出块即失效
+    //   （初版直接引用了它，报 ReferenceError: uid is not defined —— 整脚本硬挂，不是断言红）
+    const uid = '64fa07d6a09a9bd68b13a8a0';
+    const mod2 = require(path.resolve(__dirname, '..', 'cloudfunctions', 'moderate', 'index.js'));
+    const seen = [];
+    const spyDb = { collection: function (name) {
+      return {
+        find: async function () { return { result: [] }; },
+        updateMany: async function (f, u) { seen.push({ name: name, update: u }); return { modifiedCount: 1 }; },
+        updateOne: async function () { seen.push({ name: name }); return {}; },
+        insertOne: async function () { seen.push({ name: name }); return {}; },
+        deleteOne: async function () { seen.push({ name: name }); return {}; },
+      };
+    } };
+    // 注意返回值形状：moderate 的 default 分支只回 { ok:false, msg }，**没有 code 字段**
+    //   （不是 adminManage 那种带错误码的风格）。所以这里锚在 msg 上。
+    const rRev = await mod2({ args: { action: 'revokeEnable', userId: uid }, mpserverless: { db: spyDb } });
+    check('  ⚠️ 把 revokeEnable 当 action 调 moderate → 必须是未知 action（它不是 moderate 的动作）',
+      rRev, { ok: false, msg: '未知 action: revokeEnable' });
+    check('     且这次调用**一次写都没有发生**（没有降级成"不认识的 action 就顺手封禁"）',
+      seen.length, 0);
+
+    // 正面：同名动作在 adminManage 里才是存在的（否则上面那条就只是"两边都没有"，没证明力）
+    const am = require(path.resolve(__dirname, '..', 'cloudfunctions', 'adminManage', 'index.js'));
+    check('     而 adminManage 才导出 revokeEnable（撤销的唯一执行点）',
+      typeof am.revokeEnable, 'function');
+    // 逆操作不该以任何名字留在导出面上：留一个 revokeEnable 的同族函数在那儿，
+    //   等于给"把恢复命令加回来"铺了半条路（那个函数就是现成的执行器）。
+    check('     且**没有**任何"请恢复豁免"的执行器被导出（setEnable / restoreEnable 都不在）',
+      ['setEnable', 'restoreEnable', 'restoreExempt'].filter(function (k) { return k in am; }),
+      []);
+  }
 
   // ============================================================
   console.log('\n结果: ' + pass + ' 通过 / ' + fail + ' 失败');

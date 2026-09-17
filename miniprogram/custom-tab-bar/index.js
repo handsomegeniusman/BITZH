@@ -54,7 +54,13 @@ Component({
       }
       let audit = false;
       try {
-        audit = !!(await db.getAudit());
+        // 【为什么用 getAuditForMe】加号也要跟着豁免走：Feeder.enable=true 的注册用户
+        //   和**管理员**在审核模式下照常能发帖，否则会出现"内容看得见、加号却没了"的
+        //   自相矛盾 —— 尤其管理员：canPublish() 认管理员身份（加号照常出现），
+        //   这里若还读全局 audit，就正好凑成"加号在、内容看不见"那种最别扭的组合。
+        //   上面那次 initUserState 已经保证 state.enable / state.isAdministrator 就绪
+        //   （本函数原本就要它来算 canPublish）。
+        audit = !!(await db.getAuditForMe());
       } catch (err) {
         console.error('[tabBar] 读取审核开关失败', err);
       }

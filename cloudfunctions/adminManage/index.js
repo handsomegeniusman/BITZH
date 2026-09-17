@@ -33,6 +33,7 @@
  *   { action:'approvePost', userId, applyId?, password }    → 通过发布申请
  *   { action:'rejectPost',  userId, applyId?, password }    → 拒绝发布申请
  *   { action:'decidePostApply', userId, decision, internalSecret }  → 【飞书通道】同上，见下
+ *   { action:'revokeEnable',  userId, actorId, internalSecret }     → 【飞书通道】收回审核模式豁免 + 上锁
  *   { action:'listWords',   password? }                     → 动态敏感词库列表（只读，见「动态敏感词库」节）
  *   { action:'addWord',     word, tier?, password }         → 往词库加一个词（也用于改档位）
  *   { action:'delWord',     word, password }                → 从词库删一个词
@@ -51,7 +52,23 @@
  * 【decidePostApply 为什么走另一套鉴权】飞书回调里没有终端用户身份，上面那两道锁
  *   （调用者必须是管理员 + 密码）在这里无从谈起。它改用 FEISHU_INTERNAL_SECRET 校验，
  *   与 feishuCallback 共享一个密钥；未配置时**硬失败**（fail-closed）—— 忘配置应该
- *   得到一个"哑掉"的通道，而不是一个"谁都能批"的通道。
+ *   得到一个"哑掉"的通道，而不是一个"谁都能批"的通道。revokeEnable 同款。
+ *
+ * 【revokeEnable 为什么也放在这里，而不是 moderate】
+ *   撤销豁免（Feeder.enable = false）本身是"剥夺"，够格进 moderate（它今天已经能封禁别人）。
+ *   但它**配套写一个 enableRevoked 锁**，而唯一能解这把锁的另一条路是 applyDecision
+ *   （审批通过）—— 那是本函数的写入逻辑。把撤销放 moderate、解锁逻辑留在这里，
+ *   两边迟早对不上（典型症状：撤销成功了但没人知道怎么退回来）。
+ *   【为什么不该有"恢复豁免"命令】它是"把权限给回去"= 授予类，而 moderate 的契约
+ *   明令禁止授予；但它更根本的问题是**没有存在的必要**：applyDecision 的通过分支
+ *   本来就清 enableRevoked，让本人重新走一次申请即可 —— 自助、留痕、且不新增一条
+ *   "管理员凭一张群卡片就能把权限给回去"的通道。2026-09-17 按需求方口径删除。
+ *   执行器只有一份：revokeEnable()。
+ *
+ * 【它动什么、绝不动什么】动 enable 与 enableRevoked（本次新加的锁，见 revokeEnable）。
+ *   不动 canPost / mutePost / 任何 Page·Comment —— 撤销豁免换的是"审核模式下看不看得见
+ *   内容"，与发帖权无关：一个被撤销豁免的已获批者**仍然能发帖**。
+ *   ⚠️ 别因为"顺手"把 canPost 也写成 false：那是发布权撤销，本期明确不做。
  */
 'use strict';
 const crypto = require('crypto');
@@ -634,7 +651,21 @@ async function applyDecision(db, opt) {
     // 【为什么是 updateMany 而不是 updateOne】Feeder 里同一个 userId 可能存在重复注册文档，
     //   而客户端 initUserState 读到哪一条是不确定的 —— 必须全部打上才保证生效。
     // 【为什么按 userId 而不是 _id】canPost 的读者是 find('Feeder', {userId: 会话id})。
-    const set = { canPost: true };
+    // 【enable: true 与 canPost 一起发】`enable` = 审核模式豁免（见 utils/auditGate.js）。
+    //   本期口径（需求方原话）：「只有用户申请并通过审核了 enable 才能为 true」——
+    //   也就是说审批通过同时给两样东西：发帖权（canPost）+ 审核模式下能看见内容（enable）。
+    //   它与 canPost 一样**只在这里**写；注册页那行已刻意删掉，别再加回去。
+    //   另一条来路是用户在「关于」页连点五次自助开通（about.js 的 staffTap → postApply
+    //   云函数的 selfEnable，身份服务端派生）——那条**只给 enable、绝不给 canPost**，
+    //   所以连点五次换不来回加号和评论权。两条路写的字段**刻意不重叠**。
+    // 【enableRevoked: false 是刻意清掉的 —— 它是"误撤销"唯一的常规恢复路径】
+    //   撤销豁免（本函数的 revokeEnable）会给用户上锁，让他在「关于」页连点五次也开不回来
+    //   （锁的读者是 postApply 的 selfEnable）。如果审批通过不清这个锁，被误撤销的人
+    //   就只剩"去控制台改库"一条路 —— 那正是用户提这个需求时想避免的"误操作"反过来咬人。
+    //   审批是一个**有审计的新决定**，比先前那次撤销更强，所以它覆盖锁。
+    //   反过来，锁**不阻止**审批：不给已锁的人批发布权，等于把两件不相干的事捆死
+    //   （他的发帖权凭什么是另一个字段的历史决定的）。
+    const set = { canPost: true, enable: true, enableRevoked: false };
     // 【幂等：已经批过的不覆盖授予时间与出处】重复点「通过」、或批准一条早就处理过的申请时，
     //   canPostBy / canPostTime 要留住**第一次**是谁批的 —— 那是一份审计记录，
     //   被后一次操作改写就等于丢了"这个人是怎么拿到权限的"（回填进来的人尤其明显：
@@ -853,6 +884,107 @@ async function doDecidePostApply(db, event) {
     actorId: 'feishu',
     actorTrusted: true,
     source: 'feishu',
+  });
+}
+
+// ============================================================
+// 审核模式豁免（Feeder.enable）的撤销
+// ============================================================
+//
+// 【背景】enable = 「审核模式下能看见内容」（见 miniprogram/utils/auditGate.js）。它有两条
+//   来路：管理员审批通过（applyDecision）、用户在「关于」页连点五次自助开通
+//   （postApply 的 selfEnable）。两条都是"给"，用户提的需求是补上"收"。
+//
+// 【为什么必须有 enableRevoked 这个锁，光把 enable 置回 false 不够】
+//   自助开通那条路**随时可再走一次**：撤了 enable 而本人再连点五次，豁免就回来了 ——
+//   撤销等于没撤，而且管理员看不见它被复原了（没有通知）。锁的存在意义就是让
+//   postApply.selfEnable 认它（那边第一件事就是查这个字段）。
+//   ⚠️ 因此这里与 postApply/selfEnable 是一对**跨函数契约**：改字段名必须两边一起改。
+//
+// 【撤销是粘性状态，所以飞书那边只认【自助开通】通知卡片，见 feishuCallback 的
+//   resolveAction —— 撤错人不会报错，当场也看不出来，只能靠把范围收窄来防。】
+
+/**
+ * 收回审核模式豁免（Feeder.enable = false + 上锁）—— 本动作的**唯一执行器**。
+ * @param {object} db
+ * @param {object} opt { userId, actorId }
+ * @returns {Promise<{ok:boolean, code?:string, msg?:string, nickName?:string}>}
+ *   返回 nickName 是为了让飞书回执能显示"收回的是谁" —— 撤销是个容易认错人的操作，
+ *   回执里只有一串 ID 的话，管理员看不出自己有没有撤错。
+ */
+async function revokeEnable(db, opt) {
+  const userId = String(opt.userId == null ? '' : opt.userId).trim();
+  if (badUserId(userId)) return { ok: false, code: 'BAD_USER_ID', msg: '用户ID 格式不正确' };
+
+  // 必须是已注册用户：没有 Feeder 文档就没有 enable 可谈（与 applyDecision 同口径）
+  let feeders;
+  try {
+    feeders = toList(await col(db, FEEDER_COLL).find({ userId: userId }, { limit: 1 }));
+  } catch (e) {
+    return { ok: false, code: 'LOOKUP_FAILED', msg: '用户资料查询失败，请重试' };
+  }
+  if (!feeders.length) {
+    return { ok: false, code: 'NOT_FEEDER', msg: '该用户未注册，没有审核模式豁免可改' };
+  }
+
+  // 撤销 = 真的收走豁免 + 上锁。
+  //   【为什么 enable 和 enableRevoked 要一起写】光置 enableRevoked 不生效 ——
+  //   auditGate 读的是 enable，本人照样看得见内容；光置 enable:false 不持久 ——
+  //   本人连点五次就开回来了。两个一起写才是"收回且不许自助要回"。
+  //   【enableRevokedBy 与 applyDecision 的 handledBy 刻意不同】那边写死 'feishu'，
+  //   因为授予类不追问到人；这是剥夺类，出了争议要能回答"是谁撤的"，所以记发送者 open_id。
+  //   【不清 enableRevokedTime/By 的旧值 —— 现在没别的写点了，但留着这条口径】
+  //   它们记的是"上一次撤销"的时间与操作人，是历史痕迹；实时状态一律只看 enableRevoked
+  //   这个布尔。（原先这里有一句对应的"恢复时不清"注释，恢复那条路 2026-09-17 已删。）
+  const set = {
+    enable: false,
+    enableRevoked: true,
+    enableRevokedTime: new Date(),
+    enableRevokedBy: String(opt.actorId || ''),
+  };
+
+  // 【updateMany 而不是 updateOne】Feeder 里同一个 userId 可能存在重复注册文档，
+  //   而客户端 initUserState 读到哪一条是不确定的 —— 必须全部打上（理由同 applyDecision）。
+  try {
+    await col(db, FEEDER_COLL).updateMany({ userId: userId }, { $set: set });
+  } catch (e) {
+    console.error('[adminManage] 写 enable 失败', (e && e.message) || e);
+    return { ok: false, code: 'WRITE_FAILED', msg: '操作失败，请重试' };
+  }
+
+  // 【为什么不需要 opId 去重表（moderate 那套）】本操作天然幂等：重复撤销只是把同样的值
+  //   再写一遍，没有累加、没有副作用（enableRevokedTime 被刷新，属于可接受的正常后果）。
+  //   飞书侧另有 message_id + 指令内容去重。
+  console.log('[adminManage] revokeEnable target=' + maskId(userId) + ' by=' + maskId(opt.actorId));
+  return {
+    ok: true,
+    action: 'revokeEnable',
+    userId: userId,
+    enabled: false,
+    nickName: String(feeders[0].nickName || ''),
+  };
+}
+
+/**
+ * 【飞书通道】撤销审核模式豁免。
+ * 【鉴权】与 doDecidePostApply 完全同款：没有终端用户身份，改用 FEISHU_INTERNAL_SECRET，
+ *   验密是第一件事，未配置时硬失败（忘配置应该哑掉，而不是谁都能改）。
+ * 【信任边界要说清楚】这条通道的实际把关人是"谁能往这个飞书群里发消息" ——
+ *   feishuCallback 不校验发送者是不是管理员。这是本项目的既有口径，不是本次引入的：
+ *   群里能发「封禁用户」的人本来就能封人。要收紧得在 feishuCallback 里比对发送者名单。
+ * 【为什么不再收一个 action 参数】原先它在 revoke/restore 之间分派，on 由 action 名派生。
+ *   恢复那条路 2026-09-17 已删，现在只有一件事可做 —— 留着分派参数只会让人以为
+ *   还有第二种可能，而线上真传来别的 action 名时也该是"未知 action"而不是被当成撤销。
+ */
+async function doRevokeEnableViaFeishu(db, event) {
+  const v = verifyInternalSecret(event.internalSecret);
+  if (!v.ok) {
+    console.error('[adminManage] 飞书内部密钥校验失败：' + v.code);
+    return v;
+  }
+  return await revokeEnable(db, {
+    userId: event.userId,
+    actorId: event.actorId || 'feishu',
   });
 }
 
@@ -1112,6 +1244,14 @@ async function handle(ctx, event) {
   //   绝不会落到下面的管理员分支。放在这里是因为下面的 caller.id 检查必然失败。
   if (action === 'decidePostApply') return await doDecidePostApply(db, event);
 
+  // 撤销审核模式豁免：同款飞书通道（doRevokeEnableViaFeishu 内部先验 FEISHU_INTERNAL_SECRET）。
+  //   【为什么不放进 ADMIN_ACTIONS 的常规路径】这条动作目前只有飞书一个入口 ——
+  //   小程序侧还没有对应按钮。放进常规路径会多出两条没人用的鉴权分支要维护；
+  //   真要做小程序按钮时，把它加进 ADMIN_ACTIONS 即可（revokeEnable 不用动）。
+  if (action === 'revokeEnable') {
+    return await doRevokeEnableViaFeishu(db, event);
+  }
+
   if (!ADMIN_ACTIONS[action]) {
     return { ok: false, msg: '未知 action: ' + event.action };
   }
@@ -1185,6 +1325,10 @@ module.exports.sanitizeName = sanitizeName;
 module.exports.sha256Hex = sha256Hex;
 module.exports.getCfg = getCfg;
 module.exports.applyDecision = applyDecision;
+// 撤销审核模式豁免的执行器。导出是为了让单测能直接驱动它 —— 与 applyDecision 同理。
+// 【名字是 revokeEnable，不是 setEnable】它现在只做一件事（收回 + 上锁）。原先叫 setEnable
+//   是因为它靠一个 on 参数兼顾"恢复"，那条路 2026-09-17 已删 —— 名字留着会让人以为它还能给。
+module.exports.revokeEnable = revokeEnable;
 module.exports.verifyInternalSecret = verifyInternalSecret;
 module.exports.beijingDayKey = beijingDayKey;
 // 推荐词表本身也要能被测试检查（长度、档位、有没有和静态词表重复）——

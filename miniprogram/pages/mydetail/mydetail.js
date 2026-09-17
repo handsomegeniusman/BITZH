@@ -67,7 +67,7 @@ function invokeApply() {
 Page({
   data: {
     userId: '',
-    audit: false,          // 是否开放注册（管理员后台开关）
+    audit: false,          // 本页（头像/昵称/申请区）是否显示。注意判据是"注册没注册"，见 db.getAuditForMyPage
     blackNum: false,       // 是否在黑名单中
     popupAnimation: {},    // 弹窗动画对象（blackNumPopup 模板需要）
     navbar: ['历史', '回收站'], // 顶部两个分栏
@@ -94,12 +94,16 @@ Page({
   /** 页面加载 */
   async onLoad(options) {
     console.log('[mydetail] onLoad 开始');
-    // 审核开关：是否开放注册
+    // 本页的注册入口 / 头像昵称 / 发布权申请区是否显示。
+    // 【用的是 getAuditForMyPage 而不是 getAuditForMe】本页是**唯一**一处按
+    //   "注册没注册"（isFeeder）判豁免的页面，而不是按 Feeder.enable：
+    //   只要注册过就照常显示头像、昵称和「申请发小猫书」。理由与两侧注释见
+    //   utils/auditGate.js 的 myPageOpen / db.getAuditForMyPage。
     try {
-      this.setData({ audit: await db.getAudit() });
-      console.log('[mydetail] getAudit =', this.data.audit);
+      this.setData({ audit: await db.getAuditForMyPage() });
+      console.log('[mydetail] getAuditForMyPage =', this.data.audit);
     } catch (e) {
-      console.error('[mydetail] getAudit 失败（不影响页面显示）', e);
+      console.error('[mydetail] getAuditForMyPage 失败（不影响页面显示）', e);
     }
     // 支持分享链接直接打开对应分栏（解析并钳制到有效范围）
     if (options && options.currentTab !== undefined) {

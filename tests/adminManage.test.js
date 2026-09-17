@@ -706,6 +706,12 @@ const ADMIN_ENV = { ADMIN_PASSWORD: PW, ADMIN_PASSWORD_SHA256: undefined, ADMIN_
     check('  $set.canPost 是布尔 true（不是 1 / 字符串）', up[0].update.$set.canPost, true);
     check('  canPostBy = 审批人 id', up[0].update.$set.canPostBy, AID);
     check('  canPostTime 是 Date', up[0].update.$set.canPostTime instanceof Date, true);
+    // 审批通过同时发两样东西：发帖权（canPost）+ 审核模式豁免（enable）。
+    // 【为什么这两条必须钉住】客户端的豁免判断读的正是 Feeder.enable（utils/auditGate.js）——
+    // 若哪天有人"顺手"把 enable 从 $set 里删掉，审批通过的人就看不见内容了，
+    // 而且**管理员自己测不出来**（他另有名册豁免兜着）。
+    check('  $set.enable 同时写成布尔 true（审核模式豁免，与 canPost 一起发）',
+      up[0].update.$set.enable, true);
     check('PostApply 标记 approved', db.data.PostApply[0].status, 'approved');
     check('  并记下处理人/来源/身份是否可信',
       { by: db.data.PostApply[0].handledBy, src: db.data.PostApply[0].source, t: db.data.PostApply[0].handledByTrusted },
@@ -732,6 +738,9 @@ const ADMIN_ENV = { ADMIN_PASSWORD: PW, ADMIN_PASSWORD_SHA256: undefined, ADMIN_
     check('拒绝 → ok', { ok: r.ok, decision: r.decision }, { ok: true, decision: 'reject' });
     check('  Feeder 写入次数 === 0（"不做撤销"的执行点）', db.of('Feeder', 'updateMany').length, 0);
     check('  Feeder 上的 canPost 未被写', 'canPost' in (db.data.Feeder[1] || {}), false);
+    // 同上：拒绝也绝不写 enable。写 enable:false 会把一个已开通豁免的人从内容里踢出去，
+    // 而"拒绝"在飞书群里是个又短又泛的词，误发的代价太大。
+    check('  Feeder 上的 enable 也未被写', 'enable' in (db.data.Feeder[1] || {}), false);
     check('  申请行标为 rejected', db.data.PostApply[0].status, 'rejected');
     check('  申请行记下 source=miniapp', db.data.PostApply[0].source, 'miniapp');
 
@@ -803,6 +812,214 @@ const ADMIN_ENV = { ADMIN_PASSWORD: PW, ADMIN_PASSWORD_SHA256: undefined, ADMIN_
     r = await mod(mkCtx({ db: db, args: { action: 'decidePostApply', internalSecret: SECRET, decision: 'yolo', userId: TID } }));
     check('decision 非法 → BAD_DECISION', { ok: r.ok, code: r.code }, { ok: false, code: 'BAD_DECISION' });
     check('  零写入', db.of('Feeder', 'updateMany').length, 0);
+
+    // ============================================================
+    // 撤销「审核模式豁免」（revokeEnable）
+    // ============================================================
+    // 本组有三条是承重的，各自对应一种"看起来能跑但其实是坏的"实现：
+    //   ① 撤销只写 enable 不写 enableRevoked → 本人连点五次就复原，撤销等于没撤；
+    //   ② 撤销顺手把 canPost 也写成 false → 「撤销豁免」变成了"发布权撤销"，
+    //      而用户明确只要前者（enable 与 canPost 是两回事，见 revokeEnable 注释）；
+    //   ③ 密钥校验被绕过 → 任何人都能锁掉别人。
+    // 【2026-09-17 删掉了"恢复"那一半】原 restoreEnable 逆操作的断言换成两条：
+    //   一条钉住"这个 action 已经不存在了"（下面的 restoreEnable 反例），
+    //   一条钉住"误撤销的退路还在"（审批通过清锁，见本文件后面的 applyDecision 组）。
+    console.log('[豁免 · 撤销 revokeEnable]');
+    const revokedSet = {};
+    {
+      db = makeDb({ data: baseData({ BlackNum: [] }) });
+      r = await mod(mkCtx({ db: db, args: { action: 'revokeEnable', internalSecret: SECRET, userId: TID, actorId: 'ou_feishu_user' } }));
+      check('撤销 → ok', { ok: r.ok, action: r.action, enabled: r.enabled },
+        { ok: true, action: 'revokeEnable', enabled: false });
+      check('  回显昵称（飞书回执要靠它确认没撤错人）', r.nickName, '小明');
+      up = db.of('Feeder', 'updateMany');
+      check('Feeder.updateMany 恰好 1 次', up.length, 1);
+      check('  按 userId 过滤（不是 _id，重复文档要一起打上）', up[0].filter, { userId: TID });
+      Object.assign(revokedSet, up[0].update.$set);
+      // ① 两个字段必须**一起**写：光 enable:false 不持久、光 enableRevoked 不生效
+      check('  $set.enable 写成布尔 false（auditGate 读的就是它）', up[0].update.$set.enable, false);
+      check('  $set.enableRevoked 写成布尔 true（锁：postApply.selfEnable 读它）',
+        up[0].update.$set.enableRevoked, true);
+      // ② 【本组最重要的一条】撤销豁免**不是**发布权撤销
+      check('  ⚠️ $set 里绝不含 canPost（撤销豁免 ≠ 撤销发帖权）', 'canPost' in up[0].update.$set, false);
+      check('  ⚠️ 也不含 mutePost / canPostBy / canPostTime',
+        ['mutePost', 'canPostBy', 'canPostTime'].filter(function (k) { return k in up[0].update.$set; }), []);
+      check('  $set 的字段集合就是这四个（多一个都是越权）',
+        Object.keys(up[0].update.$set).sort(),
+        ['enable', 'enableRevoked', 'enableRevokedBy', 'enableRevokedTime']);
+      check('  enableRevokedTime 是 Date', up[0].update.$set.enableRevokedTime instanceof Date, true);
+      // 审计：这是剥夺类操作，要能回答"是谁撤的" —— 与 applyDecision 写死 'feishu' 刻意不同
+      check('  enableRevokedBy 记的是飞书发送者（不是常量 feishu）',
+        up[0].update.$set.enableRevokedBy, 'ou_feishu_user');
+      check('  库上真的落了盘', db.data.Feeder[1].enableRevoked, true);
+      check('  且没把发帖权弄丢', 'canPost' in db.data.Feeder[1], false);
+    }
+    {
+      // 【幂等】重复撤销只是把同样的值再写一遍。不需要 moderate 那套 opId 去重表。
+      db = makeDb({ data: baseData({ BlackNum: [] }) });
+      await mod(mkCtx({ db: db, args: { action: 'revokeEnable', internalSecret: SECRET, userId: TID } }));
+      r = await mod(mkCtx({ db: db, args: { action: 'revokeEnable', internalSecret: SECRET, userId: TID } }));
+      check('重复撤销 → 仍然 ok（幂等，不报"已经撤过了"）', r.ok, true);
+      check('  写了两次同样的值', db.of('Feeder', 'updateMany').length, 2);
+      check('  最终状态没变', { e: db.data.Feeder[1].enable, k: db.data.Feeder[1].enableRevoked },
+        { e: false, k: true });
+    }
+    {
+      // 【多余的 on 参数不再有任何作用】原先它由 action 名派生（调用方塞 on:true 翻不过来）；
+      //   现在 revokeEnable() 根本不读 on —— 断言它照样只做"收回"，把这条口径钉住，
+      //   免得将来有人为了"顺手支持恢复"又把这个参数接回去。
+      db = makeDb({ data: baseData({ BlackNum: [] }) });
+      r = await mod(mkCtx({ db: db, args: { action: 'revokeEnable', internalSecret: SECRET, userId: TID, on: true } }));
+      check('多传一个 on:true 毫无作用（revokeEnable 不读它）',
+        { ok: r.ok, enabled: r.enabled, rev: db.data.Feeder[1].enableRevoked },
+        { ok: true, enabled: false, rev: true });
+    }
+    {
+      // 【已删除的动作名必须彻底死掉】restoreEnable 这条命令 2026-09-17 按需求方口径删除。
+      //   留着这条反例是因为"删干净"最容易做一半：feishuCallback 那边删了命令、adminManage
+      //   这边的分支却还在，于是**任何能 invoke 到这个云函数的人**仍然可以把豁免给回去 ——
+      //   一个谁都用不到、却真实存在的提权口子。断言：未知 action + 零写入。
+      db = makeDb({
+        data: baseData({
+          BlackNum: [],
+          Feeder: [
+            { _id: 'f0', userId: AID, nickName: '甲' },
+            { _id: 'f1', userId: TID, nickName: '小明', enable: false, enableRevoked: true },
+          ],
+        }),
+      });
+      r = await mod(mkCtx({ db: db, args: { action: 'restoreEnable', internalSecret: SECRET, userId: TID } }));
+      check('  ⚠️ restoreEnable 已不存在 → 未知 action（不是"偷偷还能用"）',
+        { ok: r.ok, msg: r.msg }, { ok: false, msg: '未知 action: restoreEnable' });
+      check('     零写入（锁没被解开）',
+        [db.of('Feeder', 'updateMany').length, db.data.Feeder[1].enableRevoked], [0, true]);
+    }
+
+    console.log('[豁免 · 鉴权（与 decidePostApply 同款，且 fail-closed）]');
+    {
+      db = makeDb({ data: baseData({ BlackNum: [] }) });
+      r = await mod(mkCtx({ db: db, args: { action: 'revokeEnable', internalSecret: 'guess', userId: TID } }));
+      check('密钥错 → BAD_INTERNAL_SECRET', { ok: r.ok, code: r.code }, { ok: false, code: 'BAD_INTERNAL_SECRET' });
+      check('  零写入', db.of('Feeder', 'updateMany').length, 0);
+    }
+    {
+      // 【本组最关键的一条】这个 action 被刻意放在管理员校验**之外**（同 decidePostApply）。
+      //   若密钥校验被绕过/写错，它会落到"我是不是管理员"上 —— 那么任何管理员都能不输密码
+      //   锁掉别人的豁免。用"真管理员 + 错密钥"钉住它。
+      db = makeDb({ data: baseData({ BlackNum: [] }) });
+      r = await mod(mkCtx({ db: db, args: { action: 'revokeEnable', internalSecret: 'guess', userId: TID, password: PW, callerId: AID } }));
+      check('真管理员 + 正确密码 + 错密钥 → 仍是 BAD_INTERNAL_SECRET', { ok: r.ok, code: r.code },
+        { ok: false, code: 'BAD_INTERNAL_SECRET' });
+      check('  零写入（没有落到管理员那条路上）', db.of('Feeder', 'updateMany').length, 0);
+    }
+    {
+      // 【反向】不给密钥 = 不给走。这个 action 目前**只有**飞书一个入口，
+      //   没有"我是管理员所以我带密码就行"的第二条路（真要做小程序按钮时把它加进
+      //   ADMIN_ACTIONS 即可，见 handle() 里那条注释）——在那之前，这条必须是关的。
+      db = makeDb({ data: baseData({ BlackNum: [] }) });
+      r = await mod(mkCtx({ db: db, args: { action: 'revokeEnable', userId: TID, password: PW, callerId: AID } }));
+      // 这里是 BAD_INTERNAL_SECRET 而**不是** NO_INTERNAL_SECRET：本组 withEnv 里密钥是配着的，
+      // 只是这次调用没带而已。两者都是拒绝，但区分开才能证明"确实走了密钥那条路"。
+      check('管理员 + 正确密码但没带密钥 → 走密钥分支被拒（当前没有小程序入口）',
+        { ok: r.ok, code: r.code }, { ok: false, code: 'BAD_INTERNAL_SECRET' });
+      check('  零写入', db.of('Feeder', 'updateMany').length, 0);
+    }
+    await withEnv({ FEISHU_INTERNAL_SECRET: undefined }, async function () {
+      db = makeDb({ data: baseData({ BlackNum: [] }) });
+      r = await mod(mkCtx({ db: db, args: { action: 'revokeEnable', internalSecret: SECRET, userId: TID } }));
+      check('密钥未配置 → NO_INTERNAL_SECRET（fail-closed，传对值也不放行）',
+        { ok: r.ok, code: r.code }, { ok: false, code: 'NO_INTERNAL_SECRET' });
+      check('  零写入', db.of('Feeder', 'updateMany').length, 0);
+    });
+
+    console.log('[豁免 · 入参与失败路径]');
+    {
+      db = makeDb({ data: baseData({ BlackNum: [] }) });
+      r = await mod(mkCtx({ db: db, args: { action: 'revokeEnable', internalSecret: SECRET, userId: '../etc/passwd' } }));
+      check('畸形 userId → BAD_USER_ID', { ok: r.ok, code: r.code }, { ok: false, code: 'BAD_USER_ID' });
+      check('  连 Feeder 都没查（校验在过滤条件进库之前）', db.of('Feeder', 'find').length, 0);
+    }
+    {
+      db = makeDb({ data: baseData({ BlackNum: [] }) });
+      r = await mod(mkCtx({ db: db, args: { action: 'revokeEnable', internalSecret: SECRET, userId: BID } }));
+      check('未注册用户（没有 Feeder 文档）→ NOT_FEEDER', { ok: r.ok, code: r.code },
+        { ok: false, code: 'NOT_FEEDER' });
+      check('  零写入', db.of('Feeder', 'updateMany').length, 0);
+    }
+    {
+      db = makeDb({ data: baseData({ BlackNum: [] }), failOn: ['Feeder.find'] });
+      r = await mod(mkCtx({ db: db, args: { action: 'revokeEnable', internalSecret: SECRET, userId: TID } }));
+      check('资料查询抛错 → LOOKUP_FAILED（不当成"没注册"）', { ok: r.ok, code: r.code },
+        { ok: false, code: 'LOOKUP_FAILED' });
+      check('  零写入', db.of('Feeder', 'updateMany').length, 0);
+    }
+    {
+      db = makeDb({ data: baseData({ BlackNum: [] }), failOn: ['Feeder.updateMany'] });
+      r = await mod(mkCtx({ db: db, args: { action: 'revokeEnable', internalSecret: SECRET, userId: TID } }));
+      check('写库失败 → WRITE_FAILED（不谎报成功）', { ok: r.ok, code: r.code },
+        { ok: false, code: 'WRITE_FAILED' });
+    }
+
+    console.log('[豁免 · 审批通过要解掉这个锁（误撤销的常规恢复路径）]');
+    {
+      // 【为什么必须有这条】撤销会上锁，而锁只有管理员能解。如果审批通过不清它，
+      //   被误撤销的人就只剩"去控制台改库"一条路 —— 那正是这个需求想避免的误操作反过来咬人。
+      db = makeDb({
+        data: applyData({
+          Feeder: [
+            { _id: 'f0', userId: AID, nickName: '甲' },
+            { _id: 'f1', userId: TID, nickName: '小明', enable: false, enableRevoked: true },
+          ],
+        }),
+      });
+      r = await approveOnce(db);
+      check('撤过豁免的人照样能被批准发布权（锁不阻止审批）',
+        { ok: r.ok, decision: r.decision }, { ok: true, decision: 'approve' });
+      up = db.of('Feeder', 'updateMany');
+      check('  审批的 $set 里带着 enableRevoked: false（把锁清掉）',
+        up[0].update.$set.enableRevoked, false);
+      check('  同时照旧给 enable: true', up[0].update.$set.enable, true);
+      check('  库上锁已解开', db.data.Feeder[1].enableRevoked, false);
+    }
+
+    console.log('[豁免 · 跨函数契约：writer(adminManage) ↔ reader(postApply)]');
+    {
+      // 【为什么值得单独跑一遍】"锁"这个概念只有两个端点：上面写 enableRevoked，
+      //   postApply.selfEnable 读它。两个文件各钉一个同名字面量只能证明"都写了这个词"，
+      //   证不了它们**互相认识**（一边写成 enableRevoked、另一边 enableRevoke 就哑了，
+      //   而表现只是"撤销后本人还能自己开回来"，没有任何报错）。所以把这次真正写进库的
+      //   文档原样喂给 postApply。
+      const postApply = require('../cloudfunctions/postApply/index.js');
+      // 【必须自己现撤一次，不能复用上面任何一个 db】上一个用例刚跑完审批，
+      //   而审批会把锁清掉 —— 复用的话拿到的文档是 enable:true/enableRevoked:false，
+      //   于是整组断言在测一个"根本没被撤销"的人，而且会以 ALREADY_ENABLED 假通过。
+      //   （这条是被本文件实测逼出来的：初版就是这么写的，三条断言全红。）
+      const rdb = makeDb({ data: baseData({ BlackNum: [] }) });
+      await mod(mkCtx({ db: rdb, args: { action: 'revokeEnable', internalSecret: SECRET, userId: TID } }));
+      const revokedDoc = Object.assign({}, rdb.data.Feeder[1]);
+      check('前置：刚才那次撤销真的把文档写成了"已撤销"状态',
+        { e: revokedDoc.enable, k: revokedDoc.enableRevoked }, { e: false, k: true });
+      const pWritten = [];
+      const pdb = {
+        collection: function () {
+          return {
+            find: async function () { return { result: [Object.assign({}, revokedDoc)] }; },
+            updateMany: async function (f, u) { pWritten.push(u); return {}; },
+          };
+        },
+      };
+      const pr = await postApply({
+        args: { action: 'selfEnable' },
+        mpserverless: {
+          db: pdb,
+          user: { getInfo: async function () { return { result: { user: { userId: TID } } }; } },
+          function: { invoke: async function () { return {}; } },
+        },
+      });
+      check('  ⚠️ postApply 认得出这把锁并拒绝自助开通',
+        { ok: pr.ok, code: pr.code }, { ok: false, code: 'ENABLE_REVOKED' });
+      check('    且它一个字段都没写（锁的唯一作用点就在这里）', pWritten.length, 0);
+    }
 
     console.log('[审批 · 待办队列 listApplies]');
 

@@ -4,7 +4,18 @@
   <template is="blackNumPopup" data="{{popupAnimation}}"/>
 </view>
 <view wx:else class="about-root">
-  <view class="about-logo-wrap" bindlongpress="edit">
+  <!-- 连点开关在**这个 logo** 上（2026-09-17 从底部那四行挪过来的），
+       计数在 about.js 的 staffTap，离开本页清零。连点 5 次后按「注册没注册」分流成两条：
+         · 已注册 → 开通审核模式豁免（Feeder.enable = true）。**真正写库的是 postApply
+           云函数**的 selfEnable（身份服务端派生，所以开不了别人），开通后往
+           「发布申请」群推一条通知。
+         · 未注册 → 只临时开放**注册入口**（内存态，不写库、不走云函数、无通知）。
+       **两条都不给发帖权** —— 发帖权（canPost）只能由管理员审批授予。
+       ⚠️ 长按（bindlongpress）与连点是两件事，**不要合并**：长按是管理员进后台，
+          与"谁是注册用户"无关。两者在同一个元素上共存，但"不冲突"**不靠微信的事件语义** ——
+          edit() 会记一个时间戳，staffTap() 用 800ms 窗口把紧跟长按的那次 tap 吃掉。
+          详见 about.js 的 staffTap / edit 两段注释。 -->
+  <view class="about-logo-wrap" bindtap="staffTap" bindlongpress="edit">
     <image class="about-logo" mode="widthFix" src="/pages/images/logo.png">
     </image>
   </view>
@@ -100,6 +111,9 @@
 
 
   <text> \n </text>
+  <!-- 底部四行只是署名，**没有点击行为**（连点开关已挪到顶部 logo，见上方注释）。
+       2026-09-17 之前这里是连点区，挪走的原因是需求方说的入口就是 logo，
+       而"两处都能点"会让计数被拆到两个地方，人更不容易凑满 5 次。 -->
   <view class="staff">
     小程序开发： 北理珠流浪猫关爱部
   </view>

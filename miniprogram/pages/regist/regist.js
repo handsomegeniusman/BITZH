@@ -31,8 +31,18 @@ Page({
   /** 页面加载 */
   async onLoad(options) {
     guard.ensureNotBanned();
-    // 审核开关：注册功能是否开放
-    this.setData({ audit: await db.getAudit() });
+    // 本页整页被 `wx:if="{{audit}}"` 包着（regist.wxml 第 1 行），所以这个 audit 决定
+    // "看不看得见注册 / 改资料的表单"。
+    // 【为什么用 getAuditForMyPage 而不是 getAuditForMe —— 这两个必须对齐】
+    //   本页的入口只有一个：「我的」页的「注册用户资料」按钮和头像（mydetail 的 editMessage），
+    //   而那一块显示的判据正是 myPageOpen。两处口径一旦不一致，就会出现
+    //   **「按钮看得见、点进去是白页」** —— 这在改用本函数之前是真实存在的 bug：
+    //   审核模式下已注册的人（没有 enable 字段，是绝大多数）点自己的头像进来，整页空白。
+    //   同理，未注册者在「关于」页连点五次临时开放注册入口时，myPageOpen 第 4 项
+    //   unlocked 一开，按钮和本页**同时**可见（不会只开一半）。
+    // 【不会让谁多注册出一个账号】本页注册用的是当前登录者的 openid（下面 initUserState 之后取，
+    //   不信任链接参数），管理员在这里注册的只是他自己那条 Feeder 记录。
+    this.setData({ audit: await db.getAuditForMyPage() });
     // 身份一律以服务端登录态为准（不信任分享链接里的 userId 参数，
     // 防止带入他人 openid 后注册/修改时覆盖别人的资料）
     await db.initUserState();
@@ -245,7 +255,13 @@ Page({
 
     await this.uploadImg(); // 上传头像（若改名还会删除旧头像）
 
-    const setData = { nickName: guard.toText(nickName), avatarUrl, enable: true };
+    // 【这里刻意**不**写 enable】`enable` 是"审核模式豁免"的身份标记，只由两条路授予：
+    //   ① 管理员审批通过发布权申请（adminManage 的 applyDecision）；
+    //   ② 用户在「关于」页连点 logo 五次（about.js 的 staffTap → postApply 云函数的 selfEnable）。
+    //   注册页只是改个昵称/头像，不该顺手把这个身份发出去 —— 早先这行里带着
+    //   `enable: true`，等于"随便改一次资料就自己拿到豁免"，与本期口径相反。
+    //   注意：本次改动**不会**抹掉已有的 enable=true（$set 不含它就是不碰它）。
+    const setData = { nickName: guard.toText(nickName), avatarUrl };
     if (phoneNum !== undefined && phoneNum !== null && String(phoneNum).trim() !== '') {
       setData.phoneNum = guard.toText(phoneNum);
     }

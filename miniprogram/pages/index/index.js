@@ -51,13 +51,22 @@ Page({
   onLoad(options) {
     // 审核模式（audit=false）下不读小猫书数据：等审核开关结果回来再决定是否加载。
     // 开关开放（true）→ 加载全量瀑布流；开关关闭 → 不读数据，除非用户搜索。
+    // 【为什么用 getAuditForMe 而不是 getAudit】审核模式**只挡没在本机注册过的人**
+    //   （游客 / 微信审核员）：Feeder.enable=true 的注册用户、以及管理员，
+    //   效果都等同"审核模式已关闭"。合并逻辑在 db.getAuditForMe → utils/auditGate.js。
     this.getNotice();
-    db.getAudit().then((audit) => {
+    db.getAuditForMe().then((audit) => {
+      this._auditSettled = true; // 首屏闸门已定，onShow 的重算从此刻起才允许介入
       this.setData({ audit });
       if (audit) this.getPage(); // 开放发布才默认加载小猫书
     }).catch((err) => {
+      this._auditSettled = true; // 连"读不出结果"也算定过 —— 否则 onShow 永远不敢重算
+      // 【这个分支实际上到不了】getAuditForMe 内部对两种失败都各自兜了底
+      //   （查询失败 → 按"审核模式"处理），永远不会 reject。留着只是以防将来改坏。
+      //   所以"读失败按开放处理"只描述这一行的效果，**不是**真实的失败行为 ——
+      //   真实口径是 fail-closed，见 db.getAudit / db.getAuditForMe 的注释。
       console.error('读取审核开关失败', err);
-      this.getPage(); // 读失败按开放处理，保证正常能看
+      this.getPage();
     });
     this.initUser();
     db.isBlacklisted().then((blackNum) => {
@@ -65,25 +74,56 @@ Page({
     }).catch((err) => console.error('黑名单检查失败', err));
   },
 
-  /** 页面显示：同步底部自定义 tabBar 选中态（小猫书=1） */
+  /** 页面显示：同步底部自定义 tabBar 选中态（小猫书=1），并重算一次审核闸门 */
   onShow() {
     if (typeof this.getTabBar === 'function' && this.getTabBar()) {
       this.getTabBar().setData({ selected: 1 });
       if (typeof this.getTabBar().refreshAudit === 'function') this.getTabBar().refreshAudit();
     }
+    this.recheckGateOnShow();
+  },
+
+  /**
+   * 切回本页时重算「审核模式对本人开不开」，**只在由闭变开时**补加载瀑布流。
+   * ============================================================
+   * 【为什么必须有这个】瀑布流只在 onLoad 里按闸门加载一次（onShow 不重读）。
+   *   而"连点五次开通豁免"这件事**恰恰是在别的页面发生的**（「关于」页），本页只是被
+   *   switchTab 切回来 —— 于是它带着 onLoad 时那句 `audit:false` 继续渲染审核模式的
+   *   遮挡页。用户点了「去首页」，看到的是一个"什么都没变"的首页，唯一出路是杀进程重进
+   *   （about.js 的兜底提示写的就是这句）。这个函数把那条兜底从"唯一出路"降成"保险"。
+   * 【为什么闸门重算不会拖慢切换】它读的全是 db 的模块级缓存，命中时**不发任何网络请求**；
+   *   缓存万一没命中，也是在 onShow 之后异步补的，不挡渲染。
+   *   另一半代价在别处付掉了：连点成功时 about.js 只写 `state.enable` 一个字段，
+   *   不再用 resetUserState 清掉 userId / 名册 / 全局开关（见 db.markSelfEnable）。
+   * 【为什么用 _auditSettled 而不是"比较新旧值"】首次进入时 onLoad 与本函数都会各发一次
+   *   getAuditForMe，两者的回调**先后不定**。若不加这道闸，onLoad 的回调无条件
+   *   `if (audit) this.getPage()`，本函数的回调也 `getPage()` —— 首次进首页就可能**拉两遍
+   *   第一页**，那正好是"首页变慢"的一个现成来源。加了之后：首屏一律归 onLoad，
+   *   本函数只负责"之后某次切回来时发现闸门开了"。
+   * 【只认 false → true】反过来（由开变闭，比如管理员在后台关了审核）不该由这里处理：
+   *   本页已经渲染出来的内容不该因为一次 onShow 就被抹掉，那属于管理员页的职责。
+   */
+  recheckGateOnShow() {
+    if (!this._auditSettled) return; // 首屏还没定，交给 onLoad
+    db.getAuditForMe().then((audit) => {
+      if (!audit || this.data.audit) return; // 只处理"由闭变开"
+      this.setData({ audit });
+      this.getPage(); // 此刻 listData 必为空（闸门关着时从没加载过），从第一页拉
+    }).catch((err) => console.error('[index] onShow 重算审核闸门失败', err));
   },
 
   /**
    * 下拉刷新：重取审核开关后再从第一页重拉当前列表。
    * 【为什么要重取审核开关】getPage 有闸门「audit 为假且不在搜索态就直接返回」，
    *   onLoad 时若 getAudit 失败，audit 就一直是假的 → 下拉会变成什么都没发生的空操作。
+   *   （与 onLoad 一样用 getAuditForMe：本人被豁免时也该照常刷新。）
    * 【为什么传 []】db.paginate 以传入列表的 length 作 skip、且只追加不删除，
    *   传空数组 = 从第一页开始；buildColumns 会把左右两列整体覆盖，不是追加。
    * 【为什么失败时不 setData】失败返回的是带 _failed 的列表，不 setData 则
    *   原列表留在屏幕上，不会因为一次网络抖动把列表刷成空白。
    */
   onPullDownRefresh() {
-    db.getAudit().then((audit) => {
+    db.getAuditForMe().then((audit) => {
       this.setData({ audit });
       return this.getPage([]);
     }).catch((err) => {

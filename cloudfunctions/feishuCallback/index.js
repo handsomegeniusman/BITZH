@@ -176,6 +176,19 @@ function extractApplicantId(text) {
   return (m && m[1]) ? m[1].trim() : '';
 }
 
+/** 从推送原文解析「用户ID」（【自助开通】通知卡片专供：撤销豁免命令用）。
+ *  【为什么不复用 extractOpenid】它会连带匹配「被举报人ID：」和「封禁 <id>」字面量 ——
+ *  在举报推送下回复「撤销豁免」就会撤掉**被举报人**的豁免，而报告出来的那个人并不是
+ *  管理员想动的人。extractOpenid 的宽是「禁言用户」那种"全场景可用"命令要的，
+ *  这里要的正好相反。
+ *  【必须行首锚定（/m）】secCheck 的【待复核】/【已拦截】卡片也吐「用户ID：」行，
+ *  行首锚定是让这行只在那张卡片里被认出来的第一道；第二道是 resolveAction 的场景守卫。 */
+function extractExemptUserId(text) {
+  const s = String(text || '');
+  const m = s.match(/^用户ID[：:]\s*(\S+)/m);
+  return (m && m[1]) ? m[1].trim() : '';
+}
+
 /** 从推送原文解析「类型 + 目标ID」（封禁/解封帖子用） */
 function extractTarget(text) {
   const s = String(text || '');
@@ -191,7 +204,11 @@ function extractTarget(text) {
   return { type: type, id: (im && im[1]) ? im[1].trim() : '' };
 }
 
-/** 从推送原文判断场景：申诉 / 举报 / 发布申请 / 审核（默认）。
+/** 【自助开通】通知卡片的首行标记。⚠️ 与 postApply 的 buildSelfEnableCard 第一行是
+ *  一对**跨函数常量**（两个函数各自独立打包，require 不到对方），改名要两边一起改。 */
+const SELF_ENABLE_TITLE = '【自助开通】';
+
+/** 从推送原文判断场景：申诉 / 举报 / 发布申请 / 自助开通 / 审核（默认）。
  *  只看第一行标题，避免正文内容误含「【申诉】/【举报】」字样导致误判场景。 */
 function detectContext(text) {
   const s = String(text || '');
@@ -200,6 +217,16 @@ function detectContext(text) {
   if (firstLine.indexOf('【举报】') >= 0) return 'report';
   // 发布权限申请卡片（postApply 通过 secCheck 推到「发布申请」群）
   if (firstLine.indexOf('【发布申请】') >= 0) return 'apply';
+  // 【自助开通】通知卡片（postApply 的 selfEnable 推的）。
+  // 【为什么它必须自成一类，而不是继续落在默认档 review】裸「撤销豁免」是唯一一条
+  //   "回读父消息决定目标"的**粘性**命令：撤错了不会报错、当场也看不出来（对方只是忽然
+  //   在审核模式下看不见内容了），要等本人来问才发现。而带「用户ID：」行的卡片不止这一张
+  //   （secCheck 的【待复核】/【已拦截】也有），所以必须能把这张从里面挑出来，
+  //   resolveAction 才好限定"只认它"。见那边的 revokeEnable 分支。
+  //   注意：往这里加场景**不影响**既有命令 —— 封禁/解封/禁言用的是 extractOpenid，不看场景；
+  //   「同意」要求 context === 'apply'，本卡片从前落在 'review'、现在落在 'selfenable'，
+  //   两边都同样被拒（这条正是当初把首行写成「【自助开通】」的目的，不能被破坏）。
+  if (firstLine.indexOf(SELF_ENABLE_TITLE) >= 0) return 'selfenable';
   return 'review';
 }
 
@@ -232,6 +259,35 @@ function resolveAction(cmd, context, parentText) {
       decision: verb === 'grantPost' ? 'approve' : 'reject',
       userId: uid,
     };
+  }
+
+  // 「撤销豁免」= 收回「审核模式豁免」（Feeder.enable），走 adminManage。
+  // **必须限定场景**，理由与上面的「同意」同源但要更硬：
+  //   ① 「同意」批错人是"多发一个权限"，本人和群里都会立刻有反馈，容易发现；
+  //      而撤销豁免是**粘性状态**（撤了不点开回来就不生效，而且还会上锁），撤错人不会报错、
+  //      当场也看不出来 —— 对方只是忽然在审核模式下看不见内容了，得等他来问。
+  //      所以宁可让管理员多打一次 ID。
+  //   ② 带「用户ID：」行的卡片**不止一张**：secCheck 的【待复核】/【已拦截】推送也有。
+  //      若做成"全场景可用"（像「禁言用户」那样用 extractOpenid），在【待复核】卡片下
+  //      回复「撤销豁免」就会去撤被复核作者的豁免 —— 而管理员当时想的多半不是这件事。
+  // 所以：带 ID 的写法不要求场景（手打的 ID 不存在解析错人）；回读卡片的写法只认【自助开通】。
+  // 【没有"恢复豁免"这条命令】撤销多按一次就要能退回来，这个需求是真实的，但它由
+  //   **被撤销者本人重新走一次申请**完成（postApply 申请 → 管理员审批通过 → 顺带解锁
+  //   enableRevoked，见 adminManage.applyDecision）—— 自助、留痕、且不新增一条
+  //   "管理员凭一张卡片就能把权限给回去"的通道。回执里写明这条路。
+  if (verb === 'revokeEnable') {
+    if (cmd.userId) return { action: 'revokeEnable', userId: cmd.userId };
+    if (context !== 'selfenable') {
+      return {
+        error: '❌ 「撤销豁免」只能在【自助开通】通知下回复（当前是【' + context +
+          '】场景），或者直接发「撤销豁免 <用户ID>」',
+      };
+    }
+    const uid = extractExemptUserId(parentText);
+    if (!uid) {
+      return { error: '❌ 未能解析出用户ID（该通知里的 ID 行格式可能被改过，可发「撤销豁免 <用户ID>」）' };
+    }
+    return { action: 'revokeEnable', userId: uid };
   }
 
   // 禁言 / 解除禁言：全场景可用（与「拉黑用户」同形，都是明确作用于用户且不会误伤帖子的命令）
@@ -305,14 +361,18 @@ function resolveAction(cmd, context, parentText) {
 /**
  * 解析文本命令 → { verb, object, userId? }
  *   verb:   'ban' | 'unban' | 'reject' | 'mute' | 'unmute' | 'grantPost' | 'denyPost'
+ *         | 'revokeEnable'
  *   object: 'user' | 'post' | null（null=裸命令，默认对象由 resolveAction 定为「帖子」）
  *   私聊带 openid：封禁 <openid> / 解封 <openid> / 拉黑用户 <openid> / 同意 <申请人ID>
- *                 禁言用户 <ID> / 解除禁言 <ID>
+ *                 禁言用户 <ID> / 解除禁言 <ID> / 撤销豁免 <ID>
  * 【注意 1】「同意」/「拒绝」用的 verb 是 grantPost/denyPost，**不能复用 'reject'** ——
  *   那个词已经被「拉黑用户」占了，复用会让「拒绝」变成把申请人拉进黑名单。
  * 【注意 2】mute/unmute 的 verb 名**必须与 moderate 的 action 名逐字相同**：上面
  *   `if (cmd.userId)` 那条分支会把 cmd.verb 原样当 action 丢给 moderate（见入口函数），
  *   名字对不上就会得到一个"未知 action"。这两处一起改。
+ * 【注意 3】revokeEnable 走的是**另一条线**（adminManage），而且**必须**在
+ *   入口函数里 `if (cmd.userId)` 之前被截住 —— 否则带 ID 的写法会被原样丢给 moderate，
+ *   得到一个"未知 action"。它与 grantPost 同级，见入口函数的分流区。
  */
 function parseCommand(content) {
   const c = String(content || '').trim();
@@ -327,6 +387,13 @@ function parseCommand(content) {
   if (m) return { verb: 'mute', object: 'user', userId: m[1] };
   m = c.match(new RegExp('^解除禁言\\s+(' + ID_PAT + ')$'));
   if (m) return { verb: 'unmute', object: 'user', userId: m[1] };
+  // 审核模式豁免（Feeder.enable）的撤销，走 adminManage（不是 moderate）。
+  // 【为什么词是「豁免」而不是「权限」】本项目里"权限"默认指发布权（canPost），
+  //   而这条命令**不碰** canPost（见 adminManage.revokeEnable）。用「撤销权限」这种词，
+  //   管理员会以为它能把发帖权收走 —— 这是个会让人做出错误决定的歧义，必须避开。
+  // 【不撞既有正则】既不落在 `^封禁|^解封` 前缀里，也不是任何精确词。
+  m = c.match(new RegExp('^撤销豁免\\s+(' + ID_PAT + ')$'));
+  if (m) return { verb: 'revokeEnable', object: 'user', userId: m[1] };
   m = c.match(new RegExp('^全部解封\\s+(' + ID_PAT + ')$'));
   if (m) return { verb: 'unban', object: 'all', userId: m[1] };
   // 发布权限审批的"带 ID"形式：回读不到父消息（比如卡片是 webhook 发的）时唯一可用的写法
@@ -346,6 +413,8 @@ function parseCommand(content) {
   if (c === '拉黑用户') return { verb: 'reject', object: 'user' };
   if (c === '禁言用户') return { verb: 'mute', object: 'user' };
   if (c === '解除禁言') return { verb: 'unmute', object: 'user' };
+  // 裸形式：只认【自助开通】通知卡片（场景守卫在 resolveAction 里），目标是卡片上的「用户ID：」
+  if (c === '撤销豁免') return { verb: 'revokeEnable', object: 'user' };
   if (c === '封禁') return { verb: 'ban', object: null };   // 裸封禁 → 帖子
   if (c === '解封') return { verb: 'unban', object: null }; // 裸解封 → 帖子
   return null;
@@ -492,18 +561,22 @@ async function fireModerate(ctx, params, messageId) {
 }
 
 /**
- * 触发并等待 adminManage 执行发布权限审批。
- * 【为什么调 adminManage 而不是自己写库】写入逻辑只能有一份（adminManage 的 applyDecision），
- *   否则小程序审批和飞书审批两份实现迟早漂移。飞书回调里没有终端用户身份，
+ * 触发并等待 adminManage 执行一个动作（飞书 → adminManage 的**唯一**通道）。
+ *   action: 'decidePostApply'（发布申请审批）/ 'revokeEnable'（收回豁免）
+ * 【为什么调 adminManage 而不是自己写库】写入逻辑只能有一份（adminManage 的 applyDecision /
+ *   revokeEnable），否则小程序那边和飞书这边两份实现迟早漂移。飞书回调里没有终端用户身份，
  *   走不了 adminManage 那两道锁，所以用 FEISHU_INTERNAL_SECRET 作为这条通道的凭据。
- * 【为什么不用 fireModerate】发布权授予刻意不放 moderate（它是无鉴权的公开函数，
- *   加 grant 等于开一个客户端可直接调用的自助提权接口）。走独立的一条线，互不干扰。
+ * 【为什么不用 fireModerate】授予类动作刻意不放 moderate（它是无鉴权的公开函数，
+ *   加授予等于开一个客户端可直接调用的自助提权接口）。走独立的一条线，互不干扰。
+ * 【action 为什么是参数而不是写死】原先只有审批一条，函数名就叫 fireApplyDecision；
+ *   加豁免的撤销时若再抄一份，去重、超时、诊断文案这三样必然开始漂移 ——
+ *   而它们正是"出问题时能不能看见"的全部依靠。所以收成一个，动作名由调用方给。
  */
-async function fireApplyDecision(ctx, params, messageId) {
+async function fireAdminManage(ctx, action, params, messageId) {
   const opId = String(messageId || '').trim();
   const dedupKey = dedupKeyOf(opId, params);
   if (dedupCheck(dedupKey)) {
-    console.log('[feishuCallback] 该审批指令已处理过，跳过重复触发:', opId || dedupKey);
+    console.log('[feishuCallback] 该指令已处理过，跳过重复触发:', opId || dedupKey);
     return 'skip';
   }
   const t0 = Date.now();
@@ -511,7 +584,7 @@ async function fireApplyDecision(ctx, params, messageId) {
   try {
     r = await withTimeout(
       ctx.mpserverless.function.invoke('adminManage', Object.assign({}, params, {
-        action: 'decidePostApply',
+        action: action,
         internalSecret: getCfg('FEISHU_INTERNAL_SECRET'),
       })),
       MODERATE_AWAIT_MS
@@ -521,11 +594,11 @@ async function fireApplyDecision(ctx, params, messageId) {
   }
   const elapsed = Date.now() - t0;
   if (elapsed > 5000) {
-    console.warn('[feishuCallback] 审批执行耗时过长:', elapsed + 'ms');
+    console.warn('[feishuCallback] adminManage 执行耗时过长:', action, elapsed + 'ms');
   }
   if (r === null || r === 'skip') {
     console.error('[feishuCallback] 触发 adminManage 失败（adminManage 是否已部署？）');
-    await confirmPush('❌ 诊断：未能触发发布审批。请检查 adminManage 云函数是否已部署、' +
+    await confirmPush('❌ 诊断：未能触发 ' + action + '。请检查 adminManage 云函数是否已部署、' +
       'FEISHU_INTERNAL_SECRET 是否已在 feishuCallback 与 adminManage 两侧配成同一个值。');
   } else if (r && typeof r === 'object' && r.ok === false) {
     console.error('[feishuCallback] adminManage 返回失败:', r.code, r.msg);
@@ -587,7 +660,7 @@ async function handlePostDecision(ctx, message, cmd, text) {
     return { ok: false, reply: resolved.error };
   }
 
-  const r = await fireApplyDecision(ctx, {
+  const r = await fireAdminManage(ctx, 'decidePostApply', {
     decision: resolved.decision,
     userId: resolved.userId,
   }, message.message_id || '');
@@ -611,6 +684,73 @@ async function handlePostDecision(ctx, message, cmd, text) {
   return {
     ok: true,
     reply: '✅ 已拒绝 ' + who + ' 的发布申请。对方已有权限（如有）不受影响，今天不能再申请。',
+  };
+}
+
+/**
+ * 处理「撤销豁免」：解析出目标用户 → 触发 adminManage → 返回回执文案。
+ * 结构与 handlePostDecision 同款（带 ID 时不回读、不带 ID 时回读父消息判场景），
+ * 差别只有一处：resolveAction 对这条命令**强制要求 selfenable 场景**，理由见那边注释。
+ *
+ * @param {string} fromUser 发送者 open_id，落进 Feeder.enableRevokedBy 作审计。
+ *   【与 handlePostDecision 不同】审批那边 actorId 写死 'feishu'（授予类不追问到人），
+ *   而撤销是剥夺类：出了争议要能回答"是谁撤的"，飞书通道里唯一稳定的人标识就是这个。
+ * @returns {Promise<{reply:string, ok:boolean}>} 永远返回可回发的文案，不抛
+ */
+async function handleRevokeEnable(ctx, message, cmd, text, fromUser) {
+  const name = '撤销豁免';
+
+  let parentText = '';
+  let context = 'selfenable'; // 手打 ID 时用不到场景（resolveAction 对带 ID 的写法不判场景）
+  if (!cmd.userId) {
+    const rootId = message.root_id || message.parent_id || '';
+    if (!rootId) {
+      return { ok: false, reply: '❌ 没有可关联的推送。请在【自助开通】通知下回复，或直接发「' + name + ' <用户ID>」' };
+    }
+    try {
+      const tk = await getTenantToken();
+      parentText = parseContentText(await fetchMessageText(tk, rootId));
+    } catch (e) {
+      console.error('[feishuCallback] 回读父消息失败', e && e.message);
+    }
+    context = detectContext(parentText);
+  }
+
+  const resolved = resolveAction(cmd, context, parentText);
+  if (resolved.error) {
+    // 诊断：与审批那条线同款。撤销被拒时管理员最需要知道的就是"我回在哪张卡片上了"，
+    // 所以把回读到的父推送原文（前 120 字）一并推出去。
+    await confirmPush('🔍 诊断：指令「' + text + '」→ 场景=' + context + '，被拒绝：' + resolved.error +
+      '\n父推送（前120字）：\n' + String(parentText || '(回读为空)').slice(0, 120));
+    return { ok: false, reply: resolved.error };
+  }
+
+  const r = await fireAdminManage(ctx, cmd.verb, {
+    userId: resolved.userId,
+    actorId: fromUser || 'feishu',
+  }, message.message_id || '');
+
+  if (r === 'skip') return { ok: true, reply: '⚠️ 收到相同指令，已在执行中，不重复处理' };
+  if (!r || typeof r !== 'object') {
+    return { ok: false, reply: '❌ 未能触发，请检查 adminManage 是否已部署、FEISHU_INTERNAL_SECRET 是否两侧一致' };
+  }
+  if (r.ok === false) {
+    return { ok: false, reply: '❌ ' + (r.msg || '执行失败') + '（' + (r.code || '?') + '）' };
+  }
+
+  // 【回执里为什么一定要显示昵称】撤销是"认错人也看不出来"的操作，光回一串 ID，
+  //   管理员没法确认自己撤的是不是想撤的那个人。昵称由 adminManage.revokeEnable 一并返回。
+  const who = r.nickName ? ('「' + r.nickName + '」') : resolved.userId;
+  // 【为什么回执里要写清"怎么还原"】这条命令没有逆操作（原来那句"要还原就回复恢复豁免 X"
+  //   已随命令一起删掉）。撤销是粘性的，管理员撤错人却不知道下一步做什么的话，
+  //   对方就只能一直看不见内容 —— 所以必须把唯一的还原路径写在回执里，且写成
+  //   **对方自己能做的动作**，而不是"你再去飞书里回一句什么"。
+  return {
+    ok: true,
+    reply: '✅ 已收回 ' + who + ' 的审核模式豁免。\n' +
+      '对方在审核模式下将看不见内容，且**在「关于」页连点五次也开不回来**（已上锁）。\n' +
+      '撤错了怎么办：**让对方自己在「我的」页重新提交发布权限申请**，你审批通过即可 ——\n' +
+      '通过时会顺带把这道锁清掉（不再有直接的「恢复豁免」命令）。',
   };
 }
 
@@ -679,7 +819,7 @@ module.exports = async function (ctx) {
     // 在群里 @ 一次机器人（随便发句话）即可看到本群 chat_id。
     // 【放最后一行】可用的命令列表在前，别让这行排查信息把它挤下去。
     const chatIdLine = message.chat_id ? '\n本群 chat_id：' + message.chat_id : '';
-    await respond(message, '⚠️ 未识别：「' + text + '」（来自 ' + fromUser + '）\n可用：封禁 / 封禁帖子 / 封禁用户 / 封禁举报人 / 解封 / 解封帖子 / 解封用户 / 解封举报人 / 全部解封 / 拉黑用户 / 禁言用户 / 解除禁言\n发布申请：同意 / 拒绝（在该申请卡片下回复）\n（拉黑 = 隐藏其全部内容；禁言 = 只停发帖评论，内容保留）' + chatIdLine);
+    await respond(message, '⚠️ 未识别：「' + text + '」（来自 ' + fromUser + '）\n可用：封禁 / 封禁帖子 / 封禁用户 / 封禁举报人 / 解封 / 解封帖子 / 解封用户 / 解封举报人 / 全部解封 / 拉黑用户 / 禁言用户 / 解除禁言\n发布申请：同意 / 拒绝（在该申请卡片下回复）\n审核模式豁免：撤销豁免（在【自助开通】通知下回复；也可写「撤销豁免 <用户ID>」）\n（拉黑 = 隐藏其全部内容；禁言 = 只停发帖评论，内容保留；豁免 = 审核模式下看不看得见内容，与发帖权无关；撤销豁免后要还原，让对方重新申请、你审批通过即可）' + chatIdLine);
     return { code: 0 };
   }
 
@@ -699,6 +839,16 @@ module.exports = async function (ctx) {
   if (cmd.verb === 'grantPost' || cmd.verb === 'denyPost') {
     const decided = await handlePostDecision(ctx, message, cmd, text);
     await respond(message, decided.reply);
+    return { code: 0 };
+  }
+
+  // ---- 撤销「审核模式豁免」（同样走 adminManage，不走 moderate）----
+  // 【为什么必须拦在这里，与上面「同意」同理】下面 `if (cmd.userId)` 会把任何带 userId 的
+  //   命令原样丢给 moderate，而 revokeEnable 对 moderate 是未知 action。
+  //   postApply 那边靠"action 名不在白名单"挡住了，这里必须显式截住。
+  if (cmd.verb === 'revokeEnable') {
+    const done = await handleRevokeEnable(ctx, message, cmd, text, fromUser);
+    await respond(message, done.reply);
     return { code: 0 };
   }
 
@@ -754,3 +904,4 @@ module.exports.extractTarget = extractTarget;
 module.exports.extractOpenid = extractOpenid;
 module.exports.extractReporterId = extractReporterId;
 module.exports.extractApplicantId = extractApplicantId;
+module.exports.extractExemptUserId = extractExemptUserId;

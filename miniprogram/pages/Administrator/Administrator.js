@@ -56,6 +56,10 @@ Page({
     guard.ensureNotBanned();
     await db.initUserState();
     if (!guard.requireAdmin()) return;
+    // 【这里必须用 getAudit()，不能用 getAuditForMe()】全站唯一一处读全局值的地方。
+    // getAuditForMe() 对本页的用户**永远**返回 true（管理员名册本身就是一条豁免，
+    // 见 utils/auditGate.js），拿它驱动下面那个开关，开关会永远显示「开放中」——
+    // 看不出真实状态，也判断不出该往哪边切。这不是"顺手写错了"，是刻意选的口径。
     this.setData({ audit: await db.getAudit() });
     this.loadContact();
   },
